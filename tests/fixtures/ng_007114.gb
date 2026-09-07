@@ -1,0 +1,613 @@
+LOCUS       NG_007114               8416 bp    DNA     linear   PRI 06-SEP-2026
+DEFINITION  Homo sapiens insulin (INS), RefSeqGene on chromosome 11.
+ACCESSION   NG_007114
+VERSION     NG_007114.1
+KEYWORDS    RefSeq; RefSeqGene.
+SOURCE      Homo sapiens (human)
+  ORGANISM  Homo sapiens
+            Eukaryota; Metazoa; Chordata; Craniata; Vertebrata; Euteleostomi;
+            Mammalia; Eutheria; Euarchontoglires; Primates; Haplorrhini;
+            Catarrhini; Hominidae; Homo.
+REFERENCE   1  (bases 1 to 8416)
+  AUTHORS   Kralovicova,J. and Vorechovsky,I.
+  TITLE     Allele-specific recognition of the 3' splice site of INS intron 1
+  JOURNAL   Hum Genet 128 (4), 383-400 (2010)
+   PUBMED   20628762
+REFERENCE   2  (bases 1 to 8416)
+  AUTHORS   Stead,J.D., Hurles,M.E. and Jeffreys,A.J.
+  TITLE     Global haplotype diversity in the human insulin gene region
+  JOURNAL   Genome Res 13 (9), 2101-2111 (2003)
+   PUBMED   12952878
+REFERENCE   3  (bases 1 to 8416)
+  AUTHORS   Naylor,R., Knight Johnson,A. and del Gaudio,D.
+  TITLE     Maturity-Onset Diabetes of the Young Overview
+  JOURNAL   (in) Adam MP, Bick S, Mirzaa GM, Wallace SE and Amemiya A (Eds.);
+            GENEREVIEWS(R);
+            (1993)
+   PUBMED   29792621
+REFERENCE   4  (bases 1 to 8416)
+  AUTHORS   De Leon,D.D. and Pinney,S.E.
+  TITLE     Permanent Neonatal Diabetes Mellitus
+  JOURNAL   (in) Adam MP, Bick S, Mirzaa GM, Wallace SE and Amemiya A (Eds.);
+            GENEREVIEWS(R);
+            (1993)
+   PUBMED   20301620
+REFERENCE   5  (bases 1 to 8416)
+  AUTHORS   Bell,G.I., Swain,W.F., Pictet,R., Cordell,B., Goodman,H.M. and
+            Rutter,W.J.
+  TITLE     Nucleotide sequence of a cDNA clone encoding human preproinsulin
+  JOURNAL   Nature 282 (5738), 525-527 (1979)
+   PUBMED   503234
+REFERENCE   6  (bases 1 to 8416)
+  AUTHORS   SANGER,F.
+  TITLE     Chemistry of insulin; determination of the structure of insulin
+            opens the way to greater understanding of life processes
+  JOURNAL   Science 129 (3359), 1340-1344 (1959)
+   PUBMED   13658959
+COMMENT     REVIEWED REFSEQ: This record has been curated by NCBI staff. The
+            reference sequence was derived from AC132217.15.
+            This sequence is a reference standard in the RefSeqGene project.
+            
+            Summary: This gene encodes insulin, a peptide hormone that plays a
+            vital role in the regulation of carbohydrate and lipid metabolism.
+            After removal of the precursor signal peptide, proinsulin is
+            post-translationally cleaved into three peptides: the B chain and A
+            chain peptides, which are covalently linked via two disulfide bonds
+            to form insulin, and C-peptide. Binding of insulin to the insulin
+            receptor (INSR) stimulates glucose uptake. A multitude of mutant
+            alleles with phenotypic effects have been identified, including
+            insulin-dependent diabetes mellitus, permanent neonatal diabetes
+            diabetes mellitus, maturity-onset diabetes of the young type 10 and
+            hyperproinsulinemia. There is a read-through gene, INS-IGF2, which
+            overlaps with this gene at the 5' region and with the IGF2 gene at
+            the 3' region. [provided by RefSeq, May 2020].
+PRIMARY     REFSEQ_SPAN         PRIMARY_IDENTIFIER PRIMARY_SPAN        COMP
+            1-8416              AC132217.15        81434-89849
+FEATURES             Location/Qualifiers
+     source          1..8416
+                     /organism="Homo sapiens"
+                     /mol_type="genomic DNA"
+                     /db_xref="taxon:9606"
+                     /chromosome="11"
+                     /map="11p15.5"
+     gene            <1..2266
+                     /gene="TH"
+                     /gene_synonym="DYT14; DYT5b; TYH"
+                     /note="tyrosine hydroxylase"
+                     /db_xref="GeneID:7054"
+                     /db_xref="HGNC:HGNC:11782"
+                     /db_xref="MIM:191290"
+     mRNA            join(<137..193,432..527,830..963,1803..2266)
+                     /gene="TH"
+                     /gene_synonym="DYT14; DYT5b; TYH"
+                     /product="tyrosine hydroxylase, transcript variant 1"
+                     /inference="similar to RNA sequence, mRNA (same
+                     species):RefSeq:NM_199292.3"
+                     /exception="annotated by transcript or proteomic data"
+                     /transcript_id="NM_199292.3"
+                     /db_xref="GeneID:7054"
+                     /db_xref="HGNC:HGNC:11782"
+                     /db_xref="MIM:191290"
+     mRNA            join(<137..193,432..527,830..963,1803..2266)
+                     /gene="TH"
+                     /gene_synonym="DYT14; DYT5b; TYH"
+                     /product="tyrosine hydroxylase, transcript variant 2"
+                     /inference="similar to RNA sequence, mRNA (same
+                     species):RefSeq:NM_000360.4"
+                     /exception="annotated by transcript or proteomic data"
+                     /transcript_id="NM_000360.4"
+                     /db_xref="GeneID:7054"
+                     /db_xref="HGNC:HGNC:11782"
+                     /db_xref="MIM:191290"
+     mRNA            join(<137..193,432..527,830..963,1803..2266)
+                     /gene="TH"
+                     /gene_synonym="DYT14; DYT5b; TYH"
+                     /product="tyrosine hydroxylase, transcript variant 3"
+                     /inference="similar to RNA sequence, mRNA (same
+                     species):RefSeq:NM_199293.3"
+                     /exception="annotated by transcript or proteomic data"
+                     /transcript_id="NM_199293.3"
+                     /db_xref="GeneID:7054"
+                     /db_xref="HGNC:HGNC:11782"
+                     /db_xref="MIM:191290"
+     mRNA            join(<137..193,432..527,830..963,1803..2266)
+                     /gene="TH"
+                     /gene_synonym="DYT14; DYT5b; TYH"
+                     /product="tyrosine hydroxylase, transcript variant 5"
+                     /inference="similar to RNA sequence, mRNA (same
+                     species):RefSeq:NM_001440536.1"
+                     /exception="annotated by transcript or proteomic data"
+                     /transcript_id="NM_001440536.1"
+                     /db_xref="GeneID:7054"
+                     /db_xref="HGNC:HGNC:11782"
+                     /db_xref="MIM:191290"
+     mRNA            join(<137..193,432..527,830..963,1803..2266)
+                     /gene="TH"
+                     /gene_synonym="DYT14; DYT5b; TYH"
+                     /product="tyrosine hydroxylase, transcript variant 4"
+                     /inference="similar to RNA sequence, mRNA (same
+                     species):RefSeq:NM_001440535.1"
+                     /exception="annotated by transcript or proteomic data"
+                     /transcript_id="NM_001440535.1"
+                     /db_xref="GeneID:7054"
+                     /db_xref="HGNC:HGNC:11782"
+                     /db_xref="MIM:191290"
+     mRNA            join(<137..193,432..527,830..963,1803..2266)
+                     /gene="TH"
+                     /gene_synonym="DYT14; DYT5b; TYH"
+                     /product="tyrosine hydroxylase, transcript variant 6"
+                     /inference="similar to RNA sequence, mRNA (same
+                     species):RefSeq:NM_001440537.1"
+                     /exception="annotated by transcript or proteomic data"
+                     /transcript_id="NM_001440537.1"
+                     /db_xref="GeneID:7054"
+                     /db_xref="HGNC:HGNC:11782"
+                     /db_xref="MIM:191290"
+     CDS             join(<137..193,432..527,830..963,1803..1962)
+                     /gene="TH"
+                     /gene_synonym="DYT14; DYT5b; TYH"
+                     /EC_number="1.14.16.2"
+                     /inference="similar to AA sequence (same
+                     species):RefSeq:NP_001427465.1"
+                     /exception="annotated by transcript or proteomic data"
+                     /note="isoform e is encoded by transcript variant 5;
+                     tyrosine 3-monooxygenase; dystonia 14; tyrosine
+                     3-hydroxylase"
+                     /codon_start=1
+                     /product="tyrosine 3-monooxygenase isoform e"
+                     /protein_id="NP_001427465.1"
+                     /db_xref="GeneID:7054"
+                     /db_xref="HGNC:HGNC:11782"
+                     /db_xref="MIM:191290"
+                     /translation="MPTPDATTPQAKGFRRAVSELDAKQAEAIMVRGQSPRFIGRRQS
+                     LIEDARKEREAAVAAAAAAVPSEPGDPLEAVAFEEKEGKAVLNLLFSPRATKPSALSR
+                     AVKVFETFEAKIHHLETRPAQRPRAGGPHLEYFVRLEVRRGDLAALLSGVRQVSEDVR
+                     SPAGPKVPWFPRKVSELDKCHHLVTKFDPDLDLDHPGFSDQVYRQRRKLIAEIAFQYR
+                     HGDPIPRVEYTAEEIATWDCCHELLGHVPMLADRTFAQFSQDIGLASLGASDEEIEKL
+                     STLYWFTVEFGLCKQNGEVKAYGAGLLSSYGELLHCLSEEPEIRAFDPEAAAVQPYQD
+                     QTYQSVYFVSESFSDAKDKLRSYASRIQRPFSVKFDPYTLAIDVLDSPQAVRRSLEGV
+                     QDELDTLAHALSAIG"
+     CDS             join(<137..193,432..527,830..963,1803..1962)
+                     /gene="TH"
+                     /gene_synonym="DYT14; DYT5b; TYH"
+                     /EC_number="1.14.16.2"
+                     /inference="similar to AA sequence (same
+                     species):RefSeq:NP_001427464.1"
+                     /exception="annotated by transcript or proteomic data"
+                     /note="isoform d is encoded by transcript variant 4;
+                     tyrosine 3-monooxygenase; dystonia 14; tyrosine
+                     3-hydroxylase"
+                     /codon_start=1
+                     /product="tyrosine 3-monooxygenase isoform d"
+                     /protein_id="NP_001427464.1"
+                     /db_xref="GeneID:7054"
+                     /db_xref="HGNC:HGNC:11782"
+                     /db_xref="MIM:191290"
+                     /translation="MPTPDATTPQAKGFRRAVSELDAKQAEAIMVRGQSPRFIGRRQS
+                     LIEDARKEREAAVAAAAAAVPSEPGDPLEAVAFEEKEGKAVLNLLFSPRATKPSALSR
+                     AVKVFETFEAKIHHLETRPAQRPRAGGPHLEYFVRLEVRRGDLAALLSGVRQVSEDVR
+                     SPAGPKVPWFPRKVSELDKCHHLVTKFDPDLDLDHPGFSDQVYRQRRKLIAEIAFQYR
+                     HGDPIPRVEYTAEEIATWKEVYTTLKGLYATHACGEHLEAFALLERFSGYREDNIPQL
+                     EDVSRFLKERTGFQLRPVAGLLSARDFLASLAFRVFQCTQYIRHASSPMHSPEPDCCH
+                     ELLGHVPMLADRTFAQFSQDIGLASLGASDEEIEKLSTLYWFTVEFGLCKQNGEVKAY
+                     GAGLLSSYGELLHCLSEEPEIRAFDPEAAAVQPYQDQTYQSVYFVSESFSDAKDKLRS
+                     YASRIQRPFSVKFDPYTLAIDVLDSPQAVRRSLEGVQDELDTLAHALSAIG"
+     CDS             join(<137..193,432..527,830..963,1803..1962)
+                     /gene="TH"
+                     /gene_synonym="DYT14; DYT5b; TYH"
+                     /EC_number="1.14.16.2"
+                     /inference="similar to AA sequence (same
+                     species):RefSeq:NP_001427466.1"
+                     /exception="annotated by transcript or proteomic data"
+                     /note="isoform f is encoded by transcript variant 6;
+                     tyrosine 3-monooxygenase; dystonia 14; tyrosine
+                     3-hydroxylase"
+                     /codon_start=1
+                     /product="tyrosine 3-monooxygenase isoform f"
+                     /protein_id="NP_001427466.1"
+                     /db_xref="GeneID:7054"
+                     /db_xref="HGNC:HGNC:11782"
+                     /db_xref="MIM:191290"
+                     /translation="MPTPDATTPQAKGFRRAVSELDAKQAEAIMSPRFIGRRQSLIED
+                     ARKEREAAVAAAAAAVPSEPGDPLEAVAFEEKEGKAVLNLLFSPRATKPSALSRAVKV
+                     FETFEAKIHHLETRPAQRPRAGGPHLEYFVRLEVRRGDLAALLSGVRQVSEDVRSPAG
+                     PKVPWFPRKVSELDKCHHLVTKFDPDLDLDHPGFSDQVYRQRRKLIAEIAFQYRHGDP
+                     IPRVEYTAEEIATWDCCHELLGHVPMLADRTFAQFSQDIGLASLGASDEEIEKLSTLY
+                     WFTVEFGLCKQNGEVKAYGAGLLSSYGELLHCLSEEPEIRAFDPEAAAVQPYQDQTYQ
+                     SVYFVSESFSDAKDKLRSYASRIQRPFSVKFDPYTLAIDVLDSPQAVRRSLEGVQDEL
+                     DTLAHALSAIG"
+     CDS             join(<137..193,432..527,830..963,1803..1962)
+                     /gene="TH"
+                     /gene_synonym="DYT14; DYT5b; TYH"
+                     /EC_number="1.14.16.2"
+                     /inference="similar to AA sequence (same
+                     species):RefSeq:NP_954986.2"
+                     /exception="annotated by transcript or proteomic data"
+                     /note="isoform a is encoded by transcript variant 1;
+                     tyrosine 3-monooxygenase; dystonia 14; tyrosine
+                     3-hydroxylase"
+                     /codon_start=1
+                     /product="tyrosine 3-monooxygenase isoform a"
+                     /protein_id="NP_954986.2"
+                     /db_xref="CCDS:CCDS7731.1"
+                     /db_xref="GeneID:7054"
+                     /db_xref="HGNC:HGNC:11782"
+                     /db_xref="MIM:191290"
+                     /translation="MPTPDATTPQAKGFRRAVSELDAKQAEAIMVRGQGAPGPSLTGS
+                     PWPGTAAPAASYTPTPRSPRFIGRRQSLIEDARKEREAAVAAAAAAVPSEPGDPLEAV
+                     AFEEKEGKAVLNLLFSPRATKPSALSRAVKVFETFEAKIHHLETRPAQRPRAGGPHLE
+                     YFVRLEVRRGDLAALLSGVRQVSEDVRSPAGPKVPWFPRKVSELDKCHHLVTKFDPDL
+                     DLDHPGFSDQVYRQRRKLIAEIAFQYRHGDPIPRVEYTAEEIATWKEVYTTLKGLYAT
+                     HACGEHLEAFALLERFSGYREDNIPQLEDVSRFLKERTGFQLRPVAGLLSARDFLASL
+                     AFRVFQCTQYIRHASSPMHSPEPDCCHELLGHVPMLADRTFAQFSQDIGLASLGASDE
+                     EIEKLSTLYWFTVEFGLCKQNGEVKAYGAGLLSSYGELLHCLSEEPEIRAFDPEAAAV
+                     QPYQDQTYQSVYFVSESFSDAKDKLRSYASRIQRPFSVKFDPYTLAIDVLDSPQAVRR
+                     SLEGVQDELDTLAHALSAIG"
+     misc_feature    191..193
+                     /gene="TH"
+                     /gene_synonym="DYT14; DYT5b; TYH"
+                     /note="Phosphoserine, by CaMK2.
+                     /evidence=ECO:0000269|PubMed:1680128,
+                     ECO:0000269|PubMed:24947669; propagated from
+                     UniProtKB/Swiss-Prot (P07101.5); phosphorylation site"
+     misc_feature    join(471..527,830..871)
+                     /gene="TH"
+                     /gene_synonym="DYT14; DYT5b; TYH"
+                     /note="propagated from UniProtKB/Swiss-Prot (P07101.5);
+                     Region: Disordered. /evidence=ECO:0000256|SAM:MobiDB-lite"
+     misc_feature    860..862
+                     /gene="TH"
+                     /gene_synonym="DYT14; DYT5b; TYH"
+                     /note="Phosphoserine.
+                     /evidence=ECO:0000269|PubMed:24947669,
+                     ECO:0000269|PubMed:28637871, ECO:0000269|PubMed:7901013;
+                     propagated from UniProtKB/Swiss-Prot (P07101.5);
+                     phosphorylation site"
+     misc_feature    887..889
+                     /gene="TH"
+                     /gene_synonym="DYT14; DYT5b; TYH"
+                     /note="Phosphoserine, by CaMK2 and PKA.
+                     /evidence=ECO:0000269|PubMed:1680128,
+                     ECO:0000269|PubMed:7901013; propagated from
+                     UniProtKB/Swiss-Prot (P07101.5); phosphorylation site"
+     CDS             join(<137..193,432..527,830..963,1803..1962)
+                     /gene="TH"
+                     /gene_synonym="DYT14; DYT5b; TYH"
+                     /EC_number="1.14.16.2"
+                     /inference="similar to AA sequence (same
+                     species):RefSeq:NP_000351.2"
+                     /exception="annotated by transcript or proteomic data"
+                     /note="isoform b is encoded by transcript variant 2;
+                     tyrosine 3-monooxygenase; dystonia 14; tyrosine
+                     3-hydroxylase"
+                     /codon_start=1
+                     /product="tyrosine 3-monooxygenase isoform b"
+                     /protein_id="NP_000351.2"
+                     /db_xref="CCDS:CCDS7730.1"
+                     /db_xref="GeneID:7054"
+                     /db_xref="HGNC:HGNC:11782"
+                     /db_xref="MIM:191290"
+                     /translation="MPTPDATTPQAKGFRRAVSELDAKQAEAIMSPRFIGRRQSLIED
+                     ARKEREAAVAAAAAAVPSEPGDPLEAVAFEEKEGKAVLNLLFSPRATKPSALSRAVKV
+                     FETFEAKIHHLETRPAQRPRAGGPHLEYFVRLEVRRGDLAALLSGVRQVSEDVRSPAG
+                     PKVPWFPRKVSELDKCHHLVTKFDPDLDLDHPGFSDQVYRQRRKLIAEIAFQYRHGDP
+                     IPRVEYTAEEIATWKEVYTTLKGLYATHACGEHLEAFALLERFSGYREDNIPQLEDVS
+                     RFLKERTGFQLRPVAGLLSARDFLASLAFRVFQCTQYIRHASSPMHSPEPDCCHELLG
+                     HVPMLADRTFAQFSQDIGLASLGASDEEIEKLSTLYWFTVEFGLCKQNGEVKAYGAGL
+                     LSSYGELLHCLSEEPEIRAFDPEAAAVQPYQDQTYQSVYFVSESFSDAKDKLRSYASR
+                     IQRPFSVKFDPYTLAIDVLDSPQAVRRSLEGVQDELDTLAHALSAIG"
+     CDS             join(<137..193,432..527,830..963,1803..1962)
+                     /gene="TH"
+                     /gene_synonym="DYT14; DYT5b; TYH"
+                     /EC_number="1.14.16.2"
+                     /inference="similar to AA sequence (same
+                     species):RefSeq:NP_954987.2"
+                     /exception="annotated by transcript or proteomic data"
+                     /note="isoform c is encoded by transcript variant 3;
+                     tyrosine 3-monooxygenase; dystonia 14; tyrosine
+                     3-hydroxylase"
+                     /codon_start=1
+                     /product="tyrosine 3-monooxygenase isoform c"
+                     /protein_id="NP_954987.2"
+                     /db_xref="CCDS:CCDS31338.1"
+                     /db_xref="GeneID:7054"
+                     /db_xref="HGNC:HGNC:11782"
+                     /db_xref="MIM:191290"
+                     /translation="MPTPDATTPQAKGFRRAVSELDAKQAEAIMGAPGPSLTGSPWPG
+                     TAAPAASYTPTPRSPRFIGRRQSLIEDARKEREAAVAAAAAAVPSEPGDPLEAVAFEE
+                     KEGKAVLNLLFSPRATKPSALSRAVKVFETFEAKIHHLETRPAQRPRAGGPHLEYFVR
+                     LEVRRGDLAALLSGVRQVSEDVRSPAGPKVPWFPRKVSELDKCHHLVTKFDPDLDLDH
+                     PGFSDQVYRQRRKLIAEIAFQYRHGDPIPRVEYTAEEIATWKEVYTTLKGLYATHACG
+                     EHLEAFALLERFSGYREDNIPQLEDVSRFLKERTGFQLRPVAGLLSARDFLASLAFRV
+                     FQCTQYIRHASSPMHSPEPDCCHELLGHVPMLADRTFAQFSQDIGLASLGASDEEIEK
+                     LSTLYWFTVEFGLCKQNGEVKAYGAGLLSSYGELLHCLSEEPEIRAFDPEAAAVQPYQ
+                     DQTYQSVYFVSESFSDAKDKLRSYASRIQRPFSVKFDPYTLAIDVLDSPQAVRRSLEG
+                     VQDELDTLAHALSAIG"
+     misc_feature    191..193
+                     /gene="TH"
+                     /gene_synonym="DYT14; DYT5b; TYH"
+                     /note="Phosphoserine, by CaMK2.
+                     /evidence=ECO:0000269|PubMed:1680128,
+                     ECO:0000269|PubMed:24947669; propagated from
+                     UniProtKB/Swiss-Prot (P07101.5); phosphorylation site"
+     misc_feature    848..850
+                     /gene="TH"
+                     /gene_synonym="DYT14; DYT5b; TYH"
+                     /note="Phosphoserine.
+                     /evidence=ECO:0000269|PubMed:24947669,
+                     ECO:0000269|PubMed:28637871, ECO:0000269|PubMed:7901013;
+                     propagated from UniProtKB/Swiss-Prot (P07101.5);
+                     phosphorylation site"
+     misc_feature    875..877
+                     /gene="TH"
+                     /gene_synonym="DYT14; DYT5b; TYH"
+                     /note="Phosphoserine, by CaMK2 and PKA.
+                     /evidence=ECO:0000269|PubMed:1680128,
+                     ECO:0000269|PubMed:7901013; propagated from
+                     UniProtKB/Swiss-Prot (P07101.5); phosphorylation site"
+     gene            4986..>8416
+                     /gene="INS-IGF2"
+                     /gene_synonym="INSIGF"
+                     /note="INS-IGF2 readthrough"
+                     /db_xref="GeneID:723961"
+                     /db_xref="HGNC:HGNC:33527"
+     gene            4986..6416
+                     /gene="INS"
+                     /gene_synonym="IDDM; IDDM1; IDDM2; ILPR; IRDN; MODY10;
+                     PNDM4"
+                     /note="insulin"
+                     /db_xref="GeneID:3630"
+                     /db_xref="HGNC:HGNC:6081"
+                     /db_xref="MIM:176730"
+     mRNA            join(4986..5027,5207..5410,6198..6416)
+                     /gene="INS"
+                     /gene_synonym="IDDM; IDDM1; IDDM2; ILPR; IRDN; MODY10;
+                     PNDM4"
+                     /product="insulin, transcript variant 1"
+                     /transcript_id="NM_000207.3"
+                     /db_xref="GeneID:3630"
+                     /db_xref="HGNC:HGNC:6081"
+                     /db_xref="MIM:176730"
+     mRNA            join(4986..5027,5207..>5410)
+                     /gene="INS-IGF2"
+                     /gene_synonym="INSIGF"
+                     /product="INS-IGF2 readthrough, transcript variant 2"
+                     /inference="similar to RNA sequence, mRNA (same
+                     species):RefSeq:NM_001042376.3"
+                     /exception="annotated by transcript or proteomic data"
+                     /transcript_id="NM_001042376.3"
+                     /db_xref="GeneID:723961"
+                     /db_xref="HGNC:HGNC:33527"
+     misc_RNA        join(4986..5027,5207..>5410)
+                     /gene="INS-IGF2"
+                     /gene_synonym="INSIGF"
+                     /product="INS-IGF2 readthrough, transcript variant 1"
+                     /inference="similar to RNA sequence (same
+                     species):RefSeq:NR_003512.4"
+                     /exception="annotated by transcript or proteomic data"
+                     /transcript_id="NR_003512.4"
+                     /db_xref="GeneID:723961"
+                     /db_xref="HGNC:HGNC:33527"
+     exon            4986..5027
+                     /gene="INS"
+                     /gene_synonym="IDDM; IDDM1; IDDM2; ILPR; IRDN; MODY10;
+                     PNDM4"
+                     /inference="alignment:Splign:2.1.0"
+                     /number=1
+     exon            5207..5410
+                     /gene="INS"
+                     /gene_synonym="IDDM; IDDM1; IDDM2; ILPR; IRDN; MODY10;
+                     PNDM4"
+                     /inference="alignment:Splign:2.1.0"
+                     /number=2
+     CDS             join(5224..5410,6198..6343)
+                     /gene="INS"
+                     /gene_synonym="IDDM; IDDM1; IDDM2; ILPR; IRDN; MODY10;
+                     PNDM4"
+                     /note="proinsulin; preproinsulin"
+                     /codon_start=1
+                     /product="insulin preproprotein"
+                     /protein_id="NP_000198.1"
+                     /db_xref="CCDS:CCDS7729.1"
+                     /db_xref="GeneID:3630"
+                     /db_xref="HGNC:HGNC:6081"
+                     /db_xref="MIM:176730"
+                     /translation="MALWMRLLPLLALLALWGPDPAAAFVNQHLCGSHLVEALYLVCG
+                     ERGFFYTPKTRREAEDLQVGQVELGGGPGAGSLQPLALEGSLQKRGIVEQCCTSICSL
+                     YQLENYCN"
+     sig_peptide     5224..5295
+                     /gene="INS"
+                     /gene_synonym="IDDM; IDDM1; IDDM2; ILPR; IRDN; MODY10;
+                     PNDM4"
+                     /inference="COORDINATES: ab initio prediction:SignalP:6.0"
+     proprotein      join(5296..5410,6198..6340)
+                     /gene="INS"
+                     /gene_synonym="IDDM; IDDM1; IDDM2; ILPR; IRDN; MODY10;
+                     PNDM4"
+                     /product="proinsulin"
+     mat_peptide     5296..5385
+                     /gene="INS"
+                     /gene_synonym="IDDM; IDDM1; IDDM2; ILPR; IRDN; MODY10;
+                     PNDM4"
+                     /product="insulin B chain"
+     mat_peptide     join(5392..5410,6198..6271)
+                     /gene="INS"
+                     /gene_synonym="IDDM; IDDM1; IDDM2; ILPR; IRDN; MODY10;
+                     PNDM4"
+                     /product="C-peptide"
+     mat_peptide     6278..6340
+                     /gene="INS"
+                     /gene_synonym="IDDM; IDDM1; IDDM2; ILPR; IRDN; MODY10;
+                     PNDM4"
+                     /product="insulin A chain"
+     CDS             5224..>5410
+                     /gene="INS-IGF2"
+                     /gene_synonym="INSIGF"
+                     /inference="similar to AA sequence (same
+                     species):RefSeq:NP_001035835.1"
+                     /exception="annotated by transcript or proteomic data"
+                     /note="INS-IGF2 readthrough transcript protein; insulin-
+                     insulin-like growth factor 2 read-through product"
+                     /codon_start=1
+                     /product="insulin, isoform 2 precursor"
+                     /protein_id="NP_001035835.1"
+                     /db_xref="GeneID:723961"
+                     /db_xref="HGNC:HGNC:33527"
+                     /translation="MALWMRLLPLLALLALWGPDPAAAFVNQHLCGSHLVEALYLVCG
+                     ERGFFYTPKTRREAEDLQASALSLSSSTSTWPEGLDATARAPPALVVTANIGQAGGSS
+                     SRQFRQRALGTSDSPVLFIHCPGAAGTAQGLEYRGRRVTTELVWEEVDSSPQPQGSES
+                     LPAQPPAQPAPQPEPQQAREPSPEVSCCGLWPRRPQRSQN"
+     sig_peptide     5224..5295
+                     /gene="INS-IGF2"
+                     /gene_synonym="INSIGF"
+                     /inference="COORDINATES: ab initio prediction:SignalP:6.0"
+     exon            6198..6416
+                     /gene="INS"
+                     /gene_synonym="IDDM; IDDM1; IDDM2; ILPR; IRDN; MODY10;
+                     PNDM4"
+                     /inference="alignment:Splign:2.1.0"
+                     /number=3
+ORIGIN      
+        1 ggcggccagg gaaggtctct gccgccaggg aagtgtccca gagacccctg gaggggctgc
+       61 tgacaccccc ggtgccccca cctcgagcat gacccagggc tgcctctccc catccttcat
+      121 cctccctgct ccacaggaca ttggcctggc gtccctgggg gcctcggatg aggaaattga
+      181 gaagctgtcc acggtgggtt gacccctccc tgcagggcct ggggtgtggg tttgggggtc
+      241 tgaatccagg cctcaccctc ttgccgtcca ggctgaggcc tctccttcca cccacgaatt
+      301 gtgaccctca ccctggcctg cctgcatcct ggcctggcct ccctgggggt ggtatcctgg
+      361 tcacgggtga ccaggggctg cccggtgggc ggcagctgtc tctgggctga tgctgcccgg
+      421 cttccccgca gctgtactgg ttcacggtgg agttcgggct gtgtaagcag aacggggagg
+      481 tgaaggccta tggtgccggg ctgctgtcct cctacgggga gctcctggtg agagtctctc
+      541 cttgctgcag cccccagcag aggggcaggg ctgggggacg gtgcagggag gggacaggct
+      601 cccagtggga ggaaactgag gcctggacct ccaggactca ggctctgttt gggagaaggc
+      661 ttgtctctgc ccagtcctca ccccacatta tcccaggcct ccgaaggccc ggcgggggag
+      721 atgggggtga ctctacccaa ggaacccacc cagcgtcagg ccacggtgcc ccagttccct
+      781 cggggacctg ggtgcagtgg agtcagtgat gccattggcc tcctgccagc actgcctgtc
+      841 tgaggagcct gagattcggg ccttcgaccc tgaggctgcg gccgtgcagc cctaccaaga
+      901 ccagacgtac cagtcagtct acttcgtgtc tgagagcttc agtgacgcca aggacaagct
+      961 caggtgggct aggctgctag ggcaagcccc ccatggtgcc cccaaactgg gccagccagg
+     1021 ccttccttct ggccttgagc agggctggac ctgtgagccc aggtcacaga tgagaaaacc
+     1081 gacccctggt tgcagcagcc cccacacagc agggacacca tccgtgagaa ggaccccagc
+     1141 gtctggggag gggcagacct acaggactgg gggctgctgg gtggccgggt caaggccagt
+     1201 cttggaggtg ctgacagagc ctgagctttg tgaggacgtc ctgtggaacc tgtcccggcc
+     1261 ccctgccctg ggatggggag aagtcagggg gatagacaga gtcaaggtgg gggacagggc
+     1321 gggagtgggg tccccagggc tgggggcctt tggtgcagtg accagagtgt caggagaggg
+     1381 gagcaaagcc ctctagcctc atcctcataa aaggtctcat cattttccct ccagcctctt
+     1441 atgcactggg gaaactgagg ccaggggcta tgtgtccagc ggacaggggt gctgaattcc
+     1501 acccacaggc ttagggatat ggtcaaggaa agcttcctgg aggaggccca gtggaggttc
+     1561 agggagggat ggggtgcccg gcagtctcta gtggaaaagg cgcctagcct atctccccca
+     1621 tgaaccccct cacccagccc tggaagaggc ctcagtgtcc cgcctgtgac cagttggctc
+     1681 agaaaagccc tgggagctct gagccactgt gaaggtggaa acgcggcccc tggcctcccc
+     1741 tctcctggag gctgcagact ctgcccgcca gttgacgagg gctctgccgc tctcctcccc
+     1801 aggagctatg cctcacgcat ccagcgcccc ttctccgtga agttcgaccc gtacacgctg
+     1861 gccatcgacg tgctggacag cccccaggcc gtgcggcgct ccctggaggg tgtccaggat
+     1921 gagctggaca cccttgccca tgcgctgagt gccattggct aggtgcacgg cgtccctgag
+     1981 ggcccttccc aacctcccct ggtcctgcac tgtcccggag ctcaggccct ggtgaggggc
+     2041 tgggtcccgg gtgcccccca tgccctccct gctgccaggc tcccactgcc cctgcacctg
+     2101 cttctcagcg caacagctgt gtgtgcccgt ggtgaggttg tgctgcctgt ggtgaggtcc
+     2161 tgtcctggct cccagggtcc tgggggctgc tgcactgccc tccgcccttc cctgacactg
+     2221 tctgctgccc caatcaccgt cacaataaaa gaaactgtgg tctctacacc tgcctggccc
+     2281 cacatctgtg ccacagagac agaccctggg atcctcagac tcccacaccc ccaccccagc
+     2341 ctcactcaga ggtttcgccc tggcctcctt cctcctctgg gagatggctg gccgccctgg
+     2401 ccaggcagct ggcccctccg ggcctggttt ccccgctcac cctgaggccc cgcccagctc
+     2461 tgagccccaa gcagctccag aggctcgggc accctggccg agctgcccca tctccgtggg
+     2521 gtgccctccc aaggtgggga gccacgtgac agtgggaggg cctctctcag gcctggcagg
+     2581 gagcaggggt cacaaactgt gctggctggg ggtggtctca gaggtgggcc tgcaggccta
+     2641 accctccctg ctgacagggc tcccagccct tgagagaaac agggatggag gaacagctgc
+     2701 cctgatgccc tcacccaccc ggagcaggcc ctgcgaacca aggggaacct cagtgtggcc
+     2761 cccagcatgt gtgctgatgg ggagggtctg gctgagctgg tgcccaggca gatggtctgg
+     2821 gcctgtctcc ccagcgaggc aggatggggg ctggatttca gactctgtaa gatgcccctg
+     2881 gcttactcga ggggcctgga cattgccctc cagagagagc acccaacacc ctccaggctt
+     2941 gaccggccag ggtgtcccct tcctaccttg gagagagcag ccccagggca tcctgcaggg
+     3001 ggtgctggga caccagctgg ccttcaaggt ctctgcctcc ctccagccac cccactacac
+     3061 gctgctggga tcctggatct cagctccccg gccgacaaca ctggcaaact cctactcatc
+     3121 cacgaaggcc ctcctgggca tggtggtcct tcccagcctg gcagtctgtt cctcacacac
+     3181 cttgttagtg cccagcccct gaggttgcag ctgggggtgt ctctgaaggg ctgtgagccc
+     3241 ccaggaagcc ctggggaagt gcctgccttg cctccccccg gccctgccag cgcctggctc
+     3301 tgccctccta cctgggctcc ccccatccag cctccctccc tacacactcc tctcaaggag
+     3361 gcacccatgt cctctccagc tgccgggcct cagagcactg tggcgtcctg gggcagccac
+     3421 cgcatgtcct gctgtggcat ggctcagggt ggaaagggcg gaagggaggg gtcctgcaga
+     3481 tagctggtgc ccactaccaa acccgctcgg ggcaggagag ccaaaggctg ggtgtgtgca
+     3541 gagcggcccc gagaggttcc gaggctgagg ccagggtggg acatagggat gcgaggggcc
+     3601 ggggcacagg atactccaac ctgcctgccc ccatggtctc atcctcctgc ttctgggacc
+     3661 tcctgatcct gcccctggtg ctaagaggca ggtaggggct gcaggcagca gggctcggag
+     3721 cccatgcccc ctcaccatgg gtcaggctgg acctccaggt gcctgttctg gggagctggg
+     3781 agggccggag gggtgtaccc caggggctca gcccagatga cactatgggg gtgatggtgt
+     3841 catgggacct ggccaggaga ggggagatgg gctcccagaa gaggagtggg ggctgagagg
+     3901 gtgcctgggg ggccaggacg gagctgggcc agtgcacagc ttcccacacc tgcccacccc
+     3961 cagagtcctg ccgccacccc cagatcacac ggaagatgag gtccgagtgg cctgctgagg
+     4021 acttgctgct tgtccccagg tccccaggtc atgccctcct tctgccaccc tggggagctg
+     4081 agggcctcag ctggggctgc tgtcctaagg cagggtggga actaggcagc cagcagggag
+     4141 gggacccctc cctcactccc actctcccac ccccaccacc ttggcccatc catggcggca
+     4201 tcttgggcca tccgggactg gggacagggg tcctggggac aggggtgtgg ggacaggggt
+     4261 cctggggaca ggggtctggg gacaggggtc ctggggacag gggtgtgggg acaggggtgt
+     4321 ggggacaggg gtgtggggac aggggtcctg gggacagggg tctggggaca ggggtctgag
+     4381 gacaggggtg tggggacagg ggtgtgggga caggggtgtg gggacagggg tgtggggaca
+     4441 ggggtctggg gacaggggtc cgggggacag gggtgtgggg acaggggtgt ggggacaggg
+     4501 gtgtggggac aggggtctgg ggacaggggt gtggggacag gggtcctggg gacaggggtg
+     4561 tggggatagg ggtgtgggga caggggtgtg gggacagggg tgtggggaca ggggtctggg
+     4621 gacagcagcg caaagagccc cgccctgcag cctccagctc tcctggtcta atgtggaaag
+     4681 tggcccaggt gagggctttg ctctcctgga gacatttgcc cccagctgtg agcagggaca
+     4741 ggtctggcca ccgggcccct ggttaagact ctaatgaccc gctggtcctg aggaagaggt
+     4801 gctgacgacc aaggagatct tcccacagac ccagcaccag ggaaatggtc cggaaattgc
+     4861 agcctcagcc cccagccatc tgccgacccc cccaccccag gccctaatgg gccaggcggc
+     4921 aggggttgag aggtagggga gatgggctct gagactataa agccagcggg ggcccagcag
+     4981 ccctcagccc tccaggacag gctgcatcag aagaggccat caagcaggtc tgttccaagg
+     5041 gcctttgcgt caggtgggct caggattcca gggtggctgg accccaggcc ccagctctgc
+     5101 agcagggagg acgtggctgg gctcgtgaag catgtggggg tgagcccagg ggccccaagg
+     5161 cagggcacct ggccttcagc ctgcctcagc cctgcctgtc tcccagatca ctgtccttct
+     5221 gccatggccc tgtggatgcg cctcctgccc ctgctggcgc tgctggccct ctggggacct
+     5281 gacccagccg cagcctttgt gaaccaacac ctgtgcggct cacacctggt ggaagctctc
+     5341 tacctagtgt gcggggaacg aggcttcttc tacacaccca agacccgccg ggaggcagag
+     5401 gacctgcagg gtgagccaac tgcccattgc tgcccctggc cgcccccagc caccccctgc
+     5461 tcctggcgct cccacccagc atgggcagaa gggggcagga ggctgccacc cagcaggggg
+     5521 tcaggtgcac ttttttaaaa agaagttctc ttggtcacgt cctaaaagtg accagctccc
+     5581 tgtggcccag tcagaatctc agcctgagga cggtgttggc ttcggcagcc ccgagataca
+     5641 tcagagggtg ggcacgctcc tccctccact cgcccctcaa acaaatgccc cgcagcccat
+     5701 ttctccaccc tcatttgatg accgcagatt caagtgtttt gttaagtaaa gtcctgggtg
+     5761 acctggggtc acagggtgcc ccacgctgcc tgcctctggg cgaacacccc atcacgcccg
+     5821 gaggagggcg tggctgcctg cctgagtggg ccagacccct gtcgccaggc ctcacggcag
+     5881 ctccatagtc aggagatggg gaagatgctg gggacaggcc ctggggagaa gtactgggat
+     5941 cacctgttca ggctcccact gtgacgctgc cccggggcgg gggaaggagg tgggacatgt
+     6001 gggcgttggg gcctgtaggt ccacacccag tgtgggtgac cctccctcta acctgggtcc
+     6061 agcccggctg gagatgggtg ggagtgcgac ctagggctgg cgggcaggcg ggcactgtgt
+     6121 ctccctgact gtgtcctcct gtgtccctct gcctcgccgc tgttccggaa cctgctctgc
+     6181 gcggcacgtc ctggcagtgg ggcaggtgga gctgggcggg ggccctggtg caggcagcct
+     6241 gcagcccttg gccctggagg ggtccctgca gaagcgtggc attgtggaac aatgctgtac
+     6301 cagcatctgc tccctctacc agctggagaa ctactgcaac tagacgcagc ccgcaggcag
+     6361 ccccacaccc gccgcctcct gcaccgagag agatggaata aagcccttga accagccctg
+     6421 ctgtgccgtc tgtgtgtctt gggggccctg ggccaagccc cacttcccgg cactgttgtg
+     6481 agcccctccc agctctctcc acgctctctg ggtgcccaca ggtgccaacg ccggccaggc
+     6541 ccagcatgca gtggctctcc ccaaagcggc catgcctgtc ggctgcctgc tgcccccacc
+     6601 ctgtggctca gggtccagta tgggagctgc gggggtctct gaggggccag gggtggtggg
+     6661 gccactgaga agtgacttct tgttcagtag ctctggactc ttggagtccc cagagacctt
+     6721 gttcaggaaa gggaatgaga acattccagc aattttcccc ccacctagcc ctcccaggtt
+     6781 ctatttttag agttatttct gatggagtcc ctgtggaggg aggaggctgg gctgagggag
+     6841 ggggtcctgc agggcggggg gctgggaagg tggggagagg ctgccgagag ccacccgcta
+     6901 tccccagctc tgggcagccc cgggacagtc acacaccctg gcctcgcggc ccaagctggc
+     6961 agccgtctgc agccacagct tatgccagcc caggtccagc cagacacctg agggacccac
+     7021 tggtgccttg gaggaagcag gagaggtcag atggcaccat gagctggggc aggtgcaggg
+     7081 accgtggcag cacctggcag ggcctcagaa cccatgcctt gggcaccccg gccatgaggc
+     7141 cctgaggatt gcagcccagg agaagcaggg aaccgccagg gccacagggg cagagaccag
+     7201 ggccagggtc cccctgcagc cccttagccc accccctccc agtaagcagg gctgcttggc
+     7261 tggcttcctt tgctacagac ctgctgctca cccagaaggg cccacgggcc ctggtgacaa
+     7321 ggtcgttgtg gctccaggtc cttgggggtc ctgacacaga gcctcttctg cagcacccct
+     7381 gaggacaggg tggctccgct gggcacccag cctagtgggc agacgagaac ctaggggctg
+     7441 cctgggccta ctgtggcctg ggaggtcagc gggtgaccct agctaccctg tggctgggcc
+     7501 agtctgcctg ccacccaggc caaaccaatc tgcacctttc ctgagagctc cacccagggc
+     7561 tgggctgggg atggctgggc ctggggctgg catgggctgt ggctgcagac cactgccagc
+     7621 ttgggcctcg aggccaggag ctcaccctcc agctggggac ctggccactg gggcagccct
+     7681 gttcctgaag ctctgagctc accccttccc catgaccaca tcagcccccc tccacccaga
+     7741 gatgtcacag cccccagcta gccccgcctc cagagtgggg gccaaggctg ggcaggcggg
+     7801 tggacggccg gacactggcc ccggaagagg agggaggcgg tggctgggat cggcagcagc
+     7861 cgtccatggg aacacccagc cggccccact cgcacgggta gagacagggg cgccctgctg
+     7921 gagctgaggt atgtgagctc gcgcggggct gggccaaagc ggggcccggt gggccggctg
+     7981 ggaggctgcc caccagtcag ccatcggcca agctgttgcc ctggctgacc ctgatggcca
+     8041 acaaggccgt agggagtgat gggcagaggc cccttctggg aggggagggt cagtgctctg
+     8101 tgggggaccg tgtgttggag tggagggcag caggaggagc cctttggtgt ccagggactc
+     8161 ctggagctgc cccagccttc caggacttgc agggcagctg gcactggctg gtgctggggg
+     8221 ctgaggagtg tcttttgagg ggccaaattt tctgtgactt ctgtcctggg ggacctctga
+     8281 cctgaggcct caggagaggg caaggccgcc cacccaaaag agatgcagcc atggttcgcg
+     8341 gtgccctcgg ctgccctggg ccagagctgg ggctagcttt caccttgttg agacccagga
+     8401 ctctgtcccc caagcc
+//
+
