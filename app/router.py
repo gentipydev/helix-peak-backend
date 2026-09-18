@@ -1,19 +1,15 @@
-"""The single endpoint: GET /fetch/{id}."""
+"""The read endpoint: GET /gene/{id}/{gene}."""
 
+import contextlib
 from urllib.error import HTTPError, URLError
 
 from fastapi import APIRouter, HTTPException
 
-from .entrez_client import fetch_genbank
+from .entrez_client import fetch_genbank_record
+from .genbank_parser import GeneNotFound, extract_gene
+from .schemas import GeneResponse
 
 router = APIRouter()
-
-# NCBI does not signal "no such record" with an empty body. A well-formed but
-# unknown accession comes back as HTTP 400, while an id it cannot even parse
-# comes back as HTTP 200 whose body is literally
-# "Error: F a i l e d  t o  u n d e r s t a n d  i d : ..." -- so a valid
-# response has to be recognised positively, by its GenBank header.
-_GENBANK_HEADER = "LOCUS"
 
 
 def _upstream_message(exc: HTTPError) -> str:
@@ -27,24 +23,27 @@ def _upstream_message(exc: HTTPError) -> str:
     return body.strip() or (exc.reason or str(exc))
 
 
-@router.get("/fetch/{id}")
-def fetch(id: str) -> dict:
-    """Fetch one GenBank record from NCBI and return its raw text.
+def _no_record(id: str) -> str:
+    return "No GenBank record found for id {!r}.".format(id)
 
-    Deliberately a sync ``def``: ``Entrez.efetch`` is blocking urllib, so
-    FastAPI runs this in a threadpool. Making it ``async def`` would block the
-    event loop for the whole round trip to NCBI.
+
+@contextlib.contextmanager
+def _upstream_errors(id: str):
+    """Translate urllib failures from an Entrez call into HTTPExceptions.
+
+    A context manager rather than inline handling so the mapping is stated once
+    and stays reusable as endpoints are added. The clauses stay
+    most-specific-first because HTTPError subclasses URLError, which subclasses
+    OSError -- reordering them would silently swallow the specific cases.
+
+    Any upstream 400 is read as "not found": ``id`` is the only part of the
+    request that can be invalid.
     """
     try:
-        content = fetch_genbank(id)
+        yield
     except HTTPError as exc:
-        # db/rettype/retmode are hardcoded, so `id` is the only thing that can
-        # make the request invalid -- an upstream 400 means "no such record".
         if exc.code == 400:
-            raise HTTPException(
-                status_code=404,
-                detail="No GenBank record found for id {!r}.".format(id),
-            )
+            raise HTTPException(status_code=404, detail=_no_record(id))
         raise HTTPException(
             status_code=502,
             detail="NCBI returned {}: {}".format(exc.code, _upstream_message(exc)),
@@ -55,17 +54,35 @@ def fetch(id: str) -> dict:
             detail="Could not reach NCBI: {}".format(exc.reason),
         )
     except OSError as exc:
-        # socket.timeout and friends; also the fallback for transport errors
-        # that Biopython re-raises without a URLError wrapper.
         raise HTTPException(
             status_code=502,
             detail="Could not reach NCBI: {}".format(exc),
         )
 
-    if not content.lstrip().startswith(_GENBANK_HEADER):
+
+@router.get("/gene/{id}/{gene}", response_model=GeneResponse)
+def read_gene(id: str, gene: str) -> dict:
+    """Fetch one GenBank record and return just ``gene`` from it, structured.
+
+    Deliberately a sync ``def``: ``Entrez.efetch`` is blocking urllib, so
+    FastAPI runs this in a threadpool. Making it ``async def`` would block the
+    event loop for the whole round trip to NCBI.
+
+    ``id`` and ``gene`` are both free parameters: the record to read and the
+    gene to keep are the client's choice, not this service's.
+    """
+    with _upstream_errors(id):
+        try:
+            record = fetch_genbank_record(id)
+        except ValueError:
+            # Not a GenBank record at all -- NCBI answers an unusable id with
+            # plain text and an HTTP 200.
+            raise HTTPException(status_code=404, detail=_no_record(id))
+
+    try:
+        return extract_gene(record, gene)
+    except GeneNotFound:
         raise HTTPException(
             status_code=404,
-            detail="No GenBank record found for id {!r}.".format(id),
+            detail="No gene {!r} in record {!r}.".format(gene, id),
         )
-
-    return {"id": id, "content": content}

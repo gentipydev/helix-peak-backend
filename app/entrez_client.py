@@ -1,15 +1,12 @@
-"""Thin wrapper around the single Entrez call this service makes."""
+"""Thin wrapper around the Entrez call this service makes."""
 
-from Bio import Entrez
+from Bio import Entrez, SeqIO
+from Bio.SeqRecord import SeqRecord
 
 
-def fetch_genbank(id: str) -> str:
-    """Return the raw GenBank flat file for ``id`` from NCBI's nucleotide db.
-
-    Returns the upstream text verbatim, including NCBI's own error bodies --
-    classifying those is the router's job.
-    """
+def fetch_genbank_record(id: str) -> SeqRecord:
     handle = Entrez.efetch(db="nucleotide", id=id, rettype="gb", retmode="text")
-    content = handle.read()
-    handle.close()
-    return content
+    try:
+        return SeqIO.read(handle, "genbank")
+    finally:
+        handle.close()

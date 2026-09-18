@@ -20,11 +20,7 @@ class Settings(BaseSettings):
 
     ncbi_email: str
 
-    # Entrez.efetch offers no timeout argument and urllib has no default, so a
-    # stalled NCBI connection would otherwise hang a request forever.
     ncbi_timeout_seconds: float = 20.0
 
 
-# Instantiated at import time so a missing NCBI_EMAIL raises a ValidationError
-# during startup instead of on the first request.
 settings = Settings()

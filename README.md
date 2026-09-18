@@ -1,33 +1,69 @@
 # helix-peak-backend
 
-A minimal FastAPI service with exactly one endpoint: fetch a GenBank record from
-NCBI and return its raw text. It exists so the HelixPeak Flutter app has a real
-backend to talk to — the smallest slice that works end to end.
+A minimal FastAPI service that fetches a GenBank record from NCBI and returns one
+gene lifted out of it. It exists so the HelixPeak Flutter app has a real backend
+to talk to.
 
-It wraps a single Biopython call:
+The endpoint wraps a single Biopython call:
 
 ```python
 Entrez.efetch(db="nucleotide", id=id, rettype="gb", retmode="text")
 ```
 
+`db`, `rettype` and `retmode` are hardcoded; `id` is the only input to it.
+
 ## The endpoint
 
 ```
-GET /fetch/{id}
+GET /gene/{id}/{gene}    one gene from a GenBank record, structured
 ```
 
-`db`, `rettype` and `retmode` are hardcoded; `id` is the only input.
+### `GET /gene/{id}/{gene}`
+
+Parses the FEATURES table and returns just the requested gene: its span, sequence,
+exons, transcript, protein, and peptides. Coordinates are **1-based inclusive**,
+matching what NCBI shows for the record rather than Biopython's 0-based half-open
+internals. `join(...)` locations keep their parts in `segments`, so introns are not
+silently spliced out.
+
+The payload is only what the app draws. A length a client can compute from what is
+already here — a span's `end - start + 1`, a translation's length — is not sent, so
+there is never a second copy of a number to disagree with the first.
 
 ```console
-$ curl localhost:8000/fetch/NG_007114
+$ curl localhost:8000/gene/NG_007114/INS
 {
-  "id": "NG_007114",
-  "content": "LOCUS       NG_007114               8416 bp    DNA     linear   PRI 06-SEP-2026\nDEFINITION  Homo sapiens insulin (INS), RefSeqGene on chromosome 11.\n..."
+  "gene": "INS",
+  "location": {"start": 4986, "end": 6416, "strand": 1},
+  "sequence": "AGCCCTCCAGGACAGGCTGCATCAGAAGAGG...",
+  "transcript": {"segments": [{"start": 4986, "end": 5027}, ...]},
+  "protein": {
+    "product": "insulin preproprotein",
+    "translation": "MALWMRLLPLLALLALWGPDPAAAFVNQHLCGSHLVEALYLVCGERGFFYTPKT...",
+    "segments": [{"start": 5224, "end": 5410}, {"start": 6198, "end": 6343}]
+  },
+  "exons": [{"number": 1, "start": 4986, "end": 5027}, ...],
+  "signal_peptide": {"product": null, "segments": [...], "translation": "MALWMRLLPLLALLALWGPDPAAA"},
+  "proprotein": {"product": "proinsulin", "segments": [...], "translation": "FVNQHLCGSHLVEA..."},
+  "peptides": [
+    {"product": "insulin B chain", "segments": [...], "translation": "FVNQHLCGSHLVEALYLVCGERGFFYTPKT"},
+    ...
+  ]
 }
 ```
 
-The GenBank text is returned verbatim. Parsing the FEATURES table into structured
-JSON is a later phase.
+Both `id` and `gene` are free parameters: which record to read and which gene to
+keep are the client's choice. The Flutter app defaults to `NG_007114` / `INS`.
+
+#### Why the gene filter is an exact match
+
+`NG_007114` is a RefSeqGene *region*, not a single gene. It carries three: `TH`
+(1..2266), `INS` (4986..6416) and the `INS-IGF2` readthrough (4986..>8416). `INS`
+and `INS-IGF2` **start at the same base and share a signal peptide**, so no
+coordinate window separates them — `efetch` with `seq_start=4986&seq_stop=6416`
+still returns five `INS-IGF2` features. Selection is therefore an exact comparison
+against the `/gene` qualifier; `"INS-IGF2".startswith("INS")` is why a prefix or
+substring test would be wrong.
 
 There is also `GET /health` → `{"status": "ok"}`, which checks the service is up
 without spending an NCBI request.
@@ -70,7 +106,8 @@ docker compose up --build
 
 Every test patches `Entrez.efetch` against a saved fixture
 (`tests/fixtures/ng_007114.gb`, a real NCBI response), so the default run makes no
-network call.
+network call. The parser tests skip HTTP entirely — `extract_gene` takes an
+already-parsed record and does no I/O.
 
 ## Error handling
 
@@ -87,10 +124,14 @@ status codes consistently. Both real failure shapes are mapped to `404`:
 
 (The spaced-out letters are literal. NCBI really sends `F a i l e d`.)
 
-So a valid response is recognised *positively*, by its `LOCUS` header — checking
-for an empty body would pass NCBI's error text straight through to the client as
-a `200`. Any upstream `400` is treated as "not found" because `id` is the only
-part of the request that can be invalid.
+There is one more 404: the record parsed, but no feature in it carries that gene
+name.
+
+A valid response is recognised *positively* — `SeqIO.read` raises `ValueError` on
+a body that is not a GenBank record. Checking for an empty body instead would pass
+NCBI's error text straight through to the client as a `200`. Any upstream `400` is
+treated as "not found" because `id` is the only part of the request that can be
+invalid.
 
 Requests time out after `NCBI_TIMEOUT_SECONDS` (default 20). `Entrez.efetch` takes
 no timeout argument and urllib has no default, so this is enforced with
@@ -109,20 +150,26 @@ single-user dev service and should be tightened before this is exposed anywhere.
 
 ## Deliberately not built
 
-`/search` and `/summary` are not here yet, and neither is GenBank parsing, caching,
-or auth. This is intentionally the smallest thing that actually works: Flutter hits
-it, gets real NCBI data back.
+`/search` and `/summary` are not here yet, and neither is caching or auth. Parsing
+covers one gene per request — there is no endpoint that returns every gene in a
+record, because no client needs one yet.
 
 ## Layout
 
 ```
 app/
-  main.py           FastAPI app: Entrez.email, socket timeout, CORS, router
-  config.py         pydantic-settings; NCBI_EMAIL required
-  entrez_client.py  the Entrez.efetch wrapper, nothing else
-  router.py         GET /fetch/{id} and the 404/502 mapping
+  main.py             FastAPI app: Entrez.email, socket timeout, CORS, router
+  config.py           pydantic-settings; NCBI_EMAIL required
+  entrez_client.py    the Entrez.efetch wrapper, returning a parsed record
+  genbank_parser.py   extract_gene(record, gene) -- pure, no I/O
+  schemas.py          pydantic response models for /gene
+  router.py           the endpoint and the 404/502 mapping
 tests/
-  test_fetch.py     endpoint tests against a mocked Entrez.efetch
-  test_config.py    startup fails without NCBI_EMAIL
+  test_gene.py            /gene against a mocked Entrez.efetch
+  test_health.py          the liveness check
+  test_genbank_parser.py  the extractor, straight off the fixture
+  test_config.py          startup fails without NCBI_EMAIL
+  conftest.py             shared fixtures, incl. the efetch patches
+  ncbi_errors.py          real NCBI failure bodies
   fixtures/ng_007114.gb
 ```
