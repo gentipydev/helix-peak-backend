@@ -53,10 +53,13 @@ class Settings(BaseSettings):
     # is in the path of a 9 MB ClinVar snapshot.
     supabase_url: Optional[str] = None
 
-    # service_role. It bypasses row level security and must never reach a
-    # client: every table is RLS-on with no policies, so this key is the only
-    # thing that can read them, and writing a storage object needs it too.
-    supabase_service_key: Optional[str] = None
+    # There is deliberately no service_role key here. This service only ever
+    # builds public storage URLs, and it reaches its rows through
+    # DATABASE_URL, so it needs no Supabase credential at all -- `supabase_url`
+    # above is a public project URL. The key that bypasses row level security
+    # lives only in the environment of `tool/upload_tracks.py`, which runs from
+    # a developer's machine. A deployed process that never holds it cannot leak
+    # it.
 
     tracks_bucket: str = "tracks"
 
