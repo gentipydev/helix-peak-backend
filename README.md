@@ -91,6 +91,31 @@ cp .env.example .env
 # edit .env and set NCBI_EMAIL to a real address
 ```
 
+### The cache database
+
+`DATABASE_URL` is optional. Unset, the service reads through to NCBI for every
+request; the pool is simply never created. It is opened in the app lifespan
+rather than at import, so a wrong or unreachable database is reported on
+`GET /health/db` instead of killing the worker before it can say why.
+
+On Supabase, take the **connection pooler** URI (Project Settings → Database),
+not the direct `db.<ref>.supabase.co` one: direct hosts resolve to IPv6 only,
+which Render cannot reach. The URI needs `?sslmode=require`.
+
+```
+DATABASE_URL=postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres?sslmode=require
+```
+
+Port 5432 is the session pooler, which is what a long-lived server with its own
+client-side pool wants. Port 6543 is the transaction pooler, for serverless
+callers; it disallows prepared statements, so it needs psycopg configured for
+that before it will work here.
+
+`GET /health/db` returns `unconfigured`, `ok` with the server version, or
+`error` with just the exception class. The endpoint is public and psycopg names
+the host, port and user in its connection errors, so the full message goes to
+the log instead of the response body.
+
 ### Run locally
 
 ```bash
@@ -170,8 +195,10 @@ record, because no client needs one yet.
 
 ```
 app/
-  main.py             FastAPI app: Entrez.email, socket timeout, CORS, router
-  config.py           pydantic-settings; NCBI_EMAIL required
+  main.py             FastAPI app: Entrez.email, socket timeout, CORS, router,
+                      pool lifespan, /health and /health/db
+  config.py           pydantic-settings; NCBI_EMAIL required, DATABASE_URL optional
+  db.py               the psycopg connection pool; sync, to match the read path
   entrez_client.py    the Entrez.efetch wrapper, returning a parsed record
   genbank_parser.py   extract_gene(record, gene) -- pure, no I/O
   schemas.py          pydantic response models for /gene
@@ -181,6 +208,7 @@ tests/
   test_health.py          the liveness check
   test_genbank_parser.py  the extractor, straight off the fixture
   test_config.py          startup fails without NCBI_EMAIL
+  test_health_db.py       the readiness contract, without opening a socket
   conftest.py             shared fixtures, incl. the efetch patches
   ncbi_errors.py          real NCBI failure bodies
   fixtures/ng_007114.gb

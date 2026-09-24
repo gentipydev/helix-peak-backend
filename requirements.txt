@@ -3,3 +3,4 @@ uvicorn[standard]==0.39.0
 biopython==1.85
 pydantic-settings==2.11.0
 python-dotenv==1.2.1
+psycopg[binary,pool]==3.2.13
