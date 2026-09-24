@@ -103,7 +103,7 @@ not the direct `db.<ref>.supabase.co` one: direct hosts resolve to IPv6 only,
 which Render cannot reach. The URI needs `?sslmode=require`.
 
 ```
-DATABASE_URL=postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres?sslmode=require
+DATABASE_URL=postgresql://postgres.<ref>:<password>@aws-<n>-<region>.pooler.supabase.com:5432/postgres?sslmode=require
 ```
 
 Port 5432 is the session pooler, which is what a long-lived server with its own
