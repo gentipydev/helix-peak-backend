@@ -5,8 +5,8 @@ from urllib.error import HTTPError, URLError
 
 from fastapi import APIRouter, HTTPException
 
-from .entrez_client import fetch_genbank_record
 from .genbank_parser import GeneNotFound, extract_gene
+from .record_cache import fetch as fetch_genbank_record
 from .schemas import GeneResponse
 from .impact_explanations import read_impact_explanations
 
@@ -77,6 +77,9 @@ def read_gene(id: str, gene: str) -> dict:
 
     ``id`` and ``gene`` are both free parameters: the record to read and the
     gene to keep are the client's choice, not this service's.
+
+    The fetch is cache-aware. A cache miss, or no database at all, reads
+    through to NCBI exactly as before.
     """
     with _upstream_errors(id):
         try:

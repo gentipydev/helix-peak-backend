@@ -8,7 +8,7 @@ from Bio import Entrez
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import db
+from . import db, record_cache
 from .config import settings
 from .router import router
 
@@ -29,6 +29,7 @@ async def lifespan(app: FastAPI):
     startup, when nothing can report why.
     """
     db.open_pool()
+    record_cache.create_schema()
     try:
         yield
     finally:

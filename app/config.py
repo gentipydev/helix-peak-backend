@@ -34,6 +34,10 @@ class Settings(BaseSettings):
 
     database_timeout_seconds: float = 10.0
 
+    # A GenBank record for a given accession is effectively immutable, so this
+    # is about picking up NCBI's own corrections rather than about staleness.
+    cache_ttl_days: int = 30
+
     # Generated artifacts can be mounted here in a deployed service. The local
     # default shares the exact payloads shipped by the companion mobile app.
     impact_explanations_dir: Path = (

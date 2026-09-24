@@ -116,6 +116,29 @@ that before it will work here.
 the host, port and user in its connection errors, so the full message goes to
 the log instead of the response body.
 
+#### What is cached
+
+Whole GenBank records, keyed by accession -- not by `(accession, gene)`. The
+expensive step is the NCBI round trip for a record; `extract_gene` is pure and
+costs ~0.1 ms, so one cached row serves every gene in it.
+
+What is stored is the text NCBI returned, not a parsed payload. Reparsing takes
+~2 ms against a 0.5-3 s fetch, and raw text keeps the cache independent of both
+the parser and the response schema: a fix to `genbank_parser` changes what
+clients see on the next request without invalidating a thing.
+
+The table is created at startup (`create table if not exists`) -- one table, no
+history to migrate, and a deploy that cannot half-apply.
+
+`CACHE_TTL_DAYS` defaults to 30. A record for a given accession is effectively
+immutable, so the TTL is about picking up NCBI's own corrections rather than
+about staleness.
+
+Every cache operation is best-effort. A database that is missing, asleep or
+broken is logged and read through to NCBI, so it costs latency and nothing
+else. Nothing unparseable is ever written: NCBI answers a bad id with plain
+text and HTTP 200, and the parse happens before the write.
+
 ### Run locally
 
 ```bash
@@ -199,7 +222,8 @@ app/
                       pool lifespan, /health and /health/db
   config.py           pydantic-settings; NCBI_EMAIL required, DATABASE_URL optional
   db.py               the psycopg connection pool; sync, to match the read path
-  entrez_client.py    the Entrez.efetch wrapper, returning a parsed record
+  entrez_client.py    the Entrez.efetch wrapper; fetch and parse kept separate
+  record_cache.py     read-through cache of whole records, keyed by accession
   genbank_parser.py   extract_gene(record, gene) -- pure, no I/O
   schemas.py          pydantic response models for /gene
   router.py           the endpoint and the 404/502 mapping
@@ -209,6 +233,7 @@ tests/
   test_genbank_parser.py  the extractor, straight off the fixture
   test_config.py          startup fails without NCBI_EMAIL
   test_health_db.py       the readiness contract, without opening a socket
+  test_record_cache.py    hit, miss, eviction and degradation, against a fake pool
   conftest.py             shared fixtures, incl. the efetch patches
   ncbi_errors.py          real NCBI failure bodies
   fixtures/ng_007114.gb
