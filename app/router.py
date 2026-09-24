@@ -8,8 +8,15 @@ from fastapi import APIRouter, HTTPException
 from .entrez_client import fetch_genbank_record
 from .genbank_parser import GeneNotFound, extract_gene
 from .schemas import GeneResponse
+from .impact_explanations import read_impact_explanations
 
 router = APIRouter()
+
+
+@router.get("/gene/{id}/{gene}/impact-explanations")
+def impact_explanations(id: str, gene: str) -> dict:
+    """A saved attribution payload; no Atlas credentials or inference at runtime."""
+    return read_impact_explanations(id, gene)
 
 
 def _upstream_message(exc: HTTPError) -> str:

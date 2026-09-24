@@ -10,12 +10,12 @@ from .config import settings
 from .router import router
 
 Entrez.email = settings.ncbi_email
-Entrez.tool = "helixpeak-backend"
+Entrez.tool = "helixpeek-backend"
 
 socket.setdefaulttimeout(settings.ncbi_timeout_seconds)
 
 app = FastAPI(
-    title="HelixPeak Backend",
+    title="Helix Peek Backend",
     description="Minimal NCBI GenBank fetch service.",
     version="0.1.0",
 )

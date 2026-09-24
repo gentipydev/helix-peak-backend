@@ -1,7 +1,7 @@
-# helix-peak-backend
+# helix-peek-backend
 
 A minimal FastAPI service that fetches a GenBank record from NCBI and returns one
-gene lifted out of it. It exists so the HelixPeak Flutter app has a real backend
+gene lifted out of it. It exists so the Helix Peek Flutter app has a real backend
 to talk to.
 
 The endpoint wraps a single Biopython call:
@@ -67,6 +67,18 @@ substring test would be wrong.
 
 There is also `GET /health` → `{"status": "ok"}`, which checks the service is up
 without spending an NCBI request.
+
+### AVI contribution details
+
+`GET /gene/{id}/{gene}/impact-explanations` serves the versioned, generated
+attribution payload for INS, HBB and CFTR. It reads the same JSON that the mobile
+app bundles in mock mode, using exact accession/gene identity, with no NCBI or
+Atlas calls. Missing coverage returns 404; malformed generated data returns 503.
+
+`IMPACT_EXPLANATIONS_DIR` defaults to the companion checkout's
+`helix-peek/assets/impact_explanations`. Package or mount that generated directory
+and configure the path when deploying. The endpoint does not require an
+AlphaGenome API key. [Baking and the contract](../helix-peek/docs/avi-contributions.md).
 
 ## Setup
 
