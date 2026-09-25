@@ -1,0 +1,45 @@
+# Two pings, because two free tiers go to sleep for different reasons.
+#
+# Render spins the web service down after 15 minutes without inbound traffic,
+# and the next request then waits about 44 seconds for a cold start. From
+# Phase 4 of HANDOFF-ONDEMAND.md the app's protein list itself comes from this
+# service, so a cold start is the first thing a reader would see.
+#
+# Supabase pauses a free project after a week without activity. /health/db
+# runs `select version()` through the pooler, which counts as activity.
+#
+# An always-on free service uses about 730 of the 750 instance hours Render
+# gives a workspace each month. That only fits while this is the workspace's
+# one free service; past 750, Render suspends every free service until the
+# month ends.
+#
+# GitHub may start scheduled runs several minutes late, and it disables a
+# repository's schedules after 60 days without activity. A free uptime pinger
+# is the fallback if either becomes a problem.
+
+name: Keep alive
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # the web service
+    - cron: "17 6 * * *"     # the database, once a day
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SERVICE: https://helix-peak-backend.onrender.com
+    steps:
+      - name: Ping the web service
+        run: curl --fail --silent --show-error --max-time 90 --retry 2 "$SERVICE/health"
+
+      # /health/db answers 200 whether or not the database is reachable, and
+      # says which in the body, so the body is what has to be checked.
+      - name: Ping the database through the service
+        if: github.event.schedule == '17 6 * * *' || github.event_name == 'workflow_dispatch'
+        run: |
+          body=$(curl --fail --silent --show-error --max-time 90 --retry 2 "$SERVICE/health/db")
+          echo "$body"
+          echo "$body" | grep -q '"database":"ok"'
