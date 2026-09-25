@@ -13,28 +13,29 @@ from app import catalog, db, tracks
 from app.config import settings
 
 
+_STRUCTURE = {"chrome": {"pdb": "3I40", "modelled": None, "label": "the hormone",
+                "count": 51, "unit": "residues", "sentence": "Two chains.",
+                "semantics": "Drag to turn it."},
+     "chains": [{"node": "chainA", "tint": "mature3"},
+                {"node": "chainB", "tint": "mature1"}]}
+
+
 def _protein_row(
     slug="insulin", display="Insulin", gene="INS", uniprot="P01308",
     accession="NG_007114", summary="The hormone that clears glucose.",
     residues=110, exons=3, chains=3, bridges=3, catalog_order=0,
 ):
     return (slug, display, gene, uniprot, accession, summary,
-            residues, exons, chains, bridges, catalog_order)
+            residues, exons, chains, bridges, catalog_order, "insulin", _STRUCTURE)
 
 
 _DETAIL_TAIL = (
-    None,                       # chain_name
     True,                       # mature_peptides
     "NM_000207.3",              # transcript_id
     "NP_000198.1",              # protein_id
     [{"label": "B chain", "short": "B", "start": 25, "end": 54, "origin": 1,
       "kept": True}],
     [[31, 96]],
-    {"chrome": {"pdb": "3I40", "modelled": None, "label": "the hormone",
-                "count": 51, "unit": "residues", "sentence": "Two chains.",
-                "semantics": "Drag to turn it."},
-     "chains": [{"node": "chainA", "tint": "mature3"},
-                {"node": "chainB", "tint": "mature1"}]},
     {"prose": "hand"},          # provenance
     1,                          # resolver_version
 )
@@ -303,3 +304,14 @@ def test_tracks_does_not_read_the_protein_row(client, fake_pool, monkeypatch):
 def test_models_and_tracks_live_in_different_buckets():
     assert tracks.bucket_for("structure") == settings.models_bucket
     assert tracks.bucket_for("clinvar") == settings.tracks_bucket
+
+
+@pytest.mark.parametrize("path", ["/catalog", "/catalog/search?q=ins"])
+def test_list_rows_carry_the_whole_walk_chrome(client, fake_pool, path):
+    pool = fake_pool(proteins=[_protein_row()])
+    row = client.get(path).json()["proteins"][0]
+    assert row["chain"] == "insulin"
+    assert row["chains"] == _STRUCTURE["chains"]
+    assert row["structure"] == _STRUCTURE["chrome"]
+    assert "p.chain_name" in pool.statements[0][0]
+    assert "p.structure" in pool.statements[0][0]

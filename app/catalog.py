@@ -32,12 +32,13 @@ _WHOLE_NAME_KINDS = ["display", "gene", "slug", "uniprot", "accession"]
 
 _SUMMARY_COLUMNS = """
     p.slug, p.display, p.gene, p.uniprot, p.accession, p.summary,
-    p.residues, p.exons, p.chains, p.bridges, p.catalog_order
+    p.residues, p.exons, p.chains, p.bridges, p.catalog_order,
+    p.chain_name, p.structure
 """
 
 _DETAIL_COLUMNS = _SUMMARY_COLUMNS + """,
-    p.chain_name, p.mature_peptides, p.transcript_id, p.protein_id,
-    p.regions, p.disulfides, p.structure, p.provenance, p.resolver_version
+    p.mature_peptides, p.transcript_id, p.protein_id,
+    p.regions, p.disulfides, p.provenance, p.resolver_version
 """
 
 # Paged by slug, and ordered by slug because of it: a keyset cursor is only
@@ -91,7 +92,8 @@ limit %(limit)s
 
 def _summary(row) -> dict:
     (slug, display, gene, uniprot, accession, summary,
-     residues, exons, chains, bridges, catalog_order) = row[:11]
+     residues, exons, chains, bridges, catalog_order, chain_name, structure) = row[:13]
+    structure = structure or {}
     return {
         "slug": slug,
         "display": display,
@@ -106,6 +108,9 @@ def _summary(row) -> dict:
             "bridges": bridges,
         },
         "catalog_order": catalog_order,
+        "chain": chain_name,
+        "chains": structure.get("chains", []),
+        "structure": structure.get("chrome"),
         "tracks": {},
     }
 
@@ -203,20 +208,13 @@ def detail(slug: str) -> Optional[Dict]:
         return None
 
     found = _summary(row)
-    (chain_name, mature_peptides, transcript_id, protein_id,
-     regions, disulfides, structure, provenance, resolver_version) = row[11:]
+    (mature_peptides, transcript_id, protein_id,
+     regions, disulfides, provenance, resolver_version) = row[13:]
 
-    # `structure` holds both halves of what the fold page needs: the chrome it
-    # writes, and the chain->node->tint mapping it paints by. Null where no
-    # entry passed the picker -- the structure track then carries the reason.
-    structure = structure or {}
     found.update({
-        "chain": chain_name,
         "mature_peptides": mature_peptides,
         "transcript_id": transcript_id,
         "protein_id": protein_id,
-        "chains": structure.get("chains", []),
-        "structure": structure.get("chrome"),
         "regions": regions or [],
         "disulfides": disulfides or [],
         "provenance": provenance or {},

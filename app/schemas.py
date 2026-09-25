@@ -174,19 +174,19 @@ class ProteinSummary(BaseModel):
     # no place in a sequence someone chose and sorts after all of them.
     catalog_order: Optional[int] = None
 
+    chain: Optional[str] = None
+    chains: List[StructureChain] = []
+    structure: Optional[StructureChrome] = None
     tracks: Dict[str, str] = {}
 
 
 class ProteinDetail(ProteinSummary):
     """One resolved protein, whole: a `targets.py` row and a catalog row at once."""
 
-    chain: Optional[str] = None
     mature_peptides: bool = True
     transcript_id: Optional[str] = None
     protein_id: Optional[str] = None
 
-    chains: List[StructureChain] = []
-    structure: Optional[StructureChrome] = None
     regions: List[Region] = []
     disulfides: List[List[int]] = []
 
