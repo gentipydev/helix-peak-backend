@@ -68,20 +68,27 @@ limit %(limit)s
 
 # `%%` is the trigram similarity operator, escaped for the driver. It uses the
 # trigram index and pg_trgm's default threshold of 0.3.
+#
+# Ranked whole before the limit, never cut first: "insuln" is exactly as near
+# the word "insulin" in a hundred names as it is to insulin's own name, and a
+# limit taken over those ties kept whichever twelve the plan met first. A word
+# gives way to a whole term at equal nearness, and then the order is the
+# prefix tiers' own.
 _FUZZY = """
 with near as (
-    select t.uniprot, t.gene, max(similarity(t.term, %(needle)s)) as sim
+    select t.uniprot, t.gene,
+           max(similarity(t.term, %(needle)s) - case when t.kind = 5 then 0.01 else 0 end) as sim
     from protein_index_term t
     where t.term %% %(needle)s
     group by t.uniprot, t.gene
-    order by sim desc
-    limit %(limit)s
 )
 select {row}, 6 as tier
 from near n
 join protein_index i on i.uniprot = n.uniprot and i.gene = n.gene
 left join protein p on p.gene = i.gene and p.taxon_id = 9606 and i.gene <> ''
-order by n.sim desc, p.catalog_order nulls last, i.annotation_score desc, i.gene
+order by n.sim desc, p.catalog_order nulls last, (p.slug is null),
+         i.annotation_score desc, i.existence, i.gene, i.uniprot
+limit %(limit)s
 """.format(row=_ROW)
 
 _RELEASE = "select uniprot, mane from protein_index_release"
