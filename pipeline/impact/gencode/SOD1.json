@@ -1,0 +1,181 @@
+{
+  "cds": [
+    {
+      "end": 31659841,
+      "start": 31659769,
+      "width": 73
+    },
+    {
+      "end": 31663886,
+      "start": 31663789,
+      "width": 98
+    },
+    {
+      "end": 31666518,
+      "start": 31666448,
+      "width": 71
+    },
+    {
+      "end": 31667375,
+      "start": 31667257,
+      "width": 119
+    },
+    {
+      "end": 31668575,
+      "start": 31668470,
+      "width": 106
+    }
+  ],
+  "chromosome": "chr21",
+  "end": 31668931,
+  "exons": [
+    {
+      "acceptor": 31659692,
+      "chromosome": "chr21",
+      "donor": 31659841,
+      "end": 31659841,
+      "exon_number": 1,
+      "overlaps_variant": false,
+      "start": 31659692,
+      "strand": "+",
+      "width": 150
+    },
+    {
+      "acceptor": 31663789,
+      "chromosome": "chr21",
+      "donor": 31663886,
+      "end": 31663886,
+      "exon_number": 2,
+      "overlaps_variant": false,
+      "start": 31663789,
+      "strand": "+",
+      "width": 98
+    },
+    {
+      "acceptor": 31666448,
+      "chromosome": "chr21",
+      "donor": 31666518,
+      "end": 31666518,
+      "exon_number": 3,
+      "overlaps_variant": false,
+      "start": 31666448,
+      "strand": "+",
+      "width": 71
+    },
+    {
+      "acceptor": 31667257,
+      "chromosome": "chr21",
+      "donor": 31667375,
+      "end": 31667375,
+      "exon_number": 4,
+      "overlaps_variant": false,
+      "start": 31667257,
+      "strand": "+",
+      "width": 119
+    },
+    {
+      "acceptor": 31668470,
+      "chromosome": "chr21",
+      "donor": 31668931,
+      "end": 31668931,
+      "exon_number": 5,
+      "overlaps_variant": false,
+      "start": 31668470,
+      "strand": "+",
+      "width": 462
+    }
+  ],
+  "gene_id": "ENSG00000142168.15",
+  "gene_name": "SOD1",
+  "is_mane_select": true,
+  "junctions": [
+    {
+      "atlas_url": null,
+      "downstream_exon": 2,
+      "intron_length": 3947,
+      "junction_end": 31663789,
+      "junction_start": 31659841,
+      "junction_str": "31659841:31663789",
+      "score_id": null,
+      "type": "Canonical Intron 1",
+      "upstream_exon": 1
+    },
+    {
+      "atlas_url": null,
+      "downstream_exon": 3,
+      "intron_length": 2561,
+      "junction_end": 31666448,
+      "junction_start": 31663886,
+      "junction_str": "31663886:31666448",
+      "score_id": null,
+      "type": "Canonical Intron 2",
+      "upstream_exon": 2
+    },
+    {
+      "atlas_url": null,
+      "downstream_exon": 4,
+      "intron_length": 738,
+      "junction_end": 31667257,
+      "junction_start": 31666518,
+      "junction_str": "31666518:31667257",
+      "score_id": null,
+      "type": "Canonical Intron 3",
+      "upstream_exon": 3
+    },
+    {
+      "atlas_url": null,
+      "downstream_exon": 5,
+      "intron_length": 1094,
+      "junction_end": 31668470,
+      "junction_start": 31667375,
+      "junction_str": "31667375:31668470",
+      "score_id": null,
+      "type": "Canonical Intron 4",
+      "upstream_exon": 4
+    },
+    {
+      "downstream_exon": 3,
+      "intron_length": 6606,
+      "junction_end": 31666448,
+      "junction_start": 31659841,
+      "junction_str": "31659841:31666448",
+      "type": "Exon 2 Skipping",
+      "upstream_exon": 1
+    },
+    {
+      "downstream_exon": 4,
+      "intron_length": 3370,
+      "junction_end": 31667257,
+      "junction_start": 31663886,
+      "junction_str": "31663886:31667257",
+      "type": "Exon 3 Skipping",
+      "upstream_exon": 2
+    },
+    {
+      "downstream_exon": 5,
+      "intron_length": 1951,
+      "junction_end": 31668470,
+      "junction_start": 31666518,
+      "junction_str": "31666518:31668470",
+      "type": "Exon 4 Skipping",
+      "upstream_exon": 3
+    }
+  ],
+  "num_exons": 5,
+  "start": 31659692,
+  "strand": "+",
+  "transcript_id": "ENST00000270142.11",
+  "transcript_type": "protein_coding",
+  "utr": [
+    {
+      "end": 31659769,
+      "start": 31659692,
+      "width": 78
+    },
+    {
+      "end": 31668931,
+      "start": 31668575,
+      "width": 357
+    }
+  ]
+}

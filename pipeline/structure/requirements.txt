@@ -1,0 +1,5 @@
+# The structure bake's Python side, pinned from the venv the twenty were baked
+# in. PyMOL itself is not a pip package here: `brew install pymol` (3.1.0).
+numpy==2.5.3
+scipy==1.18.1
+trimesh==5.1.0

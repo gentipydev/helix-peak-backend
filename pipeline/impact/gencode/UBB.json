@@ -1,0 +1,73 @@
+{
+  "cds": [
+    {
+      "end": 16382594,
+      "start": 16381907,
+      "width": 688
+    }
+  ],
+  "chromosome": "chr17",
+  "end": 16382740,
+  "exons": [
+    {
+      "acceptor": 16381090,
+      "chromosome": "chr17",
+      "donor": 16381184,
+      "end": 16381184,
+      "exon_number": 1,
+      "overlaps_variant": false,
+      "start": 16381090,
+      "strand": "+",
+      "width": 95
+    },
+    {
+      "acceptor": 16381901,
+      "chromosome": "chr17",
+      "donor": 16382740,
+      "end": 16382740,
+      "exon_number": 2,
+      "overlaps_variant": false,
+      "start": 16381901,
+      "strand": "+",
+      "width": 840
+    }
+  ],
+  "gene_id": "ENSG00000170315.14",
+  "gene_name": "UBB",
+  "is_mane_select": true,
+  "junctions": [
+    {
+      "atlas_url": null,
+      "downstream_exon": 2,
+      "intron_length": 716,
+      "junction_end": 16381901,
+      "junction_start": 16381184,
+      "junction_str": "16381184:16381901",
+      "score_id": null,
+      "type": "Canonical Intron 1",
+      "upstream_exon": 1
+    }
+  ],
+  "num_exons": 2,
+  "start": 16381090,
+  "strand": "+",
+  "transcript_id": "ENST00000302182.8",
+  "transcript_type": "protein_coding",
+  "utr": [
+    {
+      "end": 16381184,
+      "start": 16381090,
+      "width": 95
+    },
+    {
+      "end": 16381907,
+      "start": 16381901,
+      "width": 7
+    },
+    {
+      "end": 16382740,
+      "start": 16382594,
+      "width": 147
+    }
+  ]
+}

@@ -1,0 +1,813 @@
+{
+  "proteins": [
+    {
+      "slug": "insulin",
+      "catalog_order": 0,
+      "display": "Insulin",
+      "gene": "INS",
+      "uniprot": "P01308",
+      "accession": "NG_007114",
+      "summary": "The hormone that clears glucose from the blood.",
+      "chain": null,
+      "facts": {
+        "residues": 110,
+        "exons": 3,
+        "chains": 3,
+        "bridges": 3
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature3"
+        },
+        {
+          "node": "chainB",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "3I40",
+        "modelled": null,
+        "label": "the hormone",
+        "count": 51,
+        "unit": "residues",
+        "sentence": "The C-peptide is cut out. Two disulfide bridges join A to B, a third folds A.",
+        "semantics": "The folded insulin molecule: the A and B chains, joined by two disulfide bridges, with a third inside the A chain. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "impact_explanations",
+        "structure"
+      ]
+    },
+    {
+      "slug": "oxytocin",
+      "catalog_order": 1,
+      "display": "Oxytocin",
+      "gene": "OXT",
+      "uniprot": "P01178",
+      "accession": "NC_000020.11",
+      "summary": "Nine residues, cut out of a precursor a hundred and twenty-five long.",
+      "chain": null,
+      "facts": {
+        "residues": 125,
+        "exons": 3,
+        "chains": 2,
+        "bridges": 8
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "7RYC",
+        "modelled": null,
+        "label": "the hormone",
+        "count": 9,
+        "unit": "residues",
+        "sentence": "One bridge closes the ring. Neurophysin, its carrier, is cut away.",
+        "semantics": "The oxytocin nonapeptide, closed into a ring by its single disulfide bridge. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "ubiquitin",
+      "catalog_order": 2,
+      "display": "Ubiquitin",
+      "gene": "UBB",
+      "uniprot": "P0CG47",
+      "accession": "NG_023320",
+      "summary": "Made as three copies in a row, then cut into three identical tags.",
+      "chain": null,
+      "facts": {
+        "residues": 229,
+        "exons": 2,
+        "chains": 3,
+        "bridges": 0
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        }
+      ],
+      "structure": {
+        "pdb": "1UBQ",
+        "modelled": null,
+        "label": "the tag",
+        "count": 76,
+        "unit": "residues",
+        "sentence": "One of the three. All three fold into the same tag.",
+        "semantics": "One folded ubiquitin molecule, the tag the precursor is cut into three of. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "lysozyme",
+      "catalog_order": 3,
+      "display": "Lysozyme",
+      "gene": "LYZ",
+      "uniprot": "P61626",
+      "accession": "NG_008195",
+      "summary": "Cuts the cell walls of bacteria. In tears, saliva and milk.",
+      "chain": null,
+      "facts": {
+        "residues": 148,
+        "exons": 4,
+        "chains": 1,
+        "bridges": 4
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "1REX",
+        "modelled": null,
+        "label": "the enzyme",
+        "count": 130,
+        "unit": "residues",
+        "sentence": "Four disulfide bridges brace the cleft a cell wall has to fit into.",
+        "semantics": "The folded lysozyme molecule, with the four disulfide bridges that brace the cleft a cell wall binds in. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "hemoglobin",
+      "catalog_order": 4,
+      "display": "Hemoglobin (beta chain)",
+      "gene": "HBB",
+      "uniprot": "P68871",
+      "accession": "NG_059281",
+      "summary": "Carries oxygen from the lungs. Sickle-cell disease is one base of this gene.",
+      "chain": "hemoglobin beta chain",
+      "facts": {
+        "residues": 147,
+        "exons": 3,
+        "chains": 1,
+        "bridges": 0
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        }
+      ],
+      "structure": {
+        "pdb": "2DN1",
+        "modelled": null,
+        "label": "the subunit",
+        "count": 146,
+        "unit": "residues",
+        "sentence": "One beta chain. Hemoglobin is four: two like this, and two alpha.",
+        "semantics": "The folded beta-globin chain, one of the four chains of a haemoglobin molecule. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "impact_explanations",
+        "structure"
+      ]
+    },
+    {
+      "slug": "myoglobin",
+      "catalog_order": 5,
+      "display": "Myoglobin",
+      "gene": "MB",
+      "uniprot": "P02144",
+      "accession": "NG_007075",
+      "summary": "Holds oxygen in muscle. The first protein whose structure was ever solved.",
+      "chain": "myoglobin",
+      "facts": {
+        "residues": 154,
+        "exons": 3,
+        "chains": 1,
+        "bridges": 0
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        }
+      ],
+      "structure": {
+        "pdb": "3RGK",
+        "modelled": null,
+        "label": "the fold",
+        "count": 153,
+        "unit": "residues",
+        "sentence": "Eight helices around one pocket. The globin fold.",
+        "semantics": "The folded myoglobin molecule, eight helices around the pocket that holds its oxygen. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "relaxin",
+      "catalog_order": 6,
+      "display": "Relaxin",
+      "gene": "RLN2",
+      "uniprot": "P04090",
+      "accession": "NC_000009.12",
+      "summary": "Softens ligaments in pregnancy. Built like insulin, and cut the same way.",
+      "chain": null,
+      "facts": {
+        "residues": 185,
+        "exons": 2,
+        "chains": 3,
+        "bridges": 3
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature3"
+        },
+        {
+          "node": "chainB",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "6RLX",
+        "modelled": null,
+        "label": "the hormone",
+        "count": 53,
+        "unit": "residues",
+        "sentence": "The same architecture as insulin: two chains, three disulfide bridges.",
+        "semantics": "The folded relaxin molecule: the A and B chains, joined by two disulfide bridges, with a third inside the A chain. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "somatotropin",
+      "catalog_order": 7,
+      "display": "Growth hormone",
+      "gene": "GH1",
+      "uniprot": "P01241",
+      "accession": "NG_011676",
+      "summary": "Somatotropin. Drives growth in childhood and metabolism after it.",
+      "chain": null,
+      "facts": {
+        "residues": 217,
+        "exons": 5,
+        "chains": 1,
+        "bridges": 2
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "1HGU",
+        "modelled": null,
+        "label": "the hormone",
+        "count": 191,
+        "unit": "residues",
+        "sentence": "A bundle of four helices, pinned by two disulfide bridges.",
+        "semantics": "The folded growth hormone molecule, a bundle of four helices pinned by two disulfide bridges. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "p53",
+      "catalog_order": 8,
+      "display": "p53",
+      "gene": "TP53",
+      "uniprot": "P04637",
+      "accession": "NG_017013",
+      "summary": "The tumour suppressor. Mutated in about half of all human cancers.",
+      "chain": "p53",
+      "facts": {
+        "residues": 393,
+        "exons": 11,
+        "chains": 1,
+        "bridges": 0
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        }
+      ],
+      "structure": {
+        "pdb": "2OCJ",
+        "modelled": [
+          96,
+          289
+        ],
+        "label": "the core",
+        "count": 194,
+        "unit": "residues",
+        "sentence": "The part that grips DNA. Most of the rest of p53 is disordered and has no structure.",
+        "semantics": "The folded DNA-binding core of p53. The rest of the protein, mostly disordered, is not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "dystrophin",
+      "catalog_order": 9,
+      "display": "Dystrophin",
+      "gene": "DMD",
+      "uniprot": "P11532",
+      "accession": "NG_012232",
+      "summary": "The largest human gene: over 2 million bases, 79 exons, 3,685 residues.",
+      "chain": "dystrophin",
+      "facts": {
+        "residues": 3685,
+        "exons": 79,
+        "chains": 1,
+        "bridges": 0
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        }
+      ],
+      "structure": {
+        "pdb": "1DXX",
+        "modelled": [
+          9,
+          246
+        ],
+        "label": "the actin grip",
+        "count": 238,
+        "unit": "residues",
+        "sentence": "No structure exists for all 3,685 residues. This is the end that holds actin.",
+        "semantics": "The folded actin-binding end of dystrophin. The other three thousand residues are solved only in fragments, if at all, and are not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "vasopressin",
+      "catalog_order": 10,
+      "display": "Vasopressin",
+      "gene": "AVP",
+      "uniprot": "P01185",
+      "accession": "NG_008663",
+      "summary": "Tells the kidneys to hold on to water. Cut from a precursor built like oxytocin.",
+      "chain": null,
+      "facts": {
+        "residues": 164,
+        "exons": 3,
+        "chains": 3,
+        "bridges": 8
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "7KH0",
+        "modelled": null,
+        "label": "the hormone",
+        "count": 9,
+        "unit": "residues",
+        "sentence": "One bridge closes the ring. Neurophysin 2 and copeptin are cut away.",
+        "semantics": "The vasopressin nonapeptide, closed into a ring by its single disulfide bridge. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "glucagon",
+      "catalog_order": 11,
+      "display": "Glucagon",
+      "gene": "GCG",
+      "uniprot": "P01275",
+      "accession": "NC_000002.12",
+      "summary": "Raises blood sugar. Its precursor also holds GLP-1 and GLP-2, cut out in the gut.",
+      "chain": "pro-glucagon",
+      "facts": {
+        "residues": 180,
+        "exons": 6,
+        "chains": 1,
+        "bridges": 0
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        }
+      ],
+      "structure": {
+        "pdb": "6LMK",
+        "modelled": null,
+        "label": "the hormone",
+        "count": 29,
+        "unit": "residues",
+        "sentence": "One of several hormones cut from proglucagon. No disulfide bridges.",
+        "semantics": "Glucagon, the 29-residue hormone cut from proglucagon, as it sits in its receptor. The other peptides cut from the precursor are not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "app",
+      "catalog_order": 12,
+      "display": "Amyloid precursor protein",
+      "gene": "APP",
+      "uniprot": "P05067",
+      "accession": "NG_007376",
+      "summary": "Cut into amyloid-beta, the peptide that builds up in the brain in Alzheimer disease.",
+      "chain": "APP",
+      "facts": {
+        "residues": 770,
+        "exons": 18,
+        "chains": 1,
+        "bridges": 9
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "4PWQ",
+        "modelled": null,
+        "label": "the E1 domain",
+        "count": 162,
+        "unit": "residues",
+        "sentence": "No structure exists for all 770 residues. This is its first folded domain.",
+        "semantics": "The E1 domain at the start of APP, held by six disulfide bridges. Amyloid-beta and the rest of the protein are solved only in pieces and are not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "cftr",
+      "catalog_order": 13,
+      "display": "CFTR",
+      "gene": "CFTR",
+      "uniprot": "P13569",
+      "accession": "NG_016465",
+      "summary": "A chloride channel in lungs and gut. Faults in it cause cystic fibrosis.",
+      "chain": "CFTR",
+      "facts": {
+        "residues": 1480,
+        "exons": 27,
+        "chains": 1,
+        "bridges": 0
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        }
+      ],
+      "structure": {
+        "pdb": "5UAK",
+        "modelled": null,
+        "label": "the channel",
+        "count": 1480,
+        "unit": "residues",
+        "sentence": "Two halves, each a membrane domain and an ATP-binding domain.",
+        "semantics": "The folded CFTR channel: two halves that each cross the membrane six times and bind ATP. The regulatory region between them is too mobile to resolve and is not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "impact_explanations",
+        "structure"
+      ]
+    },
+    {
+      "slug": "erythropoietin",
+      "catalog_order": 14,
+      "display": "Erythropoietin",
+      "gene": "EPO",
+      "uniprot": "P01588",
+      "accession": "NG_021471",
+      "summary": "Made in the kidney. Tells bone marrow to make red blood cells.",
+      "chain": null,
+      "facts": {
+        "residues": 193,
+        "exons": 5,
+        "chains": 1,
+        "bridges": 2
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "1EER",
+        "modelled": null,
+        "label": "the hormone",
+        "count": 166,
+        "unit": "residues",
+        "sentence": "A bundle of four helices, braced by two disulfide bridges.",
+        "semantics": "The folded erythropoietin molecule, a bundle of four helices braced by two disulfide bridges. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "leptin",
+      "catalog_order": 15,
+      "display": "Leptin",
+      "gene": "LEP",
+      "uniprot": "P41159",
+      "accession": "NG_007450",
+      "summary": "Made by fat cells. Tells the brain how much energy the body has stored.",
+      "chain": null,
+      "facts": {
+        "residues": 167,
+        "exons": 3,
+        "chains": 1,
+        "bridges": 1
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "1AX8",
+        "modelled": null,
+        "label": "the hormone",
+        "count": 146,
+        "unit": "residues",
+        "sentence": "A bundle of four helices, closed by one disulfide bridge.",
+        "semantics": "The folded leptin molecule, a bundle of four helices with one disulfide bridge. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "tnf",
+      "catalog_order": 16,
+      "display": "TNF-alpha",
+      "gene": "TNF",
+      "uniprot": "P01375",
+      "accession": "NG_007462",
+      "summary": "A signal of inflammation, and the target of drugs for arthritis.",
+      "chain": null,
+      "facts": {
+        "residues": 233,
+        "exons": 4,
+        "chains": 2,
+        "bridges": 1
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "7JRA",
+        "modelled": null,
+        "label": "the subunit",
+        "count": 157,
+        "unit": "residues",
+        "sentence": "One chain of the soluble form. TNF works as three of these.",
+        "semantics": "One folded chain of soluble TNF, one of the three identical chains of an active TNF trimer, with its one disulfide bridge. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "sod1",
+      "catalog_order": 17,
+      "display": "SOD1",
+      "gene": "SOD1",
+      "uniprot": "P00441",
+      "accession": "NG_008689",
+      "summary": "Clears superoxide radicals from cells. Mutations in it cause an inherited form of ALS.",
+      "chain": "superoxide dismutase",
+      "facts": {
+        "residues": 154,
+        "exons": 5,
+        "chains": 1,
+        "bridges": 1
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "2C9V",
+        "modelled": null,
+        "label": "the subunit",
+        "count": 153,
+        "unit": "residues",
+        "sentence": "One chain. SOD1 works as a pair of these.",
+        "semantics": "One folded SOD1 chain, one of the two identical chains of the active enzyme, with its one disulfide bridge. Its copper and zinc are not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "amylase",
+      "catalog_order": 18,
+      "display": "Amylase",
+      "gene": "AMY1A",
+      "uniprot": "P0DUB6",
+      "accession": "NC_000001.11",
+      "summary": "The enzyme in saliva that starts breaking starch down into sugar.",
+      "chain": null,
+      "facts": {
+        "residues": 511,
+        "exons": 11,
+        "chains": 1,
+        "bridges": 5
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "1SMD",
+        "modelled": null,
+        "label": "the enzyme",
+        "count": 496,
+        "unit": "residues",
+        "sentence": "Five disulfide bridges. Starch is cut in a cleft between its domains.",
+        "semantics": "The folded salivary amylase, with its five disulfide bridges and the cleft where starch is cut. Its calcium and chloride are not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "prion",
+      "catalog_order": 19,
+      "display": "Prion protein",
+      "gene": "PRNP",
+      "uniprot": "P04156",
+      "accession": "NG_009087",
+      "summary": "Harmless in its normal fold. Misfolded, it causes prion diseases such as CJD.",
+      "chain": null,
+      "facts": {
+        "residues": 253,
+        "exons": 2,
+        "chains": 1,
+        "bridges": 1
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "4KML",
+        "modelled": null,
+        "label": "the fold",
+        "count": 109,
+        "unit": "residues",
+        "sentence": "The folded half. The first hundred residues have no fixed shape.",
+        "semantics": "The folded C-terminal half of the prion protein: three helices, a short sheet and one disulfide bridge. The flexible N-terminal half is not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    }
+  ]
+}

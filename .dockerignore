@@ -1,0 +1,15 @@
+# The image copies requirements.txt and app/ only (see the Dockerfile). This keeps
+# a local `docker compose build` from sending the pipeline's gigabytes of
+# environments, caches and fetched tracks as build context.
+.git
+.env
+.venv
+.pytest_cache
+**/__pycache__
+pipeline/data
+pipeline/.esm-venv
+pipeline/*/venv
+pipeline/clinvar/cache
+pipeline/impact/checkpoints
+pipeline/impact/attribution_raw
+pipeline/structure/output

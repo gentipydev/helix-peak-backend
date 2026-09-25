@@ -1,0 +1,73 @@
+{
+  "cds": [
+    {
+      "end": 5304580,
+      "start": 5304369,
+      "width": 212
+    },
+    {
+      "end": 5300444,
+      "start": 5300100,
+      "width": 345
+    }
+  ],
+  "chromosome": "chr9",
+  "end": 5304716,
+  "exons": [
+    {
+      "acceptor": 5304716,
+      "chromosome": "chr9",
+      "donor": 5304369,
+      "end": 5304716,
+      "exon_number": 1,
+      "overlaps_variant": false,
+      "start": 5304369,
+      "strand": "-",
+      "width": 348
+    },
+    {
+      "acceptor": 5300444,
+      "chromosome": "chr9",
+      "donor": 5299863,
+      "end": 5300444,
+      "exon_number": 2,
+      "overlaps_variant": false,
+      "start": 5299863,
+      "strand": "-",
+      "width": 582
+    }
+  ],
+  "gene_id": "ENSG00000107014.9",
+  "gene_name": "RLN2",
+  "is_mane_select": true,
+  "junctions": [
+    {
+      "atlas_url": null,
+      "downstream_exon": 2,
+      "intron_length": 3924,
+      "junction_end": 5304369,
+      "junction_start": 5300444,
+      "junction_str": "5300444:5304369",
+      "score_id": null,
+      "type": "Canonical Intron 1",
+      "upstream_exon": 1
+    }
+  ],
+  "num_exons": 2,
+  "start": 5299863,
+  "strand": "-",
+  "transcript_id": "ENST00000381627.4",
+  "transcript_type": "protein_coding",
+  "utr": [
+    {
+      "end": 5304716,
+      "start": 5304580,
+      "width": 137
+    },
+    {
+      "end": 5300100,
+      "start": 5299863,
+      "width": 238
+    }
+  ]
+}

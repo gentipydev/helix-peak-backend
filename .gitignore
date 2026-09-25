@@ -10,3 +10,9 @@ venv/
 .mypy_cache/
 
 .DS_Store
+
+# The pipeline's working files: tracks baked or fetched into pipeline/data/,
+# and the ESM scorer's environment. The other bakes' environments, caches and
+# checkpoints are ignored by the .gitignore beside each of them.
+pipeline/data/
+.esm-venv/

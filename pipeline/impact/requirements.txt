@@ -1,0 +1,5 @@
+# The AlphaGenome client, for AVI scores out of the Atlas. Everything else the
+# original baker needs is stdlib. The explanation bake also reads the shared
+# local credential file using python-dotenv.
+alphagenome>=0.1.0
+python-dotenv>=1.0.0

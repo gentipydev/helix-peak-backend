@@ -1,0 +1,109 @@
+{
+  "cds": [
+    {
+      "end": 5227021,
+      "start": 5226929,
+      "width": 93
+    },
+    {
+      "end": 5226799,
+      "start": 5226576,
+      "width": 224
+    },
+    {
+      "end": 5225726,
+      "start": 5225600,
+      "width": 127
+    }
+  ],
+  "chromosome": "chr11",
+  "end": 5227071,
+  "exons": [
+    {
+      "acceptor": 5227071,
+      "chromosome": "chr11",
+      "donor": 5226929,
+      "end": 5227071,
+      "exon_number": 1,
+      "overlaps_variant": false,
+      "start": 5226929,
+      "strand": "-",
+      "width": 143
+    },
+    {
+      "acceptor": 5226799,
+      "chromosome": "chr11",
+      "donor": 5226576,
+      "end": 5226799,
+      "exon_number": 2,
+      "overlaps_variant": false,
+      "start": 5226576,
+      "strand": "-",
+      "width": 224
+    },
+    {
+      "acceptor": 5225726,
+      "chromosome": "chr11",
+      "donor": 5225463,
+      "end": 5225726,
+      "exon_number": 3,
+      "overlaps_variant": false,
+      "start": 5225463,
+      "strand": "-",
+      "width": 264
+    }
+  ],
+  "gene_id": "ENSG00000244734.4",
+  "gene_name": "HBB",
+  "is_mane_select": true,
+  "junctions": [
+    {
+      "atlas_url": null,
+      "downstream_exon": 2,
+      "intron_length": 129,
+      "junction_end": 5226929,
+      "junction_start": 5226799,
+      "junction_str": "5226799:5226929",
+      "score_id": null,
+      "type": "Canonical Intron 1",
+      "upstream_exon": 1
+    },
+    {
+      "atlas_url": null,
+      "downstream_exon": 3,
+      "intron_length": 849,
+      "junction_end": 5226576,
+      "junction_start": 5225726,
+      "junction_str": "5225726:5226576",
+      "score_id": null,
+      "type": "Canonical Intron 2",
+      "upstream_exon": 2
+    },
+    {
+      "downstream_exon": 3,
+      "intron_length": 1202,
+      "junction_end": 5226929,
+      "junction_start": 5225726,
+      "junction_str": "5225726:5226929",
+      "type": "Exon 2 Skipping",
+      "upstream_exon": 1
+    }
+  ],
+  "num_exons": 3,
+  "start": 5225463,
+  "strand": "-",
+  "transcript_id": "ENST00000335295.4",
+  "transcript_type": "protein_coding",
+  "utr": [
+    {
+      "end": 5227071,
+      "start": 5227021,
+      "width": 51
+    },
+    {
+      "end": 5225600,
+      "start": 5225463,
+      "width": 138
+    }
+  ]
+}

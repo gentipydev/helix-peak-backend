@@ -1,0 +1,181 @@
+{
+  "cds": [
+    {
+      "end": 63918776,
+      "start": 63918766,
+      "width": 11
+    },
+    {
+      "end": 63918506,
+      "start": 63918345,
+      "width": 162
+    },
+    {
+      "end": 63918136,
+      "start": 63918016,
+      "width": 121
+    },
+    {
+      "end": 63917924,
+      "start": 63917759,
+      "width": 166
+    },
+    {
+      "end": 63917506,
+      "start": 63917311,
+      "width": 196
+    }
+  ],
+  "chromosome": "chr17",
+  "end": 63918839,
+  "exons": [
+    {
+      "acceptor": 63918839,
+      "chromosome": "chr17",
+      "donor": 63918766,
+      "end": 63918839,
+      "exon_number": 1,
+      "overlaps_variant": false,
+      "start": 63918766,
+      "strand": "-",
+      "width": 74
+    },
+    {
+      "acceptor": 63918506,
+      "chromosome": "chr17",
+      "donor": 63918345,
+      "end": 63918506,
+      "exon_number": 2,
+      "overlaps_variant": false,
+      "start": 63918345,
+      "strand": "-",
+      "width": 162
+    },
+    {
+      "acceptor": 63918136,
+      "chromosome": "chr17",
+      "donor": 63918016,
+      "end": 63918136,
+      "exon_number": 3,
+      "overlaps_variant": false,
+      "start": 63918016,
+      "strand": "-",
+      "width": 121
+    },
+    {
+      "acceptor": 63917924,
+      "chromosome": "chr17",
+      "donor": 63917759,
+      "end": 63917924,
+      "exon_number": 4,
+      "overlaps_variant": false,
+      "start": 63917759,
+      "strand": "-",
+      "width": 166
+    },
+    {
+      "acceptor": 63917506,
+      "chromosome": "chr17",
+      "donor": 63917202,
+      "end": 63917506,
+      "exon_number": 5,
+      "overlaps_variant": false,
+      "start": 63917202,
+      "strand": "-",
+      "width": 305
+    }
+  ],
+  "gene_id": "ENSG00000259384.7",
+  "gene_name": "GH1",
+  "is_mane_select": true,
+  "junctions": [
+    {
+      "atlas_url": null,
+      "downstream_exon": 2,
+      "intron_length": 259,
+      "junction_end": 63918766,
+      "junction_start": 63918506,
+      "junction_str": "63918506:63918766",
+      "score_id": null,
+      "type": "Canonical Intron 1",
+      "upstream_exon": 1
+    },
+    {
+      "atlas_url": null,
+      "downstream_exon": 3,
+      "intron_length": 208,
+      "junction_end": 63918345,
+      "junction_start": 63918136,
+      "junction_str": "63918136:63918345",
+      "score_id": null,
+      "type": "Canonical Intron 2",
+      "upstream_exon": 2
+    },
+    {
+      "atlas_url": null,
+      "downstream_exon": 4,
+      "intron_length": 91,
+      "junction_end": 63918016,
+      "junction_start": 63917924,
+      "junction_str": "63917924:63918016",
+      "score_id": null,
+      "type": "Canonical Intron 3",
+      "upstream_exon": 3
+    },
+    {
+      "atlas_url": null,
+      "downstream_exon": 5,
+      "intron_length": 252,
+      "junction_end": 63917759,
+      "junction_start": 63917506,
+      "junction_str": "63917506:63917759",
+      "score_id": null,
+      "type": "Canonical Intron 4",
+      "upstream_exon": 4
+    },
+    {
+      "downstream_exon": 3,
+      "intron_length": 629,
+      "junction_end": 63918766,
+      "junction_start": 63918136,
+      "junction_str": "63918136:63918766",
+      "type": "Exon 2 Skipping",
+      "upstream_exon": 1
+    },
+    {
+      "downstream_exon": 4,
+      "intron_length": 420,
+      "junction_end": 63918345,
+      "junction_start": 63917924,
+      "junction_str": "63917924:63918345",
+      "type": "Exon 3 Skipping",
+      "upstream_exon": 2
+    },
+    {
+      "downstream_exon": 5,
+      "intron_length": 509,
+      "junction_end": 63918016,
+      "junction_start": 63917506,
+      "junction_str": "63917506:63918016",
+      "type": "Exon 4 Skipping",
+      "upstream_exon": 3
+    }
+  ],
+  "num_exons": 5,
+  "start": 63917202,
+  "strand": "-",
+  "transcript_id": "ENST00000323322.10",
+  "transcript_type": "protein_coding",
+  "utr": [
+    {
+      "end": 63918839,
+      "start": 63918776,
+      "width": 64
+    },
+    {
+      "end": 63917311,
+      "start": 63917202,
+      "width": 110
+    }
+  ]
+}

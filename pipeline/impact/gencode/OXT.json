@@ -1,0 +1,109 @@
+{
+  "cds": [
+    {
+      "end": 3071775,
+      "start": 3071655,
+      "width": 121
+    },
+    {
+      "end": 3072278,
+      "start": 3072076,
+      "width": 203
+    },
+    {
+      "end": 3072415,
+      "start": 3072362,
+      "width": 54
+    }
+  ],
+  "chromosome": "chr20",
+  "end": 3072517,
+  "exons": [
+    {
+      "acceptor": 3071619,
+      "chromosome": "chr20",
+      "donor": 3071775,
+      "end": 3071775,
+      "exon_number": 1,
+      "overlaps_variant": false,
+      "start": 3071619,
+      "strand": "+",
+      "width": 157
+    },
+    {
+      "acceptor": 3072076,
+      "chromosome": "chr20",
+      "donor": 3072278,
+      "end": 3072278,
+      "exon_number": 2,
+      "overlaps_variant": false,
+      "start": 3072076,
+      "strand": "+",
+      "width": 203
+    },
+    {
+      "acceptor": 3072362,
+      "chromosome": "chr20",
+      "donor": 3072517,
+      "end": 3072517,
+      "exon_number": 3,
+      "overlaps_variant": false,
+      "start": 3072362,
+      "strand": "+",
+      "width": 156
+    }
+  ],
+  "gene_id": "ENSG00000101405.3",
+  "gene_name": "OXT",
+  "is_mane_select": true,
+  "junctions": [
+    {
+      "atlas_url": null,
+      "downstream_exon": 2,
+      "intron_length": 300,
+      "junction_end": 3072076,
+      "junction_start": 3071775,
+      "junction_str": "3071775:3072076",
+      "score_id": null,
+      "type": "Canonical Intron 1",
+      "upstream_exon": 1
+    },
+    {
+      "atlas_url": null,
+      "downstream_exon": 3,
+      "intron_length": 83,
+      "junction_end": 3072362,
+      "junction_start": 3072278,
+      "junction_str": "3072278:3072362",
+      "score_id": null,
+      "type": "Canonical Intron 2",
+      "upstream_exon": 2
+    },
+    {
+      "downstream_exon": 3,
+      "intron_length": 586,
+      "junction_end": 3072362,
+      "junction_start": 3071775,
+      "junction_str": "3071775:3072362",
+      "type": "Exon 2 Skipping",
+      "upstream_exon": 1
+    }
+  ],
+  "num_exons": 3,
+  "start": 3071619,
+  "strand": "+",
+  "transcript_id": "ENST00000217386.2",
+  "transcript_type": "protein_coding",
+  "utr": [
+    {
+      "end": 3071655,
+      "start": 3071619,
+      "width": 37
+    },
+    {
+      "end": 3072517,
+      "start": 3072415,
+      "width": 103
+    }
+  ]
+}

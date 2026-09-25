@@ -1,0 +1,109 @@
+{
+  "cds": [
+    {
+      "end": 3084674,
+      "start": 3084554,
+      "width": 121
+    },
+    {
+      "end": 3083178,
+      "start": 3082976,
+      "width": 203
+    },
+    {
+      "end": 3082802,
+      "start": 3082632,
+      "width": 171
+    }
+  ],
+  "chromosome": "chr20",
+  "end": 3084724,
+  "exons": [
+    {
+      "acceptor": 3084724,
+      "chromosome": "chr20",
+      "donor": 3084554,
+      "end": 3084724,
+      "exon_number": 1,
+      "overlaps_variant": false,
+      "start": 3084554,
+      "strand": "-",
+      "width": 171
+    },
+    {
+      "acceptor": 3083178,
+      "chromosome": "chr20",
+      "donor": 3082976,
+      "end": 3083178,
+      "exon_number": 2,
+      "overlaps_variant": false,
+      "start": 3082976,
+      "strand": "-",
+      "width": 203
+    },
+    {
+      "acceptor": 3082802,
+      "chromosome": "chr20",
+      "donor": 3082555,
+      "end": 3082802,
+      "exon_number": 3,
+      "overlaps_variant": false,
+      "start": 3082555,
+      "strand": "-",
+      "width": 248
+    }
+  ],
+  "gene_id": "ENSG00000101200.5",
+  "gene_name": "AVP",
+  "is_mane_select": true,
+  "junctions": [
+    {
+      "atlas_url": null,
+      "downstream_exon": 2,
+      "intron_length": 1375,
+      "junction_end": 3084554,
+      "junction_start": 3083178,
+      "junction_str": "3083178:3084554",
+      "score_id": null,
+      "type": "Canonical Intron 1",
+      "upstream_exon": 1
+    },
+    {
+      "atlas_url": null,
+      "downstream_exon": 3,
+      "intron_length": 173,
+      "junction_end": 3082976,
+      "junction_start": 3082802,
+      "junction_str": "3082802:3082976",
+      "score_id": null,
+      "type": "Canonical Intron 2",
+      "upstream_exon": 2
+    },
+    {
+      "downstream_exon": 3,
+      "intron_length": 1751,
+      "junction_end": 3084554,
+      "junction_start": 3082802,
+      "junction_str": "3082802:3084554",
+      "type": "Exon 2 Skipping",
+      "upstream_exon": 1
+    }
+  ],
+  "num_exons": 3,
+  "start": 3082555,
+  "strand": "-",
+  "transcript_id": "ENST00000380293.3",
+  "transcript_type": "protein_coding",
+  "utr": [
+    {
+      "end": 3084724,
+      "start": 3084674,
+      "width": 51
+    },
+    {
+      "end": 3082632,
+      "start": 3082555,
+      "width": 78
+    }
+  ]
+}

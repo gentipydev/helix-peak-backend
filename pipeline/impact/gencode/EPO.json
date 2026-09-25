@@ -1,0 +1,181 @@
+{
+  "cds": [
+    {
+      "end": 100720993,
+      "start": 100720980,
+      "width": 14
+    },
+    {
+      "end": 100721703,
+      "start": 100721557,
+      "width": 147
+    },
+    {
+      "end": 100722048,
+      "start": 100721961,
+      "width": 88
+    },
+    {
+      "end": 100722843,
+      "start": 100722663,
+      "width": 181
+    },
+    {
+      "end": 100723130,
+      "start": 100722977,
+      "width": 154
+    }
+  ],
+  "chromosome": "chr7",
+  "end": 100723700,
+  "exons": [
+    {
+      "acceptor": 100720467,
+      "chromosome": "chr7",
+      "donor": 100720993,
+      "end": 100720993,
+      "exon_number": 1,
+      "overlaps_variant": false,
+      "start": 100720467,
+      "strand": "+",
+      "width": 527
+    },
+    {
+      "acceptor": 100721557,
+      "chromosome": "chr7",
+      "donor": 100721703,
+      "end": 100721703,
+      "exon_number": 2,
+      "overlaps_variant": false,
+      "start": 100721557,
+      "strand": "+",
+      "width": 147
+    },
+    {
+      "acceptor": 100721961,
+      "chromosome": "chr7",
+      "donor": 100722048,
+      "end": 100722048,
+      "exon_number": 3,
+      "overlaps_variant": false,
+      "start": 100721961,
+      "strand": "+",
+      "width": 88
+    },
+    {
+      "acceptor": 100722663,
+      "chromosome": "chr7",
+      "donor": 100722843,
+      "end": 100722843,
+      "exon_number": 4,
+      "overlaps_variant": false,
+      "start": 100722663,
+      "strand": "+",
+      "width": 181
+    },
+    {
+      "acceptor": 100722977,
+      "chromosome": "chr7",
+      "donor": 100723700,
+      "end": 100723700,
+      "exon_number": 5,
+      "overlaps_variant": false,
+      "start": 100722977,
+      "strand": "+",
+      "width": 724
+    }
+  ],
+  "gene_id": "ENSG00000130427.3",
+  "gene_name": "EPO",
+  "is_mane_select": true,
+  "junctions": [
+    {
+      "atlas_url": null,
+      "downstream_exon": 2,
+      "intron_length": 563,
+      "junction_end": 100721557,
+      "junction_start": 100720993,
+      "junction_str": "100720993:100721557",
+      "score_id": null,
+      "type": "Canonical Intron 1",
+      "upstream_exon": 1
+    },
+    {
+      "atlas_url": null,
+      "downstream_exon": 3,
+      "intron_length": 257,
+      "junction_end": 100721961,
+      "junction_start": 100721703,
+      "junction_str": "100721703:100721961",
+      "score_id": null,
+      "type": "Canonical Intron 2",
+      "upstream_exon": 2
+    },
+    {
+      "atlas_url": null,
+      "downstream_exon": 4,
+      "intron_length": 614,
+      "junction_end": 100722663,
+      "junction_start": 100722048,
+      "junction_str": "100722048:100722663",
+      "score_id": null,
+      "type": "Canonical Intron 3",
+      "upstream_exon": 3
+    },
+    {
+      "atlas_url": null,
+      "downstream_exon": 5,
+      "intron_length": 133,
+      "junction_end": 100722977,
+      "junction_start": 100722843,
+      "junction_str": "100722843:100722977",
+      "score_id": null,
+      "type": "Canonical Intron 4",
+      "upstream_exon": 4
+    },
+    {
+      "downstream_exon": 3,
+      "intron_length": 967,
+      "junction_end": 100721961,
+      "junction_start": 100720993,
+      "junction_str": "100720993:100721961",
+      "type": "Exon 2 Skipping",
+      "upstream_exon": 1
+    },
+    {
+      "downstream_exon": 4,
+      "intron_length": 959,
+      "junction_end": 100722663,
+      "junction_start": 100721703,
+      "junction_str": "100721703:100722663",
+      "type": "Exon 3 Skipping",
+      "upstream_exon": 2
+    },
+    {
+      "downstream_exon": 5,
+      "intron_length": 928,
+      "junction_end": 100722977,
+      "junction_start": 100722048,
+      "junction_str": "100722048:100722977",
+      "type": "Exon 4 Skipping",
+      "upstream_exon": 3
+    }
+  ],
+  "num_exons": 5,
+  "start": 100720467,
+  "strand": "+",
+  "transcript_id": "ENST00000252723.3",
+  "transcript_type": "protein_coding",
+  "utr": [
+    {
+      "end": 100720980,
+      "start": 100720467,
+      "width": 514
+    },
+    {
+      "end": 100723700,
+      "start": 100723130,
+      "width": 571
+    }
+  ]
+}

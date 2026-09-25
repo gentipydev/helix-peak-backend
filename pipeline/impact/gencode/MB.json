@@ -1,0 +1,109 @@
+{
+  "cds": [
+    {
+      "end": 35617257,
+      "start": 35617162,
+      "width": 96
+    },
+    {
+      "end": 35611106,
+      "start": 35610883,
+      "width": 224
+    },
+    {
+      "end": 35607443,
+      "start": 35607299,
+      "width": 145
+    }
+  ],
+  "chromosome": "chr22",
+  "end": 35617329,
+  "exons": [
+    {
+      "acceptor": 35617329,
+      "chromosome": "chr22",
+      "donor": 35617162,
+      "end": 35617329,
+      "exon_number": 1,
+      "overlaps_variant": false,
+      "start": 35617162,
+      "strand": "-",
+      "width": 168
+    },
+    {
+      "acceptor": 35611106,
+      "chromosome": "chr22",
+      "donor": 35610883,
+      "end": 35611106,
+      "exon_number": 2,
+      "overlaps_variant": false,
+      "start": 35610883,
+      "strand": "-",
+      "width": 224
+    },
+    {
+      "acceptor": 35607443,
+      "chromosome": "chr22",
+      "donor": 35606763,
+      "end": 35607443,
+      "exon_number": 3,
+      "overlaps_variant": false,
+      "start": 35606763,
+      "strand": "-",
+      "width": 681
+    }
+  ],
+  "gene_id": "ENSG00000198125.13",
+  "gene_name": "MB",
+  "is_mane_select": true,
+  "junctions": [
+    {
+      "atlas_url": null,
+      "downstream_exon": 2,
+      "intron_length": 6055,
+      "junction_end": 35617162,
+      "junction_start": 35611106,
+      "junction_str": "35611106:35617162",
+      "score_id": null,
+      "type": "Canonical Intron 1",
+      "upstream_exon": 1
+    },
+    {
+      "atlas_url": null,
+      "downstream_exon": 3,
+      "intron_length": 3439,
+      "junction_end": 35610883,
+      "junction_start": 35607443,
+      "junction_str": "35607443:35610883",
+      "score_id": null,
+      "type": "Canonical Intron 2",
+      "upstream_exon": 2
+    },
+    {
+      "downstream_exon": 3,
+      "intron_length": 9718,
+      "junction_end": 35617162,
+      "junction_start": 35607443,
+      "junction_str": "35607443:35617162",
+      "type": "Exon 2 Skipping",
+      "upstream_exon": 1
+    }
+  ],
+  "num_exons": 3,
+  "start": 35606763,
+  "strand": "-",
+  "transcript_id": "ENST00000397326.7",
+  "transcript_type": "protein_coding",
+  "utr": [
+    {
+      "end": 35617329,
+      "start": 35617257,
+      "width": 73
+    },
+    {
+      "end": 35607299,
+      "start": 35606763,
+      "width": 537
+    }
+  ]
+}

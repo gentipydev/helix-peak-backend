@@ -1,0 +1,4 @@
+# Offline generation only; never install these in the app/backend container.
+torch>=2.6,<3
+transformers>=4.57.6,<5
+scipy>=1.15,<2

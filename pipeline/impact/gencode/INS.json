@@ -1,0 +1,109 @@
+{
+  "cds": [
+    {
+      "end": 2160971,
+      "start": 2160784,
+      "width": 188
+    },
+    {
+      "end": 2159997,
+      "start": 2159854,
+      "width": 144
+    }
+  ],
+  "chromosome": "chr11",
+  "end": 2161209,
+  "exons": [
+    {
+      "acceptor": 2161209,
+      "chromosome": "chr11",
+      "donor": 2161167,
+      "end": 2161209,
+      "exon_number": 1,
+      "overlaps_variant": false,
+      "start": 2161167,
+      "strand": "-",
+      "width": 43
+    },
+    {
+      "acceptor": 2160988,
+      "chromosome": "chr11",
+      "donor": 2160784,
+      "end": 2160988,
+      "exon_number": 2,
+      "overlaps_variant": false,
+      "start": 2160784,
+      "strand": "-",
+      "width": 205
+    },
+    {
+      "acceptor": 2159997,
+      "chromosome": "chr11",
+      "donor": 2159778,
+      "end": 2159997,
+      "exon_number": 3,
+      "overlaps_variant": false,
+      "start": 2159778,
+      "strand": "-",
+      "width": 220
+    }
+  ],
+  "gene_id": "ENSG00000254647.7",
+  "gene_name": "INS",
+  "is_mane_select": true,
+  "junctions": [
+    {
+      "atlas_url": null,
+      "downstream_exon": 2,
+      "intron_length": 178,
+      "junction_end": 2161167,
+      "junction_start": 2160988,
+      "junction_str": "2160988:2161167",
+      "score_id": null,
+      "type": "Canonical Intron 1",
+      "upstream_exon": 1
+    },
+    {
+      "atlas_url": null,
+      "downstream_exon": 3,
+      "intron_length": 786,
+      "junction_end": 2160784,
+      "junction_start": 2159997,
+      "junction_str": "2159997:2160784",
+      "score_id": null,
+      "type": "Canonical Intron 2",
+      "upstream_exon": 2
+    },
+    {
+      "downstream_exon": 3,
+      "intron_length": 1169,
+      "junction_end": 2161167,
+      "junction_start": 2159997,
+      "junction_str": "2159997:2161167",
+      "type": "Exon 2 Skipping",
+      "upstream_exon": 1
+    }
+  ],
+  "num_exons": 3,
+  "start": 2159778,
+  "strand": "-",
+  "transcript_id": "ENST00000381330.5",
+  "transcript_type": "protein_coding",
+  "utr": [
+    {
+      "end": 2161209,
+      "start": 2161167,
+      "width": 43
+    },
+    {
+      "end": 2160988,
+      "start": 2160971,
+      "width": 18
+    },
+    {
+      "end": 2159854,
+      "start": 2159778,
+      "width": 77
+    }
+  ]
+}

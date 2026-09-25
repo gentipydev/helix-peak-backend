@@ -1,0 +1,7 @@
+# The Atlas client's environment, made by `uv` from requirements.txt.
+venv/
+# Per-gene resume logs. They are written as a bake goes and deleted once that
+# gene's asset is written, so anything here is an interrupted run.
+checkpoints/
+# Full scientific attribution responses, resumable and not bundled on mobile.
+attribution_raw/

@@ -257,6 +257,15 @@ app/
   schemas.py          pydantic response models
   router.py           the endpoints and the 404/502/503 mapping
 migrations/           applied by hand, in order
+pipeline/             the bake tools, moved from helix-peek/tool/ in Phase 3; see
+                      pipeline/README.md. Nothing under app/ imports it yet
+  targets.py          the twenty curated proteins' bake table
+  curated/catalog.json  their hand-written prose, facts and tints
+  fetch_tracks.py     storage's tracks back into pipeline/data/, sha256-checked
+  check_assets.py     the tracks against each other, the tables and the service
+  upload_tracks.py    validated tracks into storage, and their protein_track rows
+  seed_catalog.py     the protein and protein_alias rows; --check diffs the live ones
+  mock/ constraint/ impact/ clinvar/ structure/   one baker each
 scripts/
   apply_migration.py      psql -f, for a machine without psql
   load_protein_index.py   UniProt + MANE + LRG_RefSeqGene -> protein_index
@@ -270,6 +279,7 @@ tests/
   test_record_cache.py    hit, miss, eviction and degradation, against a fake pool
   test_protein_index.py   normalising, MANE and RefSeqGene parsing, rows and terms
   test_suggest.py         statuses, the short and near-miss rules, against a fake pool
+  test_pipeline.py        the pipeline imports, the curated rows, check_against's comparisons
   conftest.py             shared fixtures, incl. the efetch patches
   ncbi_errors.py          real NCBI failure bodies
   fixtures/ng_007114.gb

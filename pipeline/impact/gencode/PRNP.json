@@ -1,0 +1,73 @@
+{
+  "cds": [
+    {
+      "end": 4699979,
+      "start": 4699220,
+      "width": 760
+    }
+  ],
+  "chromosome": "chr20",
+  "end": 4701588,
+  "exons": [
+    {
+      "acceptor": 4686455,
+      "chromosome": "chr20",
+      "donor": 4686512,
+      "end": 4686512,
+      "exon_number": 1,
+      "overlaps_variant": false,
+      "start": 4686455,
+      "strand": "+",
+      "width": 58
+    },
+    {
+      "acceptor": 4699210,
+      "chromosome": "chr20",
+      "donor": 4701588,
+      "end": 4701588,
+      "exon_number": 2,
+      "overlaps_variant": false,
+      "start": 4699210,
+      "strand": "+",
+      "width": 2379
+    }
+  ],
+  "gene_id": "ENSG00000171867.18",
+  "gene_name": "PRNP",
+  "is_mane_select": true,
+  "junctions": [
+    {
+      "atlas_url": null,
+      "downstream_exon": 2,
+      "intron_length": 12697,
+      "junction_end": 4699210,
+      "junction_start": 4686512,
+      "junction_str": "4686512:4699210",
+      "score_id": null,
+      "type": "Canonical Intron 1",
+      "upstream_exon": 1
+    }
+  ],
+  "num_exons": 2,
+  "start": 4686455,
+  "strand": "+",
+  "transcript_id": "ENST00000379440.9",
+  "transcript_type": "protein_coding",
+  "utr": [
+    {
+      "end": 4686512,
+      "start": 4686455,
+      "width": 58
+    },
+    {
+      "end": 4699220,
+      "start": 4699210,
+      "width": 11
+    },
+    {
+      "end": 4701588,
+      "start": 4699979,
+      "width": 1610
+    }
+  ]
+}
