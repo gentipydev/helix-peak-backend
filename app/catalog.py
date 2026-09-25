@@ -41,15 +41,19 @@ _DETAIL_COLUMNS = _SUMMARY_COLUMNS + """,
 """
 
 # Paged by slug, and ordered by slug because of it: a keyset cursor is only
-# stable when the ordering is the column being compared. The reading order --
-# the curated rows in the sequence someone chose, then everything resolved
-# since -- travels as `catalog_order` on each row and is restored by the
-# client, which holds the whole catalog anyway. It used to travel as the order
-# of a const list; it has to travel as something.
+# stable when the ordering is the column being compared. The reading order
+# travels as `catalog_order` on each row and is restored by the client, which
+# holds the whole catalog anyway. It used to travel as the order of a const
+# list; it has to travel as something.
+#
+# The catalog is the list, and the list is the curated rows only. A protein
+# built on demand has a row too, with a null `catalog_order`, but it is found
+# through `/proteins/suggest` and never joins the list someone chose.
 _PAGE = """
 select {columns}
 from protein p
-where %s::text is null or p.slug > %s
+where p.catalog_order is not null
+  and (%s::text is null or p.slug > %s)
 order by p.slug
 limit %s
 """.format(columns=_SUMMARY_COLUMNS)
@@ -78,7 +82,8 @@ select {columns},
                 case when position(%(needle)s in lower(p.summary)) > 0 then 3 end) as tier
 from protein p
 left join matched m on m.slug = p.slug
-where m.tier is not null or position(%(needle)s in lower(p.summary)) > 0
+where p.catalog_order is not null
+  and (m.tier is not null or position(%(needle)s in lower(p.summary)) > 0)
 order by tier, p.catalog_order nulls last, p.display, p.slug
 limit %(limit)s
 """.format(columns=_SUMMARY_COLUMNS)

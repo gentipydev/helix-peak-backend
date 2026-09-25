@@ -160,6 +160,22 @@ def test_a_full_page_offers_a_cursor(client, fake_pool):
     assert body["next"] == "a"
 
 
+def test_the_catalog_is_the_list_and_built_proteins_are_not_on_it(client, fake_pool):
+    """A protein built on demand has a row with no `catalog_order`.
+
+    It is found through `/proteins/suggest`; the list stays the one someone
+    chose, and so does searching it.
+    """
+    pool = fake_pool(proteins=[_protein_row()])
+    client.get("/catalog")
+    client.get("/catalog/search?q=ins")
+    flat = [" ".join(sql.split()) for sql, _ in pool.statements]
+    (page_sql,) = [sql for sql in flat if "from protein p" in sql and "order by p.slug" in sql]
+    (search_sql,) = [sql for sql in flat if sql.startswith("with matched")]
+    assert "where p.catalog_order is not null" in page_sql
+    assert "where p.catalog_order is not null" in search_sql
+
+
 # --- search -----------------------------------------------------------------
 
 

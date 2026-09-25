@@ -7,11 +7,18 @@ from urllib.error import HTTPError, URLError
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import RedirectResponse
 
-from . import catalog, tracks
+from . import catalog, suggest, tracks
 from .catalog import CatalogUnavailable
 from .genbank_parser import GeneNotFound, extract_gene
 from .record_cache import fetch as fetch_genbank_record
-from .schemas import CatalogPage, GeneResponse, ProteinDetail, SearchResponse, Track
+from .schemas import (
+    CatalogPage,
+    GeneResponse,
+    ProteinDetail,
+    SearchResponse,
+    SuggestResponse,
+    Track,
+)
 from .impact_explanations import NOT_COVERED, read_impact_explanations, stored_url
 
 router = APIRouter()
@@ -165,6 +172,22 @@ def search_catalog(
     with _catalog_errors():
         proteins = catalog.search(q, limit=limit)
     return {"proteins": proteins, "candidates": []}
+
+
+@router.get("/proteins/suggest", response_model=SuggestResponse)
+def suggest_proteins(
+    q: str = "",
+    limit: int = Query(12, ge=1, le=25),
+) -> dict:
+    """Every reviewed human protein ``q`` might mean, best first.
+
+    Not the catalog: the twenty are among the answers, tagged ``listed``, but
+    so is everything else UniProt has reviewed, each saying whether the app
+    can build it. The client asks this as the reader types, so it is one index
+    range and, only when no prefix matches, one near-miss lookup.
+    """
+    with _catalog_errors():
+        return suggest.suggest(q, limit=limit)
 
 
 @router.get("/protein/{slug}", response_model=ProteinDetail)

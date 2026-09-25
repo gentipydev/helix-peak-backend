@@ -222,6 +222,33 @@ class SearchResponse(BaseModel):
     candidates: List[Candidate] = []
 
 
+class Suggestion(BaseModel):
+    """One protein a reader might mean, and what the app can do with it.
+
+    ``status`` is ``listed`` (one of the twenty), ``ready`` (built earlier),
+    ``buildable`` or ``unavailable``; ``reason`` says why for the last. ``slug``
+    is where a listed or ready protein opens, and the slug a build would give a
+    buildable one.
+    """
+
+    uniprot: str
+    gene: Optional[str] = None
+    name: str
+    # The app's own name for a listed protein ("Hemoglobin (beta chain)").
+    display: Optional[str] = None
+    length: int
+    slug: Optional[str] = None
+    status: str
+    reason: Optional[str] = None
+
+
+class SuggestResponse(BaseModel):
+    q: str
+    # "UniProt 2026_03 · MANE v1.5": what the index was built from.
+    release: Optional[str] = None
+    suggestions: List[Suggestion] = []
+
+
 class ResolveRequest(BaseModel):
     gene: str
     taxon: int = 9606

@@ -197,6 +197,33 @@ Requests time out after `NCBI_TIMEOUT_SECONDS` (default 20). `Entrez.efetch` tak
 no timeout argument and urllib has no default, so this is enforced with
 `socket.setdefaulttimeout` at startup.
 
+## Suggestions: every reviewed human protein
+
+`GET /proteins/suggest?q=insul&limit=12` answers as someone types. The twenty
+listed proteins are among the answers, tagged `listed`, but so is every other
+reviewed human protein, each saying what the app can do with it: `ready`
+(built earlier), `buildable`, or `unavailable` with a `reason`.
+
+It reads `protein_index`, built from UniProt's reviewed human entries joined to
+MANE Select, one row per (entry, gene) because some entries are made by two
+genes (P69905 by HBA1 and HBA2). Search terms are normalised to lower-case
+ASCII and stored under "C" collation, so every prefix is a plain btree range
+that works under psycopg's prepared, generic plans too. A trigram index answers
+typos, but only when no prefix matches at all. Server-side, a query takes 6-30 ms.
+
+To build it, or to refresh it after a UniProt or MANE release:
+
+```sh
+.venv/bin/python scripts/apply_migration.py migrations/0002_protein_index.sql   # once
+.venv/bin/python scripts/load_protein_index.py --dry-run                         # report only
+.venv/bin/python scripts/load_protein_index.py                                   # replace the index
+.venv/bin/python scripts/check_suggest.py https://helix-peak-backend.onrender.com
+```
+
+The loader refuses to write if a listed protein has no buildable row, or if a
+build would take a listed protein's slug. `apply_migration.py` is `psql -f` for a
+machine without psql.
+
 ## Rate limiting
 
 Not implemented here, and not needed yet: Biopython already sleeps ~0.37s between
@@ -210,9 +237,9 @@ single-user dev service and should be tightened before this is exposed anywhere.
 
 ## Deliberately not built
 
-`/search` and `/summary` are not here yet, and neither is caching or auth. Parsing
-covers one gene per request — there is no endpoint that returns every gene in a
-record, because no client needs one yet.
+Auth is not here yet, and neither is `/summary`. Parsing covers one gene per
+request — there is no endpoint that returns every gene in a record, because no
+client needs one yet.
 
 ## Layout
 
@@ -225,8 +252,15 @@ app/
   entrez_client.py    the Entrez.efetch wrapper; fetch and parse kept separate
   record_cache.py     read-through cache of whole records, keyed by accession
   genbank_parser.py   extract_gene(record, gene) -- pure, no I/O
-  schemas.py          pydantic response models for /gene
-  router.py           the endpoint and the 404/502 mapping
+  protein_index.py    how index rows and search terms are made, and normalize()
+  suggest.py          /proteins/suggest: ranked prefix tiers, near misses last
+  schemas.py          pydantic response models
+  router.py           the endpoints and the 404/502/503 mapping
+migrations/           applied by hand, in order
+scripts/
+  apply_migration.py      psql -f, for a machine without psql
+  load_protein_index.py   UniProt + MANE + LRG_RefSeqGene -> protein_index
+  check_suggest.py        golden queries and warm timings against a running service
 tests/
   test_gene.py            /gene against a mocked Entrez.efetch
   test_health.py          the liveness check
@@ -234,6 +268,8 @@ tests/
   test_config.py          startup fails without NCBI_EMAIL
   test_health_db.py       the readiness contract, without opening a socket
   test_record_cache.py    hit, miss, eviction and degradation, against a fake pool
+  test_protein_index.py   normalising, MANE and RefSeqGene parsing, rows and terms
+  test_suggest.py         statuses, the short and near-miss rules, against a fake pool
   conftest.py             shared fixtures, incl. the efetch patches
   ncbi_errors.py          real NCBI failure bodies
   fixtures/ng_007114.gb
