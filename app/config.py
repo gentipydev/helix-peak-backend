@@ -39,11 +39,11 @@ class Settings(BaseSettings):
     cache_ttl_days: int = 30
 
     # Generated artifacts can be mounted here in a deployed service. The local
-    # default shares the exact payloads shipped by the companion mobile app.
+    # default reads the backend pipeline's fetched or baked payloads.
     # A directory that is not there is reported as a fault rather than read as
     # an answer about the gene; see ``impact_explanations``.
     impact_explanations_dir: Path = (
-        Path(__file__).resolve().parents[2] / "helix-peek" / "assets" / "impact_explanations"
+        Path(__file__).resolve().parents[1] / "pipeline" / "data" / "assets" / "impact_explanations"
     )
 
     # The Supabase project, as the REST origin rather than the database host:

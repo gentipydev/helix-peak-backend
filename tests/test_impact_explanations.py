@@ -29,10 +29,10 @@ def test_unincluded_and_malformed_are_distinct(client, evidence_dir):
     assert client.get("/gene/NG_007114/INS/impact-explanations").status_code == 503
 
 
-def test_local_generated_bundle_matches_mobile(client):
+def test_local_generated_payload_matches_pipeline(client):
     path = settings.impact_explanations_dir / "insulin.json"
     if not path.exists():
-        pytest.skip("Companion mobile checkout not present")
+        pytest.skip("Run pipeline/fetch_tracks.py to fetch generated explanations")
     data = json.loads(path.read_text())
     response = client.get(f"/gene/{data['accession']}/{data['gene']}/impact-explanations")
     assert response.status_code == 200
@@ -43,7 +43,7 @@ def test_missing_directory_is_a_fault_not_a_gene_answer(client, tmp_path, monkey
     """An unmounted volume must not answer "not included for this gene".
 
     The deployed image copies only `app/`, so the default directory -- which is
-    built from `__file__` and expects the companion checkout beside it --
+    built from `__file__` and expects fetched pipeline data --
     resolves to a path that is not there. `Path.glob` yields nothing for a
     missing directory rather than raising, so every request used to report a
     404 while insulin, hemoglobin and cftr all ship expecting a payload.

@@ -154,7 +154,7 @@ class StructureChrome(BaseModel):
 
 
 class ProteinSummary(BaseModel):
-    """What a search result needs, and nothing more.
+    """A catalog row, including the metadata needed to open its whole walk.
 
     ``tracks`` carries state strings only. A card shows what is ready; it does
     not need a URL for a track nobody has opened.

@@ -70,15 +70,16 @@ without spending an NCBI request.
 
 ### AVI contribution details
 
-`GET /gene/{id}/{gene}/impact-explanations` serves the versioned, generated
-attribution payload for INS, HBB and CFTR. It reads the same JSON that the mobile
-app bundles in mock mode, using exact accession/gene identity, with no NCBI or
-Atlas calls. Missing coverage returns 404; malformed generated data returns 503.
+`GET /gene/{id}/{gene}/impact-explanations` redirects to the stored, validated
+attribution payload for INS, HBB and CFTR. Without a database it can read local
+pipeline files by exact accession/gene identity, with no NCBI or Atlas calls.
+Missing coverage returns 404; malformed or unmounted local data returns 503.
 
-`IMPACT_EXPLANATIONS_DIR` defaults to the companion checkout's
-`helix-peek/assets/impact_explanations`. Package or mount that generated directory
-and configure the path when deploying. The endpoint does not require an
-AlphaGenome API key. [Baking and the contract](../helix-peek/docs/avi-contributions.md).
+`IMPACT_EXPLANATIONS_DIR` defaults to `pipeline/data/assets/impact_explanations`.
+Run `python3 pipeline/fetch_tracks.py` to populate it locally, or configure a
+mounted directory. The deployed client reads explanations through track URLs.
+The endpoint does not require an AlphaGenome API key.
+[Baking and the contract](../helix-peek/docs/avi-contributions.md).
 
 ## Setup
 
