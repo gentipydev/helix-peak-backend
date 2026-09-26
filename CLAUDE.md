@@ -56,7 +56,7 @@ differs from storage. A mismatch means the refactor changed data. Stop; never up
 - `record_cache.py`: read-through cache of whole GenBank records by accession. Best-effort and self-creating.
 - `genbank_parser.py`: `extract_gene(record, gene)`. Pure, exact `/gene` match, 1-based inclusive.
 - `catalog.py`: reads `protein` and `protein_alias`. Raises `CatalogUnavailable` (503) and never answers empty.
-- `tracks.py`: `protein_track` rows become `{kind: Track}` with public storage URLs. Holds `KINDS`.
+- `tracks.py`: `protein_track` rows become `{kind: Track}` with public storage URLs. Any kind with a row is served; `KINDS` is the floor.
 - `impact_explanations.py`: AVI explanations. Storage redirect first, then the local directory.
 - `protein_index.py`: pure. `normalize()`, UniProt/MANE parsing, index rows and terms. Shared with `scripts/load_protein_index.py`.
 - `suggest.py`: `/proteins/suggest`. Ranked prefix tiers over `protein_index_term`, near misses last.
@@ -89,18 +89,17 @@ path under `pipeline/data/`; that is the only link, and it is a path, not an imp
    shares code with an existing baker, re-bake that baker's tracks and prove the sha256 unchanged.
 2. `migrations/000N_<kind>.sql` drops and re-adds the `protein_track_kind_known` check with
    the new value. Without it, the insert is rejected. Never edit `0001`.
-3. `app/tracks.py` `KINDS`: `/protein/{slug}/tracks` and the catalog's `tracks` maps serve
-   only listed kinds, and silently drop any other row. Append the new kind. If it is not
-   in the `tracks` bucket, add it to `_BUCKET_OF_KIND`.
+3. No `app/` change. `/protein/{slug}/tracks` and the catalog's `tracks` maps serve any kind
+   that has a row, as the row says (pinned by `test_catalog.py`). `KINDS` is only the walk's
+   floor, reported `absent` when there is no row. Leave it alone.
 4. `pipeline/upload_tracks.py`: `--kind` choices, `asset_of`, `validate` (which returns the
    provenance), and the bucket, suffix and content type if it is not JSON. The upload
    upserts the row as `ready`. A protein with no row reads `absent`.
 5. `pipeline/fetch_tracks.py`: `KINDS` and `asset_path`.
 6. A verification script for the new payload. Checks on existing kinds do not change.
-7. A test that serves the kind through the fake pool.
-8. Done: pytest green, `seed_catalog.py --check` clean, `/catalog` still twenty, existing
+7. Done: pytest green, `seed_catalog.py --check` clean, `/catalog` still twenty, existing
    sha256 unchanged. Upload only when asked, with `--dry-run` first.
-9. The client skips kinds it cannot classify (`TrackKind.fromWire`), so no installed app breaks.
+8. The client skips kinds it cannot classify (`TrackKind.fromWire`), so no installed app breaks.
 
 ## Tests run offline
 

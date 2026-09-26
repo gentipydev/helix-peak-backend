@@ -19,9 +19,13 @@ from .config import settings
 
 logger = logging.getLogger(__name__)
 
-# Every track a protein can have, in the order the walk meets them. A protein
-# with no row for a kind reports ``absent``, so a missing row and an explicit
+# The tracks the walk reads, in the order it meets them. A protein with no row
+# for one of these reports ``absent``, so a missing row and an explicit
 # "nothing is coming" say the same thing and neither is an error.
+#
+# This is the floor of what is served, not the limit. A row of any other kind
+# is served as it stands: a new kind arrives as a migration and its rows, with
+# no change here, and a client that cannot classify a kind skips it.
 KINDS = (
     "record",
     "constraint",
@@ -105,7 +109,7 @@ def _row_to_track(row) -> dict:
 
 
 def for_slug(slug: str) -> Dict[str, dict]:
-    """Every track for one protein, keyed by kind, with every kind present.
+    """Every track for one protein, keyed by kind, with every ``KINDS`` present.
 
     A database that is missing or broken reports every track absent rather than
     raising. The walk then draws a protein with no tracks, which is a state it
@@ -122,9 +126,7 @@ def for_slug(slug: str) -> Dict[str, dict]:
         logger.exception("Track read failed for %s", slug)
         return tracks
     for row in rows:
-        kind = row[0]
-        if kind in tracks:
-            tracks[kind] = _row_to_track(row)
+        tracks[row[0]] = _row_to_track(row)
     return tracks
 
 
@@ -144,6 +146,6 @@ def states_for(slugs: List[str]) -> Dict[str, Dict[str, str]]:
         logger.exception("Track state read failed for %d proteins", len(slugs))
         return states
     for slug, kind, state in rows:
-        if slug in states and kind in states[slug]:
+        if slug in states:
             states[slug][kind] = state
     return states

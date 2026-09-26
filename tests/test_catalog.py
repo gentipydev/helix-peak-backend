@@ -265,6 +265,45 @@ def test_every_kind_is_present_and_a_missing_row_is_absent(client, fake_pool,
     assert body["clinvar"]["url"] is None
 
 
+def test_a_kind_this_service_has_never_heard_of_is_served_unchanged(client, fake_pool,
+                                                                     monkeypatch):
+    """A new kind is a migration and its rows, not a change to `app/`.
+
+    `KINDS` is the floor of what is served, never the limit: a row of any other
+    kind comes back exactly as the row says, beside the kinds the walk reads.
+    """
+    monkeypatch.setattr(settings, "supabase_url", "https://ref.supabase.co")
+    fake_pool(
+        proteins=[_protein_row()],
+        track_rows=[("some_future_kind", "ready", None, "tracks",
+                     "some_future_kind/insulin.0123456789ab.bin", 4096,
+                     "0123456789abcdef", None, "packed-v1", {"method": "new"})],
+    )
+    body = client.get("/protein/insulin/tracks").json()
+    assert set(body) == set(tracks.KINDS) | {"some_future_kind"}
+    assert body["some_future_kind"] == {
+        "state": "ready",
+        "reason": None,
+        "url": ("https://ref.supabase.co/storage/v1/object/public/tracks/"
+                "some_future_kind/insulin.0123456789ab.bin"),
+        "format": "packed-v1",
+        "bytes": 4096,
+        "sha256": "0123456789abcdef",
+        "content_encoding": None,
+        "provenance": {"method": "new"},
+    }
+    assert all(body[kind]["state"] == "absent" for kind in tracks.KINDS)
+
+
+def test_a_catalog_row_carries_a_kind_it_has_never_heard_of(client, fake_pool):
+    """The card's state map is read the same way as the per-protein one."""
+    fake_pool(proteins=[_protein_row()],
+              track_rows=[("insulin", "some_future_kind", "pending")])
+    states = client.get("/catalog").json()["proteins"][0]["tracks"]
+    assert states == dict({kind: "absent" for kind in tracks.KINDS},
+                          some_future_kind="pending")
+
+
 def test_pending_and_refused_are_distinct_states(client, fake_pool, monkeypatch):
     """R9.3: an unbaked gene and one whose bake is arriving are not one state."""
     monkeypatch.setattr(settings, "supabase_url", "https://ref.supabase.co")
