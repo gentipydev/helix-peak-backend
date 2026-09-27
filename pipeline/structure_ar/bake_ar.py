@@ -30,6 +30,11 @@ angstroms, so AR Quick Look shows 1 A as 1 cm: insulin stands 24 cm across.
 The fold rests on its lowest point, centred over the anchor, because AR Quick
 Look puts the model's origin on the floor it finds.
 
+**Android.** Scene Viewer takes a `.glb`, in metres. The same placed meshes
+are written beside the USDZ as `<slug>.glb`, every point times 0.01, so 1 A is
+1 cm there too. It is uploaded beside the USDZ and named in the row's
+provenance, as the walk's `.glb` is beside its `.fsceneb`.
+
 **Colour.** None is baked. Which colour a chain takes is the app's decision
 (`targets.Chain`: "a colour written down twice is a colour that will
 disagree"), so every chain gets the walk's matte material -- roughness 0.65,
@@ -58,7 +63,7 @@ if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
 from pipeline.paths import DATA  # noqa: E402
-from pipeline.structure_ar.glb import Mesh, read_glb  # noqa: E402
+from pipeline.structure_ar.glb import Mesh, read_glb, write_glb  # noqa: E402
 from pipeline.targets import BY_SLUG, TARGETS, Structure, Target  # noqa: E402
 
 STRUCTURES = BACKEND / "pipeline" / "structure" / "structures"
@@ -79,6 +84,11 @@ _ROUNDS = 60
 
 def ar_asset(target: Target) -> str:
     return f"assets/models_ar/{target.slug}.usdz"
+
+
+def ar_glb(target: Target) -> str:
+    """The same fold as a `.glb` in metres, for Android's Scene Viewer."""
+    return f"assets/models_ar/{target.slug}.glb"
 
 
 def ca_atoms(structure: Structure, pdb: Path | None = None) -> np.ndarray:
@@ -234,6 +244,19 @@ def fit_bridges(bonds: Mesh, bridges: list[np.ndarray]) -> Fit | None:
     )
 
 
+def place(meshes: dict[str, Mesh], length: float) -> dict[str, Mesh]:
+    """The meshes in angstroms, centred over the anchor, resting on their lowest point.
+
+    Where AR puts a model is where its origin is: on the floor it finds.
+    """
+    stacked = np.vstack([m.positions for m in meshes.values()]) * length
+    low, high = stacked.min(axis=0), stacked.max(axis=0)
+    offset = np.array([-(low[0] + high[0]) / 2, -low[1], -(low[2] + high[2]) / 2])
+    return {name: Mesh(positions=m.positions * length + offset, normals=m.normals,
+                       triangles=m.triangles)
+            for name, m in meshes.items()}
+
+
 def write_usdz(
     meshes: dict[str, Mesh],
     length: float,
@@ -243,10 +266,7 @@ def write_usdz(
     """The meshes at `length` angstroms per model unit, as an ARKit USDZ."""
     from pxr import Gf, Sdf, Usd, UsdGeom, UsdShade, UsdUtils, Vt
 
-    stacked = np.vstack([m.positions for m in meshes.values()]) * length
-    low, high = stacked.min(axis=0), stacked.max(axis=0)
-    # Centred over the anchor, resting on its lowest point.
-    offset = np.array([-(low[0] + high[0]) / 2, -low[1], -(low[2] + high[2]) / 2])
+    placed = place(meshes, length)
 
     with tempfile.TemporaryDirectory() as work:
         layer = Path(work) / "fold.usdc"
@@ -265,7 +285,7 @@ def write_usdz(
         material.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(), "surface")
 
         for name, mesh in meshes.items():
-            points = mesh.positions * length + offset
+            points = placed[name].positions
             prim = UsdGeom.Mesh.Define(stage, f"/Fold/{name}")
             prim.CreatePointsAttr(Vt.Vec3fArray.FromNumpy(points.astype(np.float32)))
             prim.CreateFaceVertexCountsAttr(
@@ -321,11 +341,14 @@ def bake(target: Target) -> dict:
             "atoms": fit.atoms,
             "rms_angstrom": round(fit.rms, 3),
         },
-        "glb": {"sha256": hashlib.sha256(payload).hexdigest(), "bytes": len(payload)},
+        "source_glb": {"sha256": hashlib.sha256(payload).hexdigest(), "bytes": len(payload)},
         "usd": f"usd-core {'.'.join(str(v) for v in Usd.GetVersion())}",
         "built_by": "pipeline/structure_ar/bake_ar.py",
     }
     write_usdz(meshes, fit.length, DATA / ar_asset(target), metadata)
+    # Scene Viewer reads metres: angstroms times 0.01 shows 1 A as 1 cm there too.
+    (DATA / ar_glb(target)).write_bytes(
+        write_glb(place(meshes, fit.length), scale=METERS_PER_UNIT))
     return metadata
 
 
@@ -346,7 +369,7 @@ def main() -> int:
         box = metadata["bbox_angstrom"]
         print(f"{target.slug:<16} {box[0]:7.2f} x {box[1]:7.2f} x {box[2]:7.2f} A  "
               f"fit {metadata['size_fit']['rms_angstrom']:.2f} A over "
-              f"{metadata['size_fit']['atoms']} CA  {path.stat().st_size:>9,} B")
+              f"{metadata['size_fit']['atoms']} atoms  {path.stat().st_size:>9,} B")
     return 0
 
 

@@ -108,6 +108,8 @@ def validate(kind: str, target, payload: bytes) -> dict:
                 "nodes": [c.node for c in target.structure.chains]}
 
     if kind == "structure_ar":
+        # The row names the USDZ AR Quick Look opens; the `.glb` beside it, for
+        # Scene Viewer, goes up with it and is named in `provenance.glb`.
         if payload[:4] != b"PK":
             raise ValueError("not a .usdz")
         # The whole of `check_ar.py` on this protein: the package rules AR
@@ -286,6 +288,15 @@ def main() -> int:
                     "bytes": len(payload),
                 }},
             })
+        if kind == "structure_ar":
+            room = DATA / f"assets/models_ar/{target.slug}.glb"
+            companion = room.read_bytes()
+            room_digest = hashlib.sha256(companion).hexdigest()
+            room_path = f"{kind}/{target.slug}.{room_digest[:12]}.glb"
+            uploads.append((room_path, companion, "model/gltf-binary"))
+            row["provenance"] = {**provenance, "glb": {
+                "path": room_path, "sha256": room_digest, "bytes": len(companion),
+            }}
         row["_uploads"] = uploads
         planned.append(row)
 

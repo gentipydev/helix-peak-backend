@@ -8,6 +8,7 @@ For each AR target, the USDZ under `pipeline/data/assets/models_ar/`:
   rules AR Quick Look needs, stage metadata, material bindings);
 - is in centimetres (`metersPerUnit` 0.01), Y up, with `/Fold` its default
   prim, and rests on its lowest point, centred over the anchor;
+- has a `.glb` beside it holding the same points in metres, for Scene Viewer;
 - holds the same meshes as the stored `.glb` -- the same node names in the same
   order, the same vertex and triangle counts -- scaled by one factor, the same
   on every axis, and names that `.glb` by the sha256 of the file beside it;
@@ -32,7 +33,7 @@ if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
 from pipeline.paths import DATA  # noqa: E402
-from pipeline.structure_ar.bake_ar import AR_TARGETS, METERS_PER_UNIT, ar_asset  # noqa: E402
+from pipeline.structure_ar.bake_ar import AR_TARGETS, METERS_PER_UNIT, ar_asset, ar_glb  # noqa: E402
 from pipeline.structure_ar.glb import read_glb  # noqa: E402
 
 # How far a residual may run before the size it gave is not believed: the
@@ -74,7 +75,7 @@ def problems_of(target) -> list[str]:
         return out
 
     glb_bytes = source.read_bytes()
-    if meta["glb"]["sha256"] != hashlib.sha256(glb_bytes).hexdigest():
+    if meta["source_glb"]["sha256"] != hashlib.sha256(glb_bytes).hexdigest():
         out.append("made from another .glb than the stored one")
     model = read_glb(glb_bytes)
     meshes = [p for p in root.GetChildren() if p.IsA(UsdGeom.Mesh)]
@@ -104,6 +105,18 @@ def problems_of(target) -> list[str]:
     ratio = extent / (scaled.max(axis=0) - scaled.min(axis=0))
     if np.ptp(ratio) > 1e-4 * ratio.mean():
         out.append(f"scaled unevenly: {ratio}")
+
+    room = DATA / ar_glb(target)
+    if not room.exists():
+        out.append(f"{room}: no .glb beside it for Scene Viewer")
+    else:
+        companion = read_glb(room.read_bytes())
+        if list(companion) != names:
+            out.append(f"the room .glb has nodes {list(companion)}")
+        else:
+            metres = np.vstack([companion[n].positions for n in names])
+            if not np.allclose(metres, points * METERS_PER_UNIT, atol=1e-5):
+                out.append("the room .glb is not the USDZ's points in metres")
 
     fit = meta["size_fit"]
     limit = _EXACT_RMS if fit["method"].startswith("disulfide") else _FITTED_RMS

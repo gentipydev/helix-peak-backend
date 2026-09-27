@@ -116,3 +116,48 @@ def read_glb(payload: bytes) -> dict[str, Mesh]:
     for root in scene.get("nodes", range(len(nodes))):
         visit(root, np.eye(4))
     return found
+
+
+def write_glb(meshes: dict[str, Mesh], scale: float = 1.0) -> bytes:
+    """The meshes as a glTF binary, one named node each, every point times `scale`.
+
+    Positions as float32, normals where there are any, indices as uint32; one
+    buffer, no materials. The bytes depend on nothing but the meshes, so the
+    same meshes always give the same file.
+    """
+    binary = bytearray()
+    views, accessors, gltf_meshes, nodes = [], [], [], []
+
+    def add(array: np.ndarray, kind: str, component: int, bounds: bool) -> int:
+        data = np.ascontiguousarray(array)
+        views.append({"buffer": 0, "byteOffset": len(binary), "byteLength": data.nbytes})
+        accessor = {"bufferView": len(views) - 1, "componentType": component,
+                    "count": len(data), "type": kind}
+        if bounds:
+            accessor["min"] = [float(v) for v in data.min(axis=0)]
+            accessor["max"] = [float(v) for v in data.max(axis=0)]
+        accessors.append(accessor)
+        binary.extend(data.tobytes())
+        binary.extend(b"\0" * (-len(binary) % 4))
+        return len(accessors) - 1
+
+    for name, mesh in meshes.items():
+        attributes = {"POSITION": add((mesh.positions * scale).astype(np.float32),
+                                      "VEC3", 5126, True)}
+        if mesh.normals is not None:
+            attributes["NORMAL"] = add(mesh.normals.astype(np.float32), "VEC3", 5126, False)
+        indices = add(mesh.triangles.reshape(-1).astype(np.uint32), "SCALAR", 5125, False)
+        gltf_meshes.append({"name": name, "primitives": [
+            {"attributes": attributes, "indices": indices, "mode": 4}]})
+        nodes.append({"name": name, "mesh": len(gltf_meshes) - 1})
+
+    document = json.dumps({
+        "asset": {"version": "2.0", "generator": "pipeline/structure_ar"},
+        "scene": 0, "scenes": [{"nodes": list(range(len(nodes)))}],
+        "nodes": nodes, "meshes": gltf_meshes, "accessors": accessors,
+        "bufferViews": views, "buffers": [{"byteLength": len(binary)}],
+    }, separators=(",", ":"), sort_keys=True).encode()
+    document += b" " * (-len(document) % 4)
+    body = (struct.pack("<II", len(document), _JSON) + document
+            + struct.pack("<II", len(binary), _BIN) + bytes(binary))
+    return struct.pack("<4sII", b"glTF", 2, 12 + len(body)) + body

@@ -17,7 +17,8 @@ provenance. The `structure` rows, objects and provenance are not touched.
 Upload only when asked: `DATABASE_URL`, `SUPABASE_URL` and `SUPABASE_SERVICE_KEY`
 set, `migrations/0003_structure_ar.sql` applied, then the same command without
 `--dry-run`. Objects go to the `models` bucket as
-`structure_ar/<slug>.<sha12>.usdz` (`model/vnd.usdz+zip`).
+`structure_ar/<slug>.<sha12>.usdz` (`model/vnd.usdz+zip`), with its `.glb`
+beside it.
 
 Which proteins get the track: every target with a structure (`AR_TARGETS` in
 `bake_ar.py`), which is all twenty.
@@ -107,3 +108,11 @@ normalising, and this bake gives 24.31 x 18.66 x 20.33 A.
   how the size was found and its residual, the source `.glb`'s sha256, and
   the usd-core version.
 - Two bakes of the same `.glb` give the same bytes.
+
+## Beside it, a `.glb` for Android
+
+Android's Scene Viewer takes a `.glb`, in metres. The same placed meshes go
+beside each USDZ as `<slug>.glb`, every point times 0.01, so 1 Å is 1 cm there
+too. The upload puts it next to the USDZ and names it in the row's
+`provenance.glb` (`path`, `sha256`, `bytes`), as a `structure` row names the
+`.glb` beside its `.fsceneb`. `check_ar.py` holds it to the USDZ's own points.

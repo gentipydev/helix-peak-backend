@@ -155,3 +155,24 @@ def test_insulin_comes_back_at_the_size_its_bake_logged():
     # The ribbon fit, on its own, lands within about one per cent of it.
     ribbon = bake_ar.fit_size(vertices, bake_ar.ca_atoms(structure))
     assert ribbon.length == pytest.approx(fit.length, rel=0.015)
+
+
+def test_the_room_glb_reads_back_as_written():
+    from pipeline.structure_ar.glb import write_glb
+
+    rng = np.random.default_rng(3)
+    meshes = {
+        "chainA": Mesh(positions=rng.normal(size=(6, 3)), normals=None,
+                       triangles=np.array([[0, 1, 2], [3, 4, 5]])),
+        "bonds": Mesh(positions=rng.normal(size=(3, 3)),
+                      normals=np.tile([0.0, 0.0, 1.0], (3, 1)),
+                      triangles=np.array([[0, 1, 2]])),
+    }
+    payload = write_glb(meshes, scale=0.01)
+    back = read_glb(payload)
+    assert list(back) == ["chainA", "bonds"]
+    for name, mesh in meshes.items():
+        assert np.allclose(back[name].positions, mesh.positions * 0.01, atol=1e-7)
+        assert (back[name].triangles == mesh.triangles).all()
+    assert np.allclose(back["bonds"].normals, [0, 0, 1])
+    assert write_glb(meshes, scale=0.01) == payload
