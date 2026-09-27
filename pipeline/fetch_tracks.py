@@ -39,7 +39,7 @@ from pipeline.targets import TARGETS, Target  # noqa: E402
 
 SERVICE = "https://helix-peak-backend.onrender.com"
 KINDS = ("record", "constraint", "impact", "clinvar", "impact_explanations", "structure",
-         "structure_ar", "trafficking", "folding", "locus")
+         "structure_ar", "trafficking", "folding", "locus", "audio")
 
 
 def asset_path(kind: str, target: Target) -> str:
@@ -73,6 +73,9 @@ def asset_path(kind: str, target: Target) -> str:
     if kind == "locus":
         # Where `locus/bake_locus.py` writes it (`locus_asset`).
         return f"assets/locus/{target.slug}_locus.json"
+    if kind == "audio":
+        # Where `audio/bake_audio.py` writes it (`audio_asset`).
+        return f"assets/audio/{target.slug}.m4a"
     raise ValueError(f"unknown kind {kind!r}")
 
 

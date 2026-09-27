@@ -28,6 +28,7 @@ app's bundle once had, then uploaded:
 | `assets/trafficking/<slug>_trafficking.json` | [`trafficking/bake_trafficking.py`](trafficking/bake_trafficking.py) | `.venv` | UniProt's transmembrane spans, GPI anchor and subcellular location, for the cell scene |
 | `assets/folding/<slug>_folding.json` | [`folding/bake_folding.py`](folding/bake_folding.py) | `pipeline/structure/venv` | each chain's CA trace and secondary structure, residue by residue, in the stored model's frame, for the fold animation |
 | `assets/locus/<slug>_locus.json` | [`locus/bake_locus.py`](locus/bake_locus.py) | `.venv` | the gene's cytogenetic band on GRCh38 and every band of its chromosome, from UCSC's cytoBand table, for the zoom |
+| `assets/audio/<slug>.m4a` | [`audio/bake_audio.py`](audio/bake_audio.py) | `.venv` + PyAV | the protein as sound, one note a residue (pitch hydropathy, timbre secondary structure, loudness conservation, a tick at each ClinVar residue), with the map from each residue to the millisecond its note starts inside the file, for Listen |
 | `assets/assemblies/<slug>/…` | [`assemblies/bake_assembly.py`](assemblies/bake_assembly.py) | `pipeline/structure/venv` | not a catalog track: a molecule of more than one gene (the hemoglobin tetramer) as a morph pair, both states in one frame, in its own tables (`assembly`, `assembly_track`) |
 
 Each directory's README has its detail, how to make its environment, and what a

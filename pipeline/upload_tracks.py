@@ -102,6 +102,9 @@ def asset_of(kind: str, target) -> Path | None:
     if kind == "locus":
         # Where `locus/bake_locus.py` writes it (`locus_asset`).
         return DATA / f"assets/locus/{target.slug}_locus.json"
+    if kind == "audio":
+        # Where `audio/bake_audio.py` writes it (`audio_asset`).
+        return DATA / f"assets/audio/{target.slug}.m4a"
     raise SystemExit(f"unknown kind {kind!r}")
 
 
@@ -134,6 +137,20 @@ def validate(kind: str, target, payload: bytes) -> dict:
         if meta["pdb"] != target.structure.pdb:
             raise ValueError(f"made from {meta['pdb']}, the target is {target.structure.pdb}")
         return meta
+
+    if kind == "audio":
+        # The whole of `check_audio.py` on this protein, listening included: one
+        # mono AAC-LC stream whose edit list starts on the first note, a timing
+        # map of one onset a residue, and every channel what its input says and
+        # what the file sounds like. The provenance is the map less its arrays.
+        from pipeline.audio.check_audio import problems_of
+        from pipeline.audio.m4a import read_map
+        found = problems_of(target, payload)
+        if found:
+            raise ValueError("; ".join(found))
+        carried = read_map(payload)
+        return {key: carried[key] for key in
+                ("audio", "tempo", "mapping", "sources", "schema_version", "built_by")}
 
     data = json.loads(payload)
     if not isinstance(data, dict):
@@ -283,7 +300,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Upload baked tracks to Supabase.")
     parser.add_argument("--kind", required=True, choices=[
         "record", "impact_explanations", "constraint", "impact", "clinvar", "structure",
-        "structure_ar", "trafficking", "folding", "locus"])
+        "structure_ar", "trafficking", "folding", "locus", "audio"])
     parser.add_argument("--target", action="append", default=None)
     parser.add_argument("--dry-run", action="store_true")
     arguments = parser.parse_args()
@@ -293,6 +310,7 @@ def main() -> int:
     bucket, suffix, content_type = {
         "structure": ("models", "glb", "model/gltf-binary"),
         "structure_ar": ("models", "usdz", "model/vnd.usdz+zip"),
+        "audio": ("tracks", "m4a", "audio/mp4"),
     }.get(kind, ("tracks", "json", "application/json"))
 
     planned = []

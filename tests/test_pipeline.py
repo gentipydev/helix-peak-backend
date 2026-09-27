@@ -27,6 +27,9 @@ from pipeline.targets import TARGETS
     "pipeline.mane",
     "pipeline.locus.bake_locus",
     "pipeline.locus.check_locus",
+    "pipeline.audio.m4a",
+    "pipeline.audio.bake_audio",
+    "pipeline.audio.check_audio",
 ])
 def test_the_tools_import_from_the_repository_root(module):
     importlib.import_module(module)
