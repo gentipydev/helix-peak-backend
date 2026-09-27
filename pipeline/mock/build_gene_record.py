@@ -32,7 +32,6 @@ import re
 import sys
 import tempfile
 import time
-import urllib.request
 
 BACKEND = Path(__file__).resolve().parents[2]
 if str(BACKEND) not in sys.path:
@@ -40,6 +39,7 @@ if str(BACKEND) not in sys.path:
 
 from pipeline.paths import DATA  # noqa: E402
 from pipeline.targets import GENE_PAGE_BUDGET_BP, TARGETS, Target  # noqa: E402
+from pipeline.uniprot import canonical_sequence  # noqa: E402
 
 from Bio import Entrez, SeqIO  # noqa: E402
 from Bio.Seq import Seq  # noqa: E402
@@ -157,12 +157,6 @@ def select_isoform(record, target: Target):
 
     record.features = [f for f in record.features if keep(f)]
     return record
-
-
-def canonical_sequence(uniprot: str) -> str:
-    url = f"https://rest.uniprot.org/uniprotkb/{uniprot}.json"
-    with urllib.request.urlopen(url, timeout=60) as response:
-        return json.load(response)["sequence"]["value"]
 
 
 # --------------------------------------------------------------- tidying
