@@ -47,8 +47,10 @@ zero is the first note on every player (see `m4a.py`), and the timing map is
 exact. The map rides inside the file, in a `uuid` box after the audio, so the
 track is one object and one digest, and the file still plays anywhere.
 
-A bake is deterministic: the same inputs give the same bytes (ffmpeg's
-bit-exact flags keep its version out of the file).
+A bake is deterministic on one machine: the same inputs give the same bytes
+(ffmpeg's bit-exact flags keep its version out of the file). Another machine's
+floating point can move a sample, and with it the bytes, as the structure
+bakes' can; across machines the proof is `check_audio.py`, not the digest.
 
 Which proteins get the track: all twenty (`AUDIO_TARGETS`), recorded here,
 never in targets.py.
@@ -297,7 +299,8 @@ def score(target: Target, record: dict, folding: dict | None,
 
 
 def gain_db(level: float | None) -> float:
-    """A note's level in decibels under full: from its conservation, or flat."""
+    """A note's level in decibels against full, 0 at full and negative below
+    it: from its conservation, or flat."""
     return FLAT_DB if level is None else QUIETEST_DB * (1.0 - level)
 
 

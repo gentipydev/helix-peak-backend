@@ -96,8 +96,11 @@ identifier (`MAP_UUID` in `m4a.py`). The track is one object and one digest.
 `m4a.py` reads the boxes with the standard library, so the check and the
 uploader need no decoder to hold the file to its map.
 
-A bake is deterministic: re-baked, all twenty come out byte for byte the same.
-ffmpeg's bit-exact flags keep its version out of the file.
+A bake is deterministic on one machine: re-baked here, all twenty came out
+byte for byte the same, and ffmpeg's bit-exact flags keep its version out of
+the file. Another machine's floating point can move a sample, and with it the
+bytes, as the structure bakes' can, so across machines the proof is
+`check_audio.py` (the file sounds like its map), not the digest.
 
 ## What the map holds
 
