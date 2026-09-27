@@ -38,7 +38,7 @@ differs from storage. A mismatch means the refactor changed data. Stop; never up
 
 - Is: `/gene/{id}/{gene}` (read-through cache of whole records), `/catalog`, `/catalog/search`,
   `/protein/{slug}`, `/protein/{slug}/tracks`, `/proteins/suggest`, `.../impact-explanations`,
-  `/health`, `/health/db`. It writes only `genbank_record`. It names bytes and never carries
+  `/assembly/{slug}/tracks`, `/health`, `/health/db`. It writes only `genbank_record`. It names bytes and never carries
   them: a ready track resolves to a public Supabase storage URL the client fetches directly.
 - Is not: authenticated (there is no auth), rate limited (Biopython's ~0.37 s spacing between
   Entrez calls is the only throttle) or CORS-restricted (`allow_origins=["*"]`). It holds no
@@ -57,6 +57,8 @@ differs from storage. A mismatch means the refactor changed data. Stop; never up
 - `genbank_parser.py`: `extract_gene(record, gene)`. Pure, exact `/gene` match, 1-based inclusive.
 - `catalog.py`: reads `protein` and `protein_alias`. Raises `CatalogUnavailable` (503) and never answers empty.
 - `tracks.py`: `protein_track` rows become `{kind: Track}` with public storage URLs. Any kind with a row is served; `KINDS` is the floor.
+- `assemblies.py`: `assembly_track` rows the same way, for a molecule of more than one gene (the hemoglobin
+  tetramer). Its own tables (`0006`), which no catalog query reads, so `/catalog` stays twenty.
 - `impact_explanations.py`: AVI explanations. Storage redirect first, then the local directory.
 - `protein_index.py`: pure. `normalize()`, UniProt/MANE parsing, index rows and terms. Shared with `scripts/load_protein_index.py`.
 - `suggest.py`: `/proteins/suggest`. Ranked prefix tiers over `protein_index_term`, near misses last.

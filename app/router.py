@@ -7,7 +7,7 @@ from urllib.error import HTTPError, URLError
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import RedirectResponse
 
-from . import catalog, suggest, tracks
+from . import assemblies, catalog, suggest, tracks
 from .catalog import CatalogUnavailable
 from .genbank_parser import GeneNotFound, extract_gene
 from .record_cache import fetch as fetch_genbank_record
@@ -222,4 +222,25 @@ def read_protein_tracks(slug: str) -> dict:
     return {
         kind: Track(**track).model_dump()
         for kind, track in tracks.for_slug(slug).items()
+    }
+
+
+@router.get("/assembly/{slug}/tracks", response_model=dict)
+def read_assembly_tracks(slug: str) -> dict:
+    """Where each of an assembly's tracks is, and what state it is in.
+
+    An assembly is two genes' chains and not a catalog row, so it is never in
+    `/catalog`; it is found only by its own slug, here, in the shape
+    `/protein/{slug}/tracks` answers in.
+    """
+    with _catalog_errors():
+        known = assemblies.exists(slug)
+    if not known:
+        raise HTTPException(
+            status_code=404,
+            detail="No assembly {!r}.".format(slug),
+        )
+    return {
+        kind: Track(**track).model_dump()
+        for kind, track in assemblies.tracks_for(slug).items()
     }
