@@ -53,10 +53,22 @@ def selection(chain: str, structure: Structure) -> str:
     return " and ".join(parts)
 
 
-def write_pml(target: Target, workspace: Path) -> Path:
+def write_pml(
+    target: Target,
+    workspace: Path,
+    source: Path | None = None,
+    origin: np.ndarray | None = None,
+) -> Path:
+    """The PyMOL script that exports one model's chains.
+
+    [source] loads another file than the entry's own: an assembly built from
+    it. [origin] pins the export frame's origin, where by default each export
+    is centred on its own extent, so that two exports can share one frame.
+    Both default to what the twenty are baked with.
+    """
     structure = target.structure
     lines = [
-        f"load {pdb_path(structure)}, src",
+        f"load {source or pdb_path(structure)}, src",
         "remove solvent",
         "remove not polymer",
         "remove hydrogens",
@@ -83,10 +95,14 @@ def write_pml(target: Target, workspace: Path) -> Path:
         "# identity and put the rotation origin at the molecule centre; the export",
         "# is then a pure translation of the PDB coordinates, which is the one",
         "# frame we can reason about.",
-        f"ext = cmd.get_extent({everything!r})",
-        "cx = (ext[0][0] + ext[1][0]) / 2.0",
-        "cy = (ext[0][1] + ext[1][1]) / 2.0",
-        "cz = (ext[0][2] + ext[1][2]) / 2.0",
+        *([
+            f"ext = cmd.get_extent({everything!r})",
+            "cx = (ext[0][0] + ext[1][0]) / 2.0",
+            "cy = (ext[0][1] + ext[1][1]) / 2.0",
+            "cz = (ext[0][2] + ext[1][2]) / 2.0",
+        ] if origin is None else [
+            f"cx, cy, cz = {float(origin[0])!r}, {float(origin[1])!r}, {float(origin[2])!r}",
+        ]),
         "cmd.set_view([",
         "    1.0, 0.0, 0.0,",
         "    0.0, 1.0, 0.0,",
@@ -167,14 +183,20 @@ def build_bonds(path: Path, structure: Structure, origin: np.ndarray):
     return mesh
 
 
-def export(target: Target, workspace: Path) -> tuple[np.ndarray, dict]:
+def export(
+    target: Target,
+    workspace: Path,
+    source: Path | None = None,
+    origin: np.ndarray | None = None,
+) -> tuple[np.ndarray, dict]:
     """PyMOL's cartoon of each chain, and the bridges, in the export frame.
 
-    The export frame is the PDB frame less `origin` (see `write_pml`). Returns
-    the origin and the meshes by node name, in the order the model holds them.
+    The export frame is the PDB frame less `origin` (see `write_pml`, which
+    also says what [source] and a given [origin] change). Returns the origin
+    and the meshes by node name, in the order the model holds them.
     """
     structure = target.structure
-    origin = run_pymol(write_pml(target, workspace))
+    origin = run_pymol(write_pml(target, workspace, source, origin))
 
     meshes = {}
     for chain in structure.chains:
@@ -182,7 +204,7 @@ def export(target: Target, workspace: Path) -> tuple[np.ndarray, dict]:
         if len(mesh.vertices) == 0:
             raise ValueError(f"{target.slug}: {chain.node} exported no geometry")
         meshes[chain.node] = mesh
-    bonds = build_bonds(pdb_path(structure), structure, origin)
+    bonds = build_bonds(source or pdb_path(structure), structure, origin)
     if bonds is not None:
         meshes["bonds"] = bonds
     return origin, meshes

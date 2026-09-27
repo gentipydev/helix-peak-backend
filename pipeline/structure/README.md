@@ -117,6 +117,14 @@ unchanged.
 model vertex for vertex. That is exact on all twenty, where `frame.py`'s ribbon
 fit is not (see `folding/README.md`).
 
+For an export outside the twenty, `write_pml` and `export` take a `source` (an
+assembly built from an entry, loaded in place of the entry itself) and an
+`origin` (one export origin for two exports, so that they share a frame), and
+`verify_frame.py` takes `--pdb`, `--out`, `--origin` and `--chain`. Unset, each
+is what the twenty are baked and audited with: re-baking all twenty after they
+were added gave the same `.glb` files byte for byte, the same `.pml` scripts
+and the same `verify_frame.py` report.
+
 ### Re-baking on Windows
 
 PyMOL 3.1.0 is conda-forge's `pymol-open-source=3.1.0`, installed with
