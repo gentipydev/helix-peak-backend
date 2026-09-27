@@ -167,14 +167,13 @@ def build_bonds(path: Path, structure: Structure, origin: np.ndarray):
     return mesh
 
 
-def bake(target: Target) -> None:
-    structure = target.structure
-    workspace = OUTPUT / target.slug
-    if workspace.exists():
-        shutil.rmtree(workspace)
-    workspace.mkdir(parents=True)
+def export(target: Target, workspace: Path) -> tuple[np.ndarray, dict]:
+    """PyMOL's cartoon of each chain, and the bridges, in the export frame.
 
-    print(f"{target.slug} <- {structure.pdb}", flush=True)
+    The export frame is the PDB frame less `origin` (see `write_pml`). Returns
+    the origin and the meshes by node name, in the order the model holds them.
+    """
+    structure = target.structure
     origin = run_pymol(write_pml(target, workspace))
 
     meshes = {}
@@ -186,13 +185,32 @@ def bake(target: Target) -> None:
     bonds = build_bonds(pdb_path(structure), structure, origin)
     if bonds is not None:
         meshes["bonds"] = bonds
+    return origin, meshes
 
-    # Nothing normalises the model but us: centre it and scale the longest axis
-    # to exactly 1.0, so the Dart side carries no scale constant and the camera
-    # can be framed once. See `_framingMargin` in structure_view.dart.
+
+def normalisation(meshes: dict) -> tuple[np.ndarray, np.ndarray]:
+    """The centre and extent of the exported meshes, which the model is cut to.
+
+    Nothing normalises the model but us: centre it and scale the longest axis
+    to exactly 1.0, so the Dart side carries no scale constant and the camera
+    can be framed once. See `_framingMargin` in structure_view.dart.
+    """
     stacked = np.vstack([np.asarray(m.vertices) for m in meshes.values()])
     low, high = stacked.min(axis=0), stacked.max(axis=0)
-    centre, extent = (low + high) / 2, (high - low)
+    return (low + high) / 2, (high - low)
+
+
+def bake(target: Target) -> None:
+    structure = target.structure
+    workspace = OUTPUT / target.slug
+    if workspace.exists():
+        shutil.rmtree(workspace)
+    workspace.mkdir(parents=True)
+
+    print(f"{target.slug} <- {structure.pdb}", flush=True)
+    origin, meshes = export(target, workspace)
+
+    centre, extent = normalisation(meshes)
     scale = 1.0 / extent.max()
     print(f"  pre  {extent[0]:.2f} x {extent[1]:.2f} x {extent[2]:.2f} A", flush=True)
 
