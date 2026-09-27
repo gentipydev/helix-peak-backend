@@ -1,0 +1,152 @@
+{
+ "primaryAccession": "P01375",
+ "entryAudit": {
+  "entryVersion": 283,
+  "sequenceVersion": 1
+ },
+ "sequence": {
+  "length": 233
+ },
+ "features": [
+  {
+   "type": "Transmembrane",
+   "location": {
+    "start": {
+     "value": 36,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 56,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "Helical; Signal-anchor for type II membrane protein",
+   "evidences": [
+    {
+     "evidenceCode": "ECO:0000255"
+    }
+   ]
+  },
+  {
+   "type": "Lipidation",
+   "location": {
+    "start": {
+     "value": 19,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 19,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "N6-myristoyl lysine",
+   "evidences": [
+    {
+     "evidenceCode": "ECO:0000269"
+    },
+    {
+     "evidenceCode": "ECO:0000269"
+    }
+   ]
+  },
+  {
+   "type": "Lipidation",
+   "location": {
+    "start": {
+     "value": 20,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 20,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "N6-myristoyl lysine",
+   "evidences": [
+    {
+     "evidenceCode": "ECO:0000269"
+    },
+    {
+     "evidenceCode": "ECO:0000269"
+    }
+   ]
+  }
+ ],
+ "comments": [
+  {
+   "commentType": "SUBCELLULAR LOCATION",
+   "subcellularLocations": [
+    {
+     "location": {
+      "value": "Cell membrane",
+      "evidences": [
+       {
+        "evidenceCode": "ECO:0000269"
+       }
+      ]
+     },
+     "topology": {
+      "value": "Single-pass type II membrane protein",
+      "evidences": [
+       {
+        "evidenceCode": "ECO:0000269"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "commentType": "SUBCELLULAR LOCATION",
+   "molecule": "Tumor necrosis factor, membrane form",
+   "subcellularLocations": [
+    {
+     "location": {
+      "value": "Membrane"
+     },
+     "topology": {
+      "value": "Single-pass type II membrane protein"
+     }
+    }
+   ]
+  },
+  {
+   "commentType": "SUBCELLULAR LOCATION",
+   "molecule": "Tumor necrosis factor, soluble form",
+   "subcellularLocations": [
+    {
+     "location": {
+      "value": "Secreted",
+      "evidences": [
+       {
+        "evidenceCode": "ECO:0000269"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "commentType": "SUBCELLULAR LOCATION",
+   "molecule": "C-domain 1",
+   "subcellularLocations": [
+    {
+     "location": {
+      "value": "Secreted"
+     }
+    }
+   ]
+  },
+  {
+   "commentType": "SUBCELLULAR LOCATION",
+   "molecule": "C-domain 2",
+   "subcellularLocations": [
+    {
+     "location": {
+      "value": "Secreted"
+     }
+    }
+   ]
+  }
+ ]
+}

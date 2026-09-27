@@ -92,6 +92,9 @@ def asset_of(kind: str, target) -> Path | None:
         return DATA / target.structure_asset
     if kind == "structure_ar":
         return DATA / f"assets/models_ar/{target.slug}.usdz" if target.structure else None
+    if kind == "trafficking":
+        # Where `trafficking/bake_trafficking.py` writes it (`trafficking_asset`).
+        return DATA / f"assets/trafficking/{target.slug}_trafficking.json"
     raise SystemExit(f"unknown kind {kind!r}")
 
 
@@ -179,6 +182,18 @@ def validate(kind: str, target, payload: bytes) -> dict:
                 ("source", "schema_version", "assembly", "scope", "retrieved_at",
                  "searched_records", "excluded")}
 
+    if kind == "trafficking":
+        # The whole of `check_trafficking.py` on this protein: its own names,
+        # the record's length, every span inside the chain, the table's GPI
+        # signal, and a release and a day it can name.
+        from pipeline.trafficking.check_trafficking import problems_of
+        found = problems_of(target, data)
+        if found:
+            raise ValueError("; ".join(found))
+        return {key: data.get(key) for key in
+                ("source", "release", "release_date", "retrieved", "entry_version",
+                 "sequence_version", "schema_version", "built_by")}
+
     raise SystemExit(f"unknown kind {kind!r}")
 
 
@@ -228,7 +243,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Upload baked tracks to Supabase.")
     parser.add_argument("--kind", required=True, choices=[
         "record", "impact_explanations", "constraint", "impact", "clinvar", "structure",
-        "structure_ar"])
+        "structure_ar", "trafficking"])
     parser.add_argument("--target", action="append", default=None)
     parser.add_argument("--dry-run", action="store_true")
     arguments = parser.parse_args()

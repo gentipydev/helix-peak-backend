@@ -1,0 +1,3 @@
+# The trafficking bake needs nothing beyond the standard library: it reads
+# UniProt's JSON through pipeline/uniprot.py, which the record builder shares,
+# and runs on the backend's own .venv.

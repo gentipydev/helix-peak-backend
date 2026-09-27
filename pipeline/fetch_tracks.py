@@ -39,7 +39,7 @@ from pipeline.targets import TARGETS, Target  # noqa: E402
 
 SERVICE = "https://helix-peak-backend.onrender.com"
 KINDS = ("record", "constraint", "impact", "clinvar", "impact_explanations", "structure",
-         "structure_ar")
+         "structure_ar", "trafficking")
 
 
 def asset_path(kind: str, target: Target) -> str:
@@ -64,6 +64,9 @@ def asset_path(kind: str, target: Target) -> str:
     if kind == "structure_ar":
         # Where `structure_ar/bake_ar.py` writes it (`ar_asset`).
         return f"assets/models_ar/{target.slug}.usdz"
+    if kind == "trafficking":
+        # Where `trafficking/bake_trafficking.py` writes it (`trafficking_asset`).
+        return f"assets/trafficking/{target.slug}_trafficking.json"
     raise ValueError(f"unknown kind {kind!r}")
 
 

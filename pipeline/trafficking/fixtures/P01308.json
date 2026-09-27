@@ -1,0 +1,62 @@
+{
+ "primaryAccession": "P01308",
+ "entryAudit": {
+  "entryVersion": 284,
+  "sequenceVersion": 1
+ },
+ "sequence": {
+  "length": 110
+ },
+ "features": [
+  {
+   "type": "Signal",
+   "location": {
+    "start": {
+     "value": 1,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 24,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "",
+   "evidences": [
+    {
+     "evidenceCode": "ECO:0000269"
+    }
+   ]
+  },
+  {
+   "type": "Propeptide",
+   "location": {
+    "start": {
+     "value": 57,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 87,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "C peptide"
+  }
+ ],
+ "comments": [
+  {
+   "commentType": "SUBCELLULAR LOCATION",
+   "subcellularLocations": [
+    {
+     "location": {
+      "value": "Secreted",
+      "evidences": [
+       {
+        "evidenceCode": "ECO:0000269"
+       }
+      ]
+     }
+    }
+   ]
+  }
+ ]
+}

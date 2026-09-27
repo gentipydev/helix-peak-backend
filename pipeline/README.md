@@ -25,6 +25,7 @@ app's bundle once had, then uploaded:
 | `assets/clinvar/<slug>_clinvar.json` | [`clinvar/bake_clinvar.py`](clinvar/bake_clinvar.py) | `.venv` | ClinVar single-base variants on the drawn gene |
 | `assets/models/<slug>.glb` | [`structure/bake.py`](structure/bake.py) | `pipeline/structure/venv` | the fold, as named meshes |
 | `assets/models_ar/<slug>.usdz` | [`structure_ar/bake_ar.py`](structure_ar/bake_ar.py) | `.venv` + usd-core | the fold at its real size, 1 Å = 1 cm, for AR (from the stored `.glb`) |
+| `assets/trafficking/<slug>_trafficking.json` | [`trafficking/bake_trafficking.py`](trafficking/bake_trafficking.py) | `.venv` | UniProt's transmembrane spans, GPI anchor and subcellular location, for the cell scene |
 
 Each directory's README has its detail, how to make its environment, and what a
 correct result looks like.
