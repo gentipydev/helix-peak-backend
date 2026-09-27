@@ -1,0 +1,88 @@
+{
+ "annotationScore": 5.0,
+ "entryAudit": {
+  "entryVersion": 286,
+  "sequenceVersion": 3
+ },
+ "genes": [
+  {
+   "geneName": {
+    "evidences": [
+     {
+      "evidenceCode": "ECO:0000312",
+      "id": "HGNC:1884",
+      "source": "HGNC"
+     }
+    ],
+    "value": "CFTR"
+   },
+   "synonyms": [
+    {
+     "value": "ABCC7"
+    }
+   ]
+  }
+ ],
+ "primaryAccession": "P13569",
+ "proteinDescription": {
+  "recommendedName": {
+   "fullName": {
+    "evidences": [
+     {
+      "evidenceCode": "ECO:0000305"
+     }
+    ],
+    "value": "Cystic fibrosis transmembrane conductance regulator"
+   },
+   "shortNames": [
+    {
+     "value": "CFTR"
+    }
+   ]
+  }
+ },
+ "proteinExistence": "1: Evidence at protein level",
+ "sequence": {
+  "length": 1480
+ },
+ "uniProtKBCrossReferences": [
+  {
+   "database": "GeneID",
+   "id": "1080",
+   "properties": [
+    {
+     "key": "Description",
+     "value": "-"
+    }
+   ]
+  },
+  {
+   "database": "MANE-Select",
+   "id": "ENST00000003084.11",
+   "properties": [
+    {
+     "key": "ProteinId",
+     "value": "ENSP00000003084.6"
+    },
+    {
+     "key": "RefSeqNucleotideId",
+     "value": "NM_000492.4"
+    },
+    {
+     "key": "RefSeqProteinId",
+     "value": "NP_000483.3"
+    }
+   ]
+  },
+  {
+   "database": "HGNC",
+   "id": "HGNC:1884",
+   "properties": [
+    {
+     "key": "GeneName",
+     "value": "CFTR"
+    }
+   ]
+  }
+ ]
+}

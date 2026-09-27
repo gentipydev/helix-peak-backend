@@ -1,0 +1,80 @@
+{
+ "annotationScore": 5.0,
+ "entryAudit": {
+  "entryVersion": 273,
+  "sequenceVersion": 4
+ },
+ "genes": [
+  {
+   "geneName": {
+    "evidences": [
+     {
+      "evidenceCode": "ECO:0000312",
+      "id": "HGNC:2928",
+      "source": "HGNC"
+     }
+    ],
+    "value": "DMD"
+   }
+  }
+ ],
+ "primaryAccession": "P11532",
+ "proteinDescription": {
+  "recommendedName": {
+   "fullName": {
+    "evidences": [
+     {
+      "evidenceCode": "ECO:0000303",
+      "id": "3282674",
+      "source": "PubMed"
+     }
+    ],
+    "value": "Dystrophin"
+   }
+  }
+ },
+ "proteinExistence": "1: Evidence at protein level",
+ "sequence": {
+  "length": 3685
+ },
+ "uniProtKBCrossReferences": [
+  {
+   "database": "GeneID",
+   "id": "1756",
+   "properties": [
+    {
+     "key": "Description",
+     "value": "-"
+    }
+   ]
+  },
+  {
+   "database": "MANE-Select",
+   "id": "ENST00000357033.9",
+   "properties": [
+    {
+     "key": "ProteinId",
+     "value": "ENSP00000354923.3"
+    },
+    {
+     "key": "RefSeqNucleotideId",
+     "value": "NM_004006.3"
+    },
+    {
+     "key": "RefSeqProteinId",
+     "value": "NP_003997.2"
+    }
+   ]
+  },
+  {
+   "database": "HGNC",
+   "id": "HGNC:2928",
+   "properties": [
+    {
+     "key": "GeneName",
+     "value": "DMD"
+    }
+   ]
+  }
+ ]
+}

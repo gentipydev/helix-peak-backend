@@ -1,0 +1,66 @@
+{
+ "annotationScore": 5.0,
+ "entryAudit": {
+  "entryVersion": 284,
+  "sequenceVersion": 1
+ },
+ "genes": [
+  {
+   "geneName": {
+    "value": "INS"
+   }
+  }
+ ],
+ "primaryAccession": "P01308",
+ "proteinDescription": {
+  "recommendedName": {
+   "fullName": {
+    "value": "Insulin"
+   }
+  }
+ },
+ "proteinExistence": "1: Evidence at protein level",
+ "sequence": {
+  "length": 110
+ },
+ "uniProtKBCrossReferences": [
+  {
+   "database": "GeneID",
+   "id": "3630",
+   "properties": [
+    {
+     "key": "Description",
+     "value": "-"
+    }
+   ]
+  },
+  {
+   "database": "MANE-Select",
+   "id": "ENST00000381330.5",
+   "properties": [
+    {
+     "key": "ProteinId",
+     "value": "ENSP00000370731.5"
+    },
+    {
+     "key": "RefSeqNucleotideId",
+     "value": "NM_000207.3"
+    },
+    {
+     "key": "RefSeqProteinId",
+     "value": "NP_000198.1"
+    }
+   ]
+  },
+  {
+   "database": "HGNC",
+   "id": "HGNC:6081",
+   "properties": [
+    {
+     "key": "GeneName",
+     "value": "INS"
+    }
+   ]
+  }
+ ]
+}

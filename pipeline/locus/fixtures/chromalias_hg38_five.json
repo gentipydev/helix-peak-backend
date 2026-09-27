@@ -1,0 +1,93 @@
+{
+ "genome": "hg38",
+ "dataTime": "2023-01-24T12:46:47",
+ "dataTimeStamp": 1674593207,
+ "track": "chromAlias",
+ "chromAlias": {
+  "chr7": [
+   {
+    "alias": "7",
+    "chrom": "chr7",
+    "source": "assembly,ensembl"
+   },
+   {
+    "alias": "CM000669.2",
+    "chrom": "chr7",
+    "source": "genbank"
+   },
+   {
+    "alias": "NC_000007.14",
+    "chrom": "chr7",
+    "source": "refseq"
+   }
+  ],
+  "chr11": [
+   {
+    "alias": "11",
+    "chrom": "chr11",
+    "source": "assembly,ensembl"
+   },
+   {
+    "alias": "CM000673.2",
+    "chrom": "chr11",
+    "source": "genbank"
+   },
+   {
+    "alias": "NC_000011.10",
+    "chrom": "chr11",
+    "source": "refseq"
+   }
+  ],
+  "chr17": [
+   {
+    "alias": "17",
+    "chrom": "chr17",
+    "source": "assembly,ensembl"
+   },
+   {
+    "alias": "CM000679.2",
+    "chrom": "chr17",
+    "source": "genbank"
+   },
+   {
+    "alias": "NC_000017.11",
+    "chrom": "chr17",
+    "source": "refseq"
+   }
+  ],
+  "chr21": [
+   {
+    "alias": "21",
+    "chrom": "chr21",
+    "source": "assembly,ensembl"
+   },
+   {
+    "alias": "CM000683.2",
+    "chrom": "chr21",
+    "source": "genbank"
+   },
+   {
+    "alias": "NC_000021.9",
+    "chrom": "chr21",
+    "source": "refseq"
+   }
+  ],
+  "chrX": [
+   {
+    "alias": "CM000685.2",
+    "chrom": "chrX",
+    "source": "genbank"
+   },
+   {
+    "alias": "NC_000023.11",
+    "chrom": "chrX",
+    "source": "refseq"
+   },
+   {
+    "alias": "X",
+    "chrom": "chrX",
+    "source": "assembly,ensembl"
+   }
+  ]
+ }
+}

@@ -1,0 +1,4 @@
+# The locus bake needs nothing beyond the standard library: it reads UCSC's
+# REST API, MANE through pipeline/mane.py and UniProt through
+# pipeline/uniprot.py, which the other tools share, and runs on the backend's
+# own .venv.

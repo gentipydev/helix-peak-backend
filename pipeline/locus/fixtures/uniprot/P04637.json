@@ -1,0 +1,71 @@
+{
+ "annotationScore": 5.0,
+ "entryAudit": {
+  "entryVersion": 315,
+  "sequenceVersion": 4
+ },
+ "genes": [
+  {
+   "geneName": {
+    "value": "TP53"
+   },
+   "synonyms": [
+    {
+     "value": "P53"
+    }
+   ]
+  }
+ ],
+ "primaryAccession": "P04637",
+ "proteinDescription": {
+  "recommendedName": {
+   "fullName": {
+    "value": "Cellular tumor antigen p53"
+   }
+  }
+ },
+ "proteinExistence": "1: Evidence at protein level",
+ "sequence": {
+  "length": 393
+ },
+ "uniProtKBCrossReferences": [
+  {
+   "database": "GeneID",
+   "id": "7157",
+   "properties": [
+    {
+     "key": "Description",
+     "value": "-"
+    }
+   ]
+  },
+  {
+   "database": "MANE-Select",
+   "id": "ENST00000269305.9",
+   "properties": [
+    {
+     "key": "ProteinId",
+     "value": "ENSP00000269305.4"
+    },
+    {
+     "key": "RefSeqNucleotideId",
+     "value": "NM_000546.6"
+    },
+    {
+     "key": "RefSeqProteinId",
+     "value": "NP_000537.3"
+    }
+   ]
+  },
+  {
+   "database": "HGNC",
+   "id": "HGNC:11998",
+   "properties": [
+    {
+     "key": "GeneName",
+     "value": "TP53"
+    }
+   ]
+  }
+ ]
+}

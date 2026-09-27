@@ -24,6 +24,9 @@ from pipeline.targets import TARGETS
     "pipeline.upload_tracks",
     "pipeline.fetch_tracks",
     "pipeline.impact.check_explanations",
+    "pipeline.mane",
+    "pipeline.locus.bake_locus",
+    "pipeline.locus.check_locus",
 ])
 def test_the_tools_import_from_the_repository_root(module):
     importlib.import_module(module)

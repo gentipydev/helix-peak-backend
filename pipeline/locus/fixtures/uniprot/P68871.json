@@ -1,0 +1,66 @@
+{
+ "annotationScore": 5.0,
+ "entryAudit": {
+  "entryVersion": 219,
+  "sequenceVersion": 2
+ },
+ "genes": [
+  {
+   "geneName": {
+    "value": "HBB"
+   }
+  }
+ ],
+ "primaryAccession": "P68871",
+ "proteinDescription": {
+  "recommendedName": {
+   "fullName": {
+    "value": "Hemoglobin subunit beta"
+   }
+  }
+ },
+ "proteinExistence": "1: Evidence at protein level",
+ "sequence": {
+  "length": 147
+ },
+ "uniProtKBCrossReferences": [
+  {
+   "database": "GeneID",
+   "id": "3043",
+   "properties": [
+    {
+     "key": "Description",
+     "value": "-"
+    }
+   ]
+  },
+  {
+   "database": "MANE-Select",
+   "id": "ENST00000335295.4",
+   "properties": [
+    {
+     "key": "ProteinId",
+     "value": "ENSP00000333994.3"
+    },
+    {
+     "key": "RefSeqNucleotideId",
+     "value": "NM_000518.5"
+    },
+    {
+     "key": "RefSeqProteinId",
+     "value": "NP_000509.1"
+    }
+   ]
+  },
+  {
+   "database": "HGNC",
+   "id": "HGNC:4827",
+   "properties": [
+    {
+     "key": "GeneName",
+     "value": "HBB"
+    }
+   ]
+  }
+ ]
+}

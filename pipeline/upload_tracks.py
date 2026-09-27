@@ -99,6 +99,9 @@ def asset_of(kind: str, target) -> Path | None:
         # Where `folding/bake_folding.py` writes it (`folding_asset`).
         path = DATA / f"assets/folding/{target.slug}_folding.json"
         return path if target.structure else None
+    if kind == "locus":
+        # Where `locus/bake_locus.py` writes it (`locus_asset`).
+        return DATA / f"assets/locus/{target.slug}_locus.json"
     raise SystemExit(f"unknown kind {kind!r}")
 
 
@@ -218,6 +221,19 @@ def validate(kind: str, target, payload: bytes) -> dict:
             "built_by": data["built_by"],
         }
 
+    if kind == "locus":
+        # The whole of `check_locus.py` on this protein: its own names, the
+        # chromosome whole and the gene at its bands, the record's slice where
+        # it has one, and a version for every source. The provenance is where
+        # the gene lies and what that was read from.
+        from pipeline.locus.check_locus import problems_of
+        found = problems_of(target, data)
+        if found:
+            raise ValueError("; ".join(found))
+        return {key: data.get(key) for key in
+                ("assembly", "genome", "chromosome", "sequence", "locus", "sources",
+                 "retrieved", "schema_version", "built_by")}
+
     raise SystemExit(f"unknown kind {kind!r}")
 
 
@@ -267,7 +283,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Upload baked tracks to Supabase.")
     parser.add_argument("--kind", required=True, choices=[
         "record", "impact_explanations", "constraint", "impact", "clinvar", "structure",
-        "structure_ar", "trafficking", "folding"])
+        "structure_ar", "trafficking", "folding", "locus"])
     parser.add_argument("--target", action="append", default=None)
     parser.add_argument("--dry-run", action="store_true")
     arguments = parser.parse_args()

@@ -1,0 +1,103 @@
+{
+ "annotationScore": 5.0,
+ "entryAudit": {
+  "entryVersion": 279,
+  "sequenceVersion": 2
+ },
+ "genes": [
+  {
+   "geneName": {
+    "evidences": [
+     {
+      "evidenceCode": "ECO:0000312",
+      "id": "HGNC:11179",
+      "source": "HGNC"
+     }
+    ],
+    "value": "SOD1"
+   }
+  }
+ ],
+ "primaryAccession": "P00441",
+ "proteinDescription": {
+  "recommendedName": {
+   "ecNumbers": [
+    {
+     "evidences": [
+      {
+       "evidenceCode": "ECO:0000269",
+       "id": "24140062",
+       "source": "PubMed"
+      },
+      {
+       "evidenceCode": "ECO:0000305",
+       "id": "18948262",
+       "source": "PubMed"
+      }
+     ],
+     "value": "1.15.1.1"
+    },
+    {
+     "evidences": [
+      {
+       "evidenceCode": "ECO:0000305"
+      }
+     ],
+     "value": "1.8.-.-"
+    }
+   ],
+   "fullName": {
+    "evidences": [
+     {
+      "evidenceCode": "ECO:0000305"
+     }
+    ],
+    "value": "Superoxide dismutase [Cu-Zn]"
+   }
+  }
+ },
+ "proteinExistence": "1: Evidence at protein level",
+ "sequence": {
+  "length": 154
+ },
+ "uniProtKBCrossReferences": [
+  {
+   "database": "GeneID",
+   "id": "6647",
+   "properties": [
+    {
+     "key": "Description",
+     "value": "-"
+    }
+   ]
+  },
+  {
+   "database": "MANE-Select",
+   "id": "ENST00000270142.11",
+   "properties": [
+    {
+     "key": "ProteinId",
+     "value": "ENSP00000270142.7"
+    },
+    {
+     "key": "RefSeqNucleotideId",
+     "value": "NM_000454.5"
+    },
+    {
+     "key": "RefSeqProteinId",
+     "value": "NP_000445.1"
+    }
+   ]
+  },
+  {
+   "database": "HGNC",
+   "id": "HGNC:11179",
+   "properties": [
+    {
+     "key": "GeneName",
+     "value": "SOD1"
+    }
+   ]
+  }
+ ]
+}
