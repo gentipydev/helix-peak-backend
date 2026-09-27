@@ -22,8 +22,9 @@ For each target, the payload under `pipeline/data/assets/folding/`:
 - is a chain: every CA 2.8 to 4.4 A from the next (3.8 for a trans peptide
   bond, 2.9 for a cis one, and a 2.5 A entry stretches it), and across
   residues with no place, no more than 3.8 A a residue;
-- sits in the stored model: the frame names the stored `.glb` by its sha256,
-  and every helix and coil CA lies on its own chain's ribbon, within 0.25 A of
+- sits in the stored model: the frame names the stored `.glb` by its sha256
+  and carries its bounding box, and every helix and coil CA lies on its own
+  chain's ribbon, within 0.25 A of
   the nearest vertex (0.6 A for a tube), as `structure/verify_frame.py` holds
   insulin's. A strand's CA, which PyMOL's flat arrows smooth past, within 3 A;
 - says only what it can: an ordered residue carries a CA and a helix, strand
@@ -129,6 +130,12 @@ def problems_of(target: Target, track: dict | None = None) -> list[str]:
     frame = track.get("frame") or {}
     if frame.get("glb_sha256") != hashlib.sha256(glb).hexdigest():
         out.append(f"{where}: the frame names another .glb than the stored one")
+    stacked = np.vstack([m.positions for m in meshes.values()])
+    bounds = frame.get("bounds") or {}
+    for side, want in (("min", stacked.min(axis=0)), ("max", stacked.max(axis=0))):
+        got = bounds.get(side)
+        if not isinstance(got, list) or len(got) != 3 or np.abs(np.array(got) - want).max() > 1e-6:
+            out.append(f"{where}: the frame's bounds {side} is not the stored model's")
     try:
         centre = np.array(frame["centre_angstrom"], dtype=float)
         length = float(frame["length_angstrom"])

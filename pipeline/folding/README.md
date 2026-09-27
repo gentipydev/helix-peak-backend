@@ -73,7 +73,11 @@ of the stored one, and a frame that does not match within 1e-5 is refused. So
 each CA sits where the fold page's model says it does, and the last frame of a
 fold animation lands on exactly the fold the walk draws. The frame's
 `centre_angstrom` and `length_angstrom` put a PDB point `p` at
-`(p - centre) / length`; `glb_sha256` names the stored model.
+`(p - centre) / length`; `glb_sha256` names the stored model, and `bounds` is
+its bounding box in model units, which is what a viewer frames it by. The
+app's fold page frames the loaded model with `PerspectiveCamera.framing` on
+exactly that box, so a fold drawn from this track alone is framed the same way
+without loading the model.
 
 A fit of the CA atoms to the stored ribbon, which is how `structure_ar` sizes a
 model with no bridges, was measured against this frame first. It is exact where
@@ -106,28 +110,28 @@ axis. That fit is not used here.
 
 | slug | residues | ordered | helix | strand | disordered | absent | bytes |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| insulin | 51 | 51 | 30 | 0 | 0 | 0 | 6,278 |
-| hemoglobin | 146 | 145 | 127 | 0 | 1 | 0 | 15,622 |
-| myoglobin | 153 | 149 | 132 | 0 | 4 | 0 | 16,347 |
-| p53 | 194 | 194 | 24 | 64 | 0 | 0 | 20,618 |
-| lysozyme | 130 | 130 | 55 | 8 | 0 | 0 | 13,982 |
-| relaxin | 53 | 51 | 42 | 4 | 1 | 1 | 6,318 |
-| oxytocin | 9 | 9 | 0 | 0 | 0 | 0 | 1,761 |
-| somatotropin | 191 | 186 | 104 | 0 | 5 | 0 | 21,041 |
-| ubiquitin | 76 | 76 | 16 | 33 | 0 | 0 | 8,565 |
-| dystrophin | 238 | 238 | 167 | 3 | 0 | 0 | 25,212 |
-| vasopressin | 9 | 9 | 0 | 0 | 0 | 0 | 1,771 |
-| glucagon | 29 | 29 | 28 | 0 | 0 | 0 | 3,792 |
-| app | 753 | 162 | 27 | 58 | 11 | 580 | 46,921 |
-| cftr | 1,480 | 1,139 | 807 | 91 | 341 | 0 | 135,750 |
-| erythropoietin | 166 | 166 | 105 | 6 | 0 | 0 | 18,164 |
-| leptin | 146 | 130 | 95 | 0 | 16 | 0 | 14,991 |
-| tnf | 157 | 153 | 5 | 78 | 4 | 0 | 16,754 |
-| sod1 | 153 | 153 | 17 | 58 | 0 | 0 | 16,302 |
-| amylase | 496 | 496 | 134 | 85 | 0 | 0 | 51,254 |
-| prion | 208 | 109 | 71 | 13 | 98 | 1 | 17,260 |
+| insulin | 51 | 51 | 30 | 0 | 0 | 0 | 6,447 |
+| hemoglobin | 146 | 145 | 127 | 0 | 1 | 0 | 15,789 |
+| myoglobin | 153 | 149 | 132 | 0 | 4 | 0 | 16,516 |
+| p53 | 194 | 194 | 24 | 64 | 0 | 0 | 20,787 |
+| lysozyme | 130 | 130 | 55 | 8 | 0 | 0 | 14,149 |
+| relaxin | 53 | 51 | 42 | 4 | 1 | 1 | 6,485 |
+| oxytocin | 9 | 9 | 0 | 0 | 0 | 0 | 1,928 |
+| somatotropin | 191 | 186 | 104 | 0 | 5 | 0 | 21,210 |
+| ubiquitin | 76 | 76 | 16 | 33 | 0 | 0 | 8,732 |
+| dystrophin | 238 | 238 | 167 | 3 | 0 | 0 | 25,381 |
+| vasopressin | 9 | 9 | 0 | 0 | 0 | 0 | 1,940 |
+| glucagon | 29 | 29 | 28 | 0 | 0 | 0 | 3,961 |
+| app | 753 | 162 | 27 | 58 | 11 | 580 | 47,090 |
+| cftr | 1,480 | 1,139 | 807 | 91 | 341 | 0 | 135,919 |
+| erythropoietin | 166 | 166 | 105 | 6 | 0 | 0 | 18,333 |
+| leptin | 146 | 130 | 95 | 0 | 16 | 0 | 15,160 |
+| tnf | 157 | 153 | 5 | 78 | 4 | 0 | 16,923 |
+| sod1 | 153 | 153 | 17 | 58 | 0 | 0 | 16,471 |
+| amylase | 496 | 496 | 134 | 85 | 0 | 0 | 51,421 |
+| prion | 208 | 109 | 71 | 13 | 98 | 1 | 17,429 |
 
-458,703 bytes for all twenty, 3,775 CA atoms. The playbook's 9,991 is every CA
+462,071 bytes for all twenty, 3,775 CA atoms. The playbook's 9,991 is every CA
 in the twenty files, every chain; the folds export 3,775 of them.
 
 - **The prion protein**: 23-230, of which only 117-225 has a shape. 24-116 and

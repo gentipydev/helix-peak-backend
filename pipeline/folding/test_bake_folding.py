@@ -119,6 +119,18 @@ def test_an_ordered_residue_is_the_entrys_ca_in_the_models_frame():
 
 
 @needs
+def test_the_frame_carries_the_box_the_model_is_framed_by():
+    bounds = _track("prion")["frame"]["bounds"]
+    low, high = np.array(bounds["min"]), np.array(bounds["max"])
+    # The structure bake centres the model and makes its longest side 1.0.
+    assert (high - low).max() == pytest.approx(1.0, abs=1e-5)
+    assert np.abs((high + low) / 2).max() < 1e-5
+    moved = _track("prion")
+    moved["frame"]["bounds"]["max"][0] += 0.01
+    assert any("bounds" in p for p in check_folding.problems_of(BY_SLUG["prion"], moved))
+
+
+@needs
 def test_the_letters_are_the_records_and_the_entrys_are_noted():
     (b_chain,) = [c for c in _track("insulin")["chains"] if c["node"] == "chainB"]
     # 3I40 carries Ala at B30 where the gene makes Thr: the letter is the gene's.

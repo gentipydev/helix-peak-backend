@@ -231,6 +231,7 @@ def payload(target: Target, record: dict, glb: bytes, frame: Frame) -> dict:
         raise ValueError(f"{target.slug}: the record translates {len(translation)} "
                          f"residues, the table says {target.aa}")
     helices = secondary_structure(pdb_path(structure))
+    stacked = np.vstack([m.positions for m in read_glb(glb).values()])
     return {
         "slug": target.slug,
         "gene": target.gene,
@@ -244,6 +245,11 @@ def payload(target: Target, record: dict, glb: bytes, frame: Frame) -> dict:
             "length_angstrom": round(frame.length, 6),
             "method": frame.method,
             "matched_within": None if frame.matched is None else float(f"{frame.matched:.1e}"),
+            # The stored model's bounding box, in its own units: what a viewer
+            # frames the model by. A fold drawn from this track alone can be
+            # framed exactly as the model is, without loading the model.
+            "bounds": {"min": [round(float(v), 6) for v in stacked.min(axis=0)],
+                       "max": [round(float(v), 6) for v in stacked.max(axis=0)]},
         },
         "secondary_structure": f"HELIX and SHEET records of {structure.pdb}",
         "chains": [chain_track(target, c.node, c.pdb_chain, translation, helices, frame)
