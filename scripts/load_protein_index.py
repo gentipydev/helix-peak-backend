@@ -45,12 +45,12 @@ from app.config import settings  # noqa: E402
 from app.protein_index import (  # noqa: E402
     curated_terms,
     genes_of,
-    parse_mane,
     parse_refseqgene,
     rows_for_entry,
     terms_for_row,
     versionless,
 )
+from pipeline.mane import current_summary  # noqa: E402
 
 UNIPROT = (
     "https://rest.uniprot.org/uniprotkb/stream?compressed=true&format=json"
@@ -58,7 +58,6 @@ UNIPROT = (
     "&fields=accession,gene_names,protein_name,length,annotation_score,"
     "protein_existence,xref_mane-select,xref_hgnc,xref_geneid"
 )
-MANE_DIR = "https://ftp.ncbi.nlm.nih.gov/refseq/MANE/MANE_human/current/"
 REFSEQGENE = "https://ftp.ncbi.nlm.nih.gov/refseq/H_sapiens/RefSeqGene/LRG_RefSeqGene"
 
 _AGENT = "helixpeek-index-loader"
@@ -93,13 +92,7 @@ def download() -> Tuple[List[dict], str, Dict[str, dict], str, Dict[str, str]]:
     print("UniProt {}: {:,} entries in {:.0f} s".format(
         uniprot_release, len(entries), time.time() - started))
 
-    listing, _ = _get(MANE_DIR)
-    names = re.findall(r"MANE\.GRCh38\.v([0-9.]+)\.summary\.txt\.gz", listing.decode())
-    if not names:
-        raise SystemExit("No MANE summary in {}".format(MANE_DIR))
-    mane_release = "v" + names[0]
-    body, _ = _get(MANE_DIR + "MANE.GRCh38.{}.summary.txt.gz".format(mane_release))
-    mane = parse_mane(io.StringIO(gzip.decompress(body).decode()))
+    mane, mane_release = current_summary(_get)
     print("MANE {}: {:,} MANE Select transcripts".format(mane_release, len(mane)))
 
     body, _ = _get(REFSEQGENE)
