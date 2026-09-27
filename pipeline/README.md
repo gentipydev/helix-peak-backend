@@ -24,6 +24,7 @@ app's bundle once had, then uploaded:
 | `assets/impact_explanations/<slug>.json` | [`impact/bake_explanations.py`](impact/bake_explanations.py) | `pipeline/impact/venv` | AVI feature attributions (insulin, hemoglobin, CFTR) |
 | `assets/clinvar/<slug>_clinvar.json` | [`clinvar/bake_clinvar.py`](clinvar/bake_clinvar.py) | `.venv` | ClinVar single-base variants on the drawn gene |
 | `assets/models/<slug>.glb` | [`structure/bake.py`](structure/bake.py) | `pipeline/structure/venv` | the fold, as named meshes |
+| `assets/models_ar/<slug>.usdz` | [`structure_ar/bake_ar.py`](structure_ar/bake_ar.py) | `.venv` + usd-core | the fold at its real size, 1 Å = 1 cm, for AR (from the stored `.glb`) |
 
 Each directory's README has its detail, how to make its environment, and what a
 correct result looks like.
@@ -55,6 +56,7 @@ pipeline/.esm-venv/bin/python -u pipeline/constraint/score_protein.py --target <
 ALPHAGENOME_API_KEY=... pipeline/impact/venv/bin/python -u pipeline/impact/bake_impact.py --target <slug>
 NCBI_EMAIL=you@example.com .venv/bin/python -u pipeline/clinvar/bake_clinvar.py --target <slug>
 pipeline/structure/venv/bin/python pipeline/structure/bake.py --target <slug>
+.venv/bin/python pipeline/structure_ar/bake_ar.py --target <slug>   # after fetch_tracks.py --kind structure
 python3 pipeline/check_assets.py
 set -a && . ./.env && set +a
 .venv/bin/python pipeline/upload_tracks.py --kind <family> --target <slug> --dry-run

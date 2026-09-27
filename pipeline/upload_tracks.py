@@ -90,6 +90,8 @@ def asset_of(kind: str, target) -> Path | None:
         return path if target.clinvar_available else None
     if kind == "structure":
         return DATA / target.structure_asset
+    if kind == "structure_ar":
+        return DATA / f"assets/models_ar/{target.slug}.usdz" if target.structure else None
     raise SystemExit(f"unknown kind {kind!r}")
 
 
@@ -104,6 +106,22 @@ def validate(kind: str, target, payload: bytes) -> dict:
             raise ValueError("not a .glb")
         return {"pdb": target.structure.pdb,
                 "nodes": [c.node for c in target.structure.chains]}
+
+    if kind == "structure_ar":
+        if payload[:4] != b"PK":
+            raise ValueError("not a .usdz")
+        # The whole of `check_ar.py` on this protein: the package rules AR
+        # Quick Look needs, the same meshes as the stored .glb at one scale,
+        # and a size it can say how it found. Its metadata is the provenance.
+        from pipeline.structure_ar.check_ar import metadata, problems_of
+        from pxr import Usd
+        found = problems_of(target)
+        if found:
+            raise ValueError("; ".join(found))
+        meta = metadata(Usd.Stage.Open(str(asset_of(kind, target))))
+        if meta["pdb"] != target.structure.pdb:
+            raise ValueError(f"made from {meta['pdb']}, the target is {target.structure.pdb}")
+        return meta
 
     data = json.loads(payload)
     if not isinstance(data, dict):
@@ -207,16 +225,18 @@ on conflict (slug, kind) do update set
 def main() -> int:
     parser = argparse.ArgumentParser(description="Upload baked tracks to Supabase.")
     parser.add_argument("--kind", required=True, choices=[
-        "record", "impact_explanations", "constraint", "impact", "clinvar", "structure"])
+        "record", "impact_explanations", "constraint", "impact", "clinvar", "structure",
+        "structure_ar"])
     parser.add_argument("--target", action="append", default=None)
     parser.add_argument("--dry-run", action="store_true")
     arguments = parser.parse_args()
 
     kind = arguments.kind
     wanted = set(arguments.target) if arguments.target else None
-    bucket = "models" if kind == "structure" else "tracks"
-    suffix = "glb" if kind == "structure" else "json"
-    content_type = "model/gltf-binary" if kind == "structure" else "application/json"
+    bucket, suffix, content_type = {
+        "structure": ("models", "glb", "model/gltf-binary"),
+        "structure_ar": ("models", "usdz", "model/vnd.usdz+zip"),
+    }.get(kind, ("tracks", "json", "application/json"))
 
     planned = []
     for target in TARGETS:

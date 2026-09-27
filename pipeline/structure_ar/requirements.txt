@@ -1,0 +1,4 @@
+# The AR bake's Python side. No PyMOL and no trimesh: it reads the stored .glb
+# with numpy and writes USDZ with Pixar's own usd-core.
+numpy==2.5.3
+usd-core==26.8
