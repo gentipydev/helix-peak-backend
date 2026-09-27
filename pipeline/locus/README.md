@@ -1,10 +1,13 @@
-# Baking `locus`: where each gene lies, by band
+# Baking `locus`: where each gene lies, in the body and by band
 
-The app's zoom runs from a body down to a gene, and its last level before the
-gene is the chromosome the gene is on, with the gene marked at its band. That
-needs, per protein, the chromosome's bands and where the gene falls among them,
-and nothing in the records says either: a RefSeqGene record is a stretch of
-sequence with its own coordinates, not a place on a chromosome.
+The app's zoom runs from a body down to a gene, through an organ, a tissue, a
+cell, its nucleus and a chromosome. Its last level before the gene is the
+chromosome the gene is on, with the gene marked at its band, and its levels on
+the way down go through the organ and cells the gene is read in. That needs,
+per protein, the chromosome's bands and where the gene falls among them, and
+where in the body its RNA is found, and nothing in the records says any of it:
+a RefSeqGene record is a stretch of sequence with its own coordinates, not a
+place on a chromosome or in a body.
 
 This is a separate track kind, `locus`. Nothing is added to `targets.py`,
 `curated/catalog.json` or the `protein` table (there is no cytoband column),
@@ -36,6 +39,17 @@ Which proteins get the track: all twenty (`LOCUS_TARGETS` in `bake_locus.py`).
    accession MANE gives (`NC_000011.10`) is UCSC's `chr11`.
 3. **The bands**, from UCSC's `cytoBand` table for hg38: every band of that
    chromosome, with its Giemsa stain.
+4. **Where in the body**, from the Human Protein Atlas (`proteinatlas.org`,
+   the gene's own summary by its Ensembl gene, which MANE gives): how
+   specific the gene's RNA is to a tissue and to a single cell type, in the
+   Atlas's categories, and the tissues and cell types it names, highest
+   first. The Atlas's release is read from its releases page: its version,
+   release date and the Ensembl version it is built on. The Atlas is licensed
+   CC BY 4.0: the app has to name it wherever it shows these.
+
+It rides in this track rather than one of its own because the app's
+`TrackKind` enum is closed over the walk's tests: a new kind would mean
+editing a walk-test helper, and the zoom is the only reader of either.
 
 Both UCSC tables are read through the Genome Browser's REST API
 (`api.genome.ucsc.edu/getData/track`), which serves the same tables as the
@@ -67,7 +81,8 @@ GRCh38, as MANE and GenBank count; UCSC's 0-based band starts are made 1-based.
 | `bands` | every band of the chromosome in order from the end of the short arm: name, start, end and stain (`gneg`, `gpos25` to `gpos100`, `acen`, `gvar`, `stalk`) |
 | `band` | the band or bands the span lies in, and where they begin and end |
 | `locus` | the place as cytogenetics writes it: `11p15.5`; `Xp21.2-p21.1` across two bands |
-| `sources` | `cytoband` and `chrom_alias`: the table, its genome, when UCSC last updated it (its version: UCSC tables carry no other), how many rows were read and their digest; `mane`: the release; `uniprot`: the release, its date and the entry's version |
+| `expression` | the Ensembl gene, and for `tissue` and for `cell_type` the Atlas's `specificity` (`Tissue enriched`, `Group enriched`, `Tissue enhanced`, `Low tissue specificity`, `Not detected`, and the cell-type counterparts), its `distribution`, and the `specific` ones it names with their levels (nTPM for a tissue, nCPM for a cell type), highest first; none where nothing is specific |
+| `sources` | `cytoband` and `chrom_alias`: the table, its genome, when UCSC last updated it (its version: UCSC tables carry no other), how many rows were read and their digest; `mane`: the release; `uniprot`: the release, its date and the entry's version; `hpa`: the Atlas version, its release date, its Ensembl version, its licence and the gene's URL |
 
 A band is a stain pattern seen down a microscope at low resolution, millions of
 bases long. The track says where the gene lies; it does not say the gene can be
@@ -86,7 +101,10 @@ seen there, and the app must not say so either.
 - the record, where the record says where it is: a record cut from a
   chromosome (oxytocin, relaxin, glucagon, amylase) is cut from this one,
   around this span, and a table row naming its transcript names this one;
-- a version for every source.
+- the Atlas as it reads itself: its categories only, levels above zero and
+  highest first, and tissues or cell types named exactly when the gene is
+  specific to some;
+- a version for every source, and the Atlas's licence.
 
 `verify_locus.py` holds each baked place to the one HGNC curates for the gene
 symbol, read at the time: HGNC may write a coarser place, never a different one.
@@ -105,3 +123,13 @@ way. Dystrophin's 2.1 million bases run across two bands, Xp21.2 and Xp21.1.
 | 7 | EPO (q22.1), CFTR (q31.2), LEP (q32.1) |
 | X | DMD (p21.2-p21.1) |
 | 1, 2, 6, 9, 12, 22 | AMY1A (1p21.1), GCG (2q24.2), TNF (6p21.33), RLN2 (9p24.1), LYZ (12q15), MB (22q12.3) |
+
+From the Atlas, version 25.1: sixteen are specific to a tissue in some way,
+from insulin and glucagon in the pancreas and hemoglobin in the bone marrow to
+growth hormone in the pituitary; TP53, UBB, DMD and APP are read in every
+tissue it measured. Hemoglobin's cell type is `Erythrocytes`: mature red
+cells, which have no nucleus, so the zoom lands in the marrow precursor that
+still has one and says so. The Atlas's top cell type is not always a cell of
+its top tissue (myoglobin's is thymic myoid cells, the muscle-like cells of the
+thymus, where its tissue is skeletal muscle), so the app states each as the
+Atlas's reading rather than zooming one into the other.

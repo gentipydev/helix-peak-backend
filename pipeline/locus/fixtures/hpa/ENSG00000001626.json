@@ -1,0 +1,20 @@
+{
+ "Ensembl": "ENSG00000001626",
+ "Gene": "CFTR",
+ "RNA single cell type distribution": "Detected in many",
+ "RNA single cell type specific nCPM": {
+  "Enteric stem cells": "290.2",
+  "Pancreatic duct cells": "3336.0",
+  "Respiratory ionocytes": "767.1",
+  "Salivary acinar cells": "332.1",
+  "Salivary ionocytes": "1519.9"
+ },
+ "RNA single cell type specificity": "Cell type enhanced",
+ "RNA tissue distribution": "Detected in many",
+ "RNA tissue specific nTPM": {
+  "gallbladder": "47.0",
+  "intestine": "42.2",
+  "pancreas": "187.0"
+ },
+ "RNA tissue specificity": "Tissue enhanced"
+}

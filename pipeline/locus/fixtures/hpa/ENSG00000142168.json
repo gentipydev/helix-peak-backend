@@ -1,0 +1,17 @@
+{
+ "Ensembl": "ENSG00000142168",
+ "Gene": "SOD1",
+ "RNA single cell type distribution": "Detected in all",
+ "RNA single cell type specific nCPM": {
+  "Gastric progenitor cells": "1937.9",
+  "Hepatocytes": "3764.4",
+  "Late spermatids": "1476.3",
+  "Oocytes": "1662.4"
+ },
+ "RNA single cell type specificity": "Cell type enhanced",
+ "RNA tissue distribution": "Detected in all",
+ "RNA tissue specific nTPM": {
+  "liver": "1537.1"
+ },
+ "RNA tissue specificity": "Tissue enhanced"
+}

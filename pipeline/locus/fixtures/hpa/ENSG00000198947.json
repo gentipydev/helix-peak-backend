@@ -1,0 +1,18 @@
+{
+ "Ensembl": "ENSG00000198947",
+ "Gene": "DMD",
+ "RNA single cell type distribution": "Detected in many",
+ "RNA single cell type specific nCPM": {
+  "Adipocytes": "1918.6",
+  "Cardiomyocytes": "6295.2",
+  "Cone photoreceptor cells": "2591.8",
+  "Myonuclei": "14979.2",
+  "Rod photoreceptor cells": "3789.5",
+  "Salivary myoepithelial cells": "2593.1",
+  "Thymic myoid cells": "7067.3"
+ },
+ "RNA single cell type specificity": "Cell type enhanced",
+ "RNA tissue distribution": "Detected in many",
+ "RNA tissue specific nTPM": null,
+ "RNA tissue specificity": "Low tissue specificity"
+}

@@ -2,9 +2,11 @@
 
 The fixtures are the sources' own answers, cut down: UniProt's entries for
 six of the twenty (release 2026_03), keeping what the protein index's join
-reads; their six MANE Select rows from the v1.5 summary; and UCSC's cytoBand
+reads; their six MANE Select rows from the v1.5 summary; UCSC's cytoBand
 and chromAlias tables for hg38, as its API served them, for the five
-chromosomes those genes are on. Nothing here fetches.
+chromosomes those genes are on; and the Human Protein Atlas's summaries of the
+six genes (version 25.1), keeping the fields the bake reads, with the text of
+its releases page that the parser reads. Nothing here fetches.
 """
 
 from __future__ import annotations
@@ -52,6 +54,13 @@ def sources():
     return (mane, _table("cytoband_hg38_five.json"), _table("chromalias_hg38_five.json"))
 
 
+ATLAS = bake_locus.atlas_of((FIXTURES / "hpa_releases.html").read_text(encoding="utf-8"))
+
+
+def _atlas_gene(ensembl: str) -> dict:
+    return json.loads((FIXTURES / "hpa" / f"{ensembl}.json").read_text(encoding="utf-8"))
+
+
 def _entry(accession: str) -> Entry:
     body = json.loads((FIXTURES / "uniprot" / f"{accession}.json").read_text(encoding="utf-8"))
     return Entry(accession, body, "2026_03", "2026-09-02", "2026-09-27")
@@ -60,8 +69,11 @@ def _entry(accession: str) -> Entry:
 def _track(slug: str, sources) -> dict:
     mane, cytoband, aliases = sources
     target = BY_SLUG[slug]
-    return bake_locus.payload(target, _entry(target.uniprot), mane, "v1.5",
-                              cytoband, aliases, "2026-09-27")
+    entry = _entry(target.uniprot)
+    ensembl = bake_locus.ensembl_gene_of(
+        bake_locus.mane_row(target, entry, mane, "v1.5"), mane)
+    return bake_locus.payload(target, entry, mane, "v1.5", cytoband, aliases,
+                              ATLAS, _atlas_gene(ensembl), "2026-09-27")
 
 
 # -- the places -----------------------------------------------------------------
@@ -129,14 +141,16 @@ def test_refuses_an_entry_with_no_row_for_the_gene(sources):
     with pytest.raises(LookupError, match="0 buildable MANE Select rows"):
         bake_locus.payload(target, Entry(target.uniprot, body, "2026_03", "2026-09-02",
                                          "2026-09-27"),
-                           mane, "v1.5", cytoband, aliases, "2026-09-27")
+                           mane, "v1.5", cytoband, aliases, ATLAS,
+                           _atlas_gene("ENSG00000254647"), "2026-09-27")
 
 
 def test_refuses_an_entry_uniprot_did_not_answer_for(sources):
     mane, cytoband, aliases = sources
     with pytest.raises(ValueError, match="UniProt answered"):
         bake_locus.payload(BY_SLUG["hemoglobin"], _entry("P01308"), mane, "v1.5",
-                           cytoband, aliases, "2026-09-27")
+                           cytoband, aliases, ATLAS, _atlas_gene("ENSG00000244734"),
+                           "2026-09-27")
 
 
 def test_refuses_a_chromosome_with_no_bands(sources):
@@ -146,7 +160,59 @@ def test_refuses_a_chromosome_with_no_bands(sources):
                             cytoband.url)
     with pytest.raises(LookupError, match="no bands"):
         bake_locus.payload(BY_SLUG["insulin"], _entry("P01308"), mane, "v1.5",
-                           bare, aliases, "2026-09-27")
+                           bare, aliases, ATLAS, _atlas_gene("ENSG00000254647"),
+                           "2026-09-27")
+
+
+# -- where in the body, as the Atlas reads it ------------------------------------------
+
+
+def test_names_where_the_atlas_finds_the_gene_read(sources):
+    hemoglobin = _track("hemoglobin", sources)["expression"]
+    assert hemoglobin["ensembl_gene"] == "ENSG00000244734"
+    assert hemoglobin["tissue"]["specificity"] == "Tissue enriched"
+    assert hemoglobin["tissue"]["specific"][0]["name"] == "bone marrow"
+    # The Atlas's own reading: the cells it finds the RNA in are red cells,
+    # which is what makes the zoom land in a precursor.
+    assert hemoglobin["cell_type"]["specific"][0]["name"] == "Erythrocytes"
+    insulin = _track("insulin", sources)["expression"]
+    assert insulin["tissue"]["specific"][0]["name"] == "pancreas"
+    assert insulin["cell_type"]["specific"][0]["name"] == "Pancreatic islet cells"
+
+
+def test_a_gene_read_everywhere_names_no_tissue(sources):
+    p53 = _track("p53", sources)["expression"]
+    assert p53["tissue"] == {"specificity": "Low tissue specificity",
+                             "distribution": "Detected in all", "specific": []}
+    assert p53["cell_type"]["specific"] == []
+    dystrophin = _track("dystrophin", sources)["expression"]
+    assert dystrophin["tissue"]["specific"] == []
+    assert dystrophin["cell_type"]["specific"], "specific to cell types, not tissues"
+
+
+def test_names_them_highest_first(sources):
+    for slug in KNOWN:
+        expression = _track(slug, sources)["expression"]
+        for key, unit in (("tissue", "ntpm"), ("cell_type", "ncpm")):
+            levels = [found[unit] for found in expression[key]["specific"]]
+            assert levels == sorted(levels, reverse=True)
+
+
+def test_refuses_an_atlas_answer_for_another_gene(sources):
+    mane, cytoband, aliases = sources
+    with pytest.raises(ValueError, match="asked the Atlas"):
+        bake_locus.payload(BY_SLUG["insulin"], _entry("P01308"), mane, "v1.5",
+                           cytoband, aliases, ATLAS, _atlas_gene("ENSG00000244734"),
+                           "2026-09-27")
+
+
+def test_reads_the_atlas_release_from_its_releases_page():
+    assert ATLAS == bake_locus.Atlas("25.1", "2026-05-25", "109")
+    provenance = ATLAS.provenance("ENSG00000254647")
+    assert provenance["licence"] == "CC BY 4.0"
+    assert provenance["url"] == "https://www.proteinatlas.org/ENSG00000254647.json"
+    with pytest.raises(LookupError):
+        bake_locus.atlas_of("<html>no release here</html>")
 
 
 # -- the table and its version -------------------------------------------------------
@@ -192,12 +258,27 @@ def test_a_true_track_passes_the_check(slug, sources):
     (lambda t: t.update(gene="HBB"), "gene is"),
     (lambda t: t["sources"]["cytoband"].update(updated="yesterday"), "updated"),
     (lambda t: t["sources"]["mane"].update(release="latest"), "MANE release"),
+    (lambda t: t["expression"]["tissue"].update(specificity="Everywhere"), "specificity"),
+    (lambda t: t["expression"]["cell_type"].update(
+        specific=[{"name": "A", "ncpm": 1.0}, {"name": "B", "ncpm": 9.0}]), "highest first"),
+    (lambda t: t["sources"]["hpa"].update(licence="CC BY-SA 4.0"), "licence"),
 ])
 def test_the_check_catches_a_damaged_track(damage, finding, sources):
     track = _track("insulin", sources)
     damage(track)
     found = check_locus.problems_of(BY_SLUG["insulin"], track)
     assert any(finding in problem for problem in found), found
+
+
+def test_the_check_holds_the_atlas_categories_to_their_lists(sources):
+    track = _track("p53", sources)
+    track["expression"]["tissue"]["specific"] = [{"name": "liver", "ntpm": 3.0}]
+    found = check_locus.problems_of(BY_SLUG["p53"], track)
+    assert any("Low tissue specificity, yet names 1" in problem for problem in found)
+    track = _track("insulin", sources)
+    track["expression"]["tissue"]["specific"] = []
+    found = check_locus.problems_of(BY_SLUG["insulin"], track)
+    assert any("Tissue enriched, yet names none" in problem for problem in found)
 
 
 def test_the_check_holds_a_sliced_record_to_its_slice(sources):
@@ -239,6 +320,7 @@ def test_the_uploader_and_the_fetcher_know_the_kind(sources, tmp_path, monkeypat
     provenance = upload_tracks.validate("locus", target, bake_locus.encode(track))
     assert provenance["locus"] == "11p15.5"
     assert provenance["sources"]["cytoband"]["updated"] == "2022-10-28T15:06:46"
+    assert provenance["sources"]["hpa"]["version"] == "25.1"
     damaged = dict(track, locus="11p15.4")
     with pytest.raises(ValueError, match="locus"):
         upload_tracks.validate("locus", target, bake_locus.encode(damaged))

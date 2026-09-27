@@ -1,0 +1,14 @@
+{
+ "Ensembl": "ENSG00000244734",
+ "Gene": "HBB",
+ "RNA single cell type distribution": "Detected in some",
+ "RNA single cell type specific nCPM": {
+  "Erythrocytes": "521402.5"
+ },
+ "RNA single cell type specificity": "Cell type enriched",
+ "RNA tissue distribution": "Detected in all",
+ "RNA tissue specific nTPM": {
+  "bone marrow": "125480.9"
+ },
+ "RNA tissue specificity": "Tissue enriched"
+}

@@ -1,0 +1,10 @@
+{
+ "Ensembl": "ENSG00000141510",
+ "Gene": "TP53",
+ "RNA single cell type distribution": "Detected in many",
+ "RNA single cell type specific nCPM": null,
+ "RNA single cell type specificity": "Low cell type specificity",
+ "RNA tissue distribution": "Detected in all",
+ "RNA tissue specific nTPM": null,
+ "RNA tissue specificity": "Low tissue specificity"
+}

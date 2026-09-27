@@ -17,6 +17,10 @@ track carries what that needs, per protein:
 - `band`: the band or bands the span lies in, and where they begin and end;
   and `locus`, the place as cytogenetics writes it: 11p15.5, or Xp21.2-p21.1
   for a gene that runs across two bands.
+- `expression`: where in the body the gene is read, as the Human Protein
+  Atlas measures it: how specific its RNA is to a tissue and to a cell type,
+  in the Atlas's own categories, and the tissues and cell types it names,
+  highest first. The zoom walks down to the chromosome through them.
 
 A band is a stain pattern seen down a microscope at low resolution, millions
 of bases long. It says where a gene lies, not that the gene can be seen there.
@@ -24,7 +28,8 @@ of bases long. It says where a gene lies, not that the gene can be seen there.
 Each payload names its sources and their versions: the cytoBand and
 chromAlias tables by genome and by the time UCSC's API says each was last
 updated, with a digest of the rows read; the MANE release; the UniProt release
-and entry version. UCSC's download server does not answer from every network,
+and entry version; and the Protein Atlas version, its release date and the
+Ensembl version it is built on, with its licence, CC BY 4.0. UCSC's download server does not answer from every network,
 so the tables are read through its REST API, which serves the same tables.
 
 Which proteins get the track: all twenty (`LOCUS_TARGETS`), recorded here,
@@ -36,6 +41,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 import urllib.request
 from dataclasses import dataclass
@@ -47,7 +53,7 @@ BACKEND = HERE.parents[1]
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
-from app.protein_index import rows_for_entry  # noqa: E402
+from app.protein_index import rows_for_entry, versionless  # noqa: E402
 from pipeline.mane import current_summary  # noqa: E402
 from pipeline.paths import DATA  # noqa: E402
 from pipeline.targets import BY_SLUG, TARGETS, Target  # noqa: E402
@@ -63,6 +69,20 @@ GENOME = "hg38"
 UCSC_API = "https://api.genome.ucsc.edu/getData/track?genome={};track={}"
 
 _AGENT = "helixpeek-locus-bake"
+
+# The Human Protein Atlas: one gene's summary, by Ensembl gene, and the page
+# that names the release it is from.
+HPA_GENE = "https://www.proteinatlas.org/{}.json"
+HPA_RELEASES = "https://www.proteinatlas.org/about/releases"
+HPA_LICENCE = "CC BY 4.0"
+
+# How specific a gene's RNA is, in the Atlas's categories: to a tissue, and to
+# a single cell type. The last two name nothing specific.
+TISSUE_SPECIFICITY = ("Tissue enriched", "Group enriched", "Tissue enhanced",
+                      "Low tissue specificity", "Not detected")
+CELL_SPECIFICITY = ("Cell type enriched", "Group enriched", "Cell type enhanced",
+                    "Low cell type specificity", "Not detected")
+UNSPECIFIC = ("Low tissue specificity", "Low cell type specificity", "Not detected")
 
 # The stains cytoBand gives a band: G-negative, four depths of G-positive,
 # the centromere, the variable heterochromatin, and the stalks of the
@@ -98,6 +118,67 @@ class Table:
             "sha256": self.sha256,
             "url": self.url,
         }
+
+
+@dataclass(frozen=True)
+class Atlas:
+    """The Human Protein Atlas release the genes were read from."""
+
+    version: str
+    release_date: str
+    ensembl: str
+
+    def provenance(self, gene: str) -> dict:
+        return {
+            "version": self.version,
+            "release_date": self.release_date,
+            "ensembl": self.ensembl,
+            "licence": HPA_LICENCE,
+            "url": HPA_GENE.format(gene),
+        }
+
+
+_RELEASE = re.compile(
+    r"Protein Atlas version (\d+\.\d+) Release date: (\d{4})\.(\d{2})\.(\d{2}) "
+    r"Ensembl version: (\d+)")
+
+
+def atlas_of(page: str) -> Atlas:
+    """The latest release its releases page lists: the first it names."""
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", page))
+    found = _RELEASE.search(text)
+    if not found:
+        raise LookupError("the Protein Atlas's releases page names no release")
+    version, year, month, day, ensembl = found.groups()
+    return Atlas(version, f"{year}-{month}-{day}", ensembl)
+
+
+def ensembl_gene_of(row: dict, mane: dict) -> str:
+    """The Ensembl gene MANE puts the row's transcript on, without version."""
+    return versionless(mane[versionless(row["ensembl_nuc"])]["Ensembl_Gene"])
+
+
+def _ranked(values: dict | None, unit: str) -> list[dict]:
+    return sorted(
+        ({"name": name, unit: float(value)} for name, value in (values or {}).items()),
+        key=lambda found: (-found[unit], found["name"]))
+
+
+def expression_of(gene: dict) -> dict:
+    """What the Atlas says of where a gene is read: its specificity to a
+    tissue and to a cell type, and the ones it names, highest first."""
+    return {
+        "tissue": {
+            "specificity": gene.get("RNA tissue specificity"),
+            "distribution": gene.get("RNA tissue distribution"),
+            "specific": _ranked(gene.get("RNA tissue specific nTPM"), "ntpm"),
+        },
+        "cell_type": {
+            "specificity": gene.get("RNA single cell type specificity"),
+            "distribution": gene.get("RNA single cell type distribution"),
+            "specific": _ranked(gene.get("RNA single cell type specific nCPM"), "ncpm"),
+        },
+    }
 
 
 def locus_asset(target: Target) -> str:
@@ -172,13 +253,18 @@ def locus_of(chromosome: str, names: list[str]) -> str:
 
 
 def payload(target: Target, entry: Entry, mane: dict, mane_release: str,
-            cytoband: Table, aliases: Table, retrieved: str) -> dict:
+            cytoband: Table, aliases: Table, atlas: Atlas, atlas_gene: dict,
+            retrieved: str) -> dict:
     """The track for one protein, from the sources as they were read."""
     body = entry.body
     if body.get("primaryAccession") != target.uniprot:
         raise ValueError(f"{target.slug}: asked for {target.uniprot}, "
                          f"UniProt answered {body.get('primaryAccession')}")
     row = mane_row(target, entry, mane, mane_release)
+    ensembl = ensembl_gene_of(row, mane)
+    if atlas_gene.get("Ensembl") != ensembl or atlas_gene.get("Gene") != target.gene:
+        raise ValueError(f"{target.slug}: asked the Atlas for {ensembl}, it answered "
+                         f"{atlas_gene.get('Ensembl')} ({atlas_gene.get('Gene')})")
     chrom = chromosome_of(row["chrom_acc"], aliases)
     bands = bands_of(chrom, cytoband)
     if not bands:
@@ -204,6 +290,7 @@ def payload(target: Target, entry: Entry, mane: dict, mane_release: str,
         "band": {"names": names, "start": inside[0]["start"], "end": inside[-1]["end"]},
         "locus": locus_of(chromosome, names),
         "bands": bands,
+        "expression": {"ensembl_gene": ensembl, **expression_of(atlas_gene)},
         "sources": {
             "cytoband": cytoband.provenance(),
             "chrom_alias": aliases.provenance(),
@@ -213,6 +300,7 @@ def payload(target: Target, entry: Entry, mane: dict, mane_release: str,
                 "release_date": entry.release_date,
                 "entry_version": audit.get("entryVersion"),
             },
+            "hpa": atlas.provenance(ensembl),
         },
         "retrieved": retrieved,
         "schema_version": SCHEMA_VERSION,
@@ -239,15 +327,20 @@ def main() -> int:
     cytoband = fetch_table("cytoBand")
     aliases = fetch_table("chromAlias")
     mane, mane_release = current_summary(_get)
+    atlas = atlas_of(_get(HPA_RELEASES)[0].decode("utf-8", "replace"))
     retrieved = datetime.now(timezone.utc).date().isoformat()
     print(f"cytoBand {cytoband.genome}, updated {cytoband.updated}, {len(cytoband.rows)} rows; "
-          f"chromAlias updated {aliases.updated}; MANE {mane_release}")
+          f"chromAlias updated {aliases.updated}; MANE {mane_release}; "
+          f"Protein Atlas {atlas.version} ({atlas.release_date}, Ensembl {atlas.ensembl})")
 
     failed = []
     for target in chosen:
         try:
-            track = payload(target, fetch_entry(target.uniprot), mane, mane_release,
-                            cytoband, aliases, retrieved)
+            entry = fetch_entry(target.uniprot)
+            ensembl = ensembl_gene_of(mane_row(target, entry, mane, mane_release), mane)
+            atlas_gene = json.loads(_get(HPA_GENE.format(ensembl))[0])
+            track = payload(target, entry, mane, mane_release, cytoband, aliases,
+                            atlas, atlas_gene, retrieved)
         except (LookupError, ValueError) as exc:
             failed.append(f"{target.slug}: {exc}")
             print(f"{target.slug:<16} FAILED: {exc}")
@@ -256,8 +349,12 @@ def main() -> int:
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(encode(track))
         span = track["span"]
+        tissue = track["expression"]["tissue"]
+        cell = track["expression"]["cell_type"]
         print(f"{target.slug:<16} {track['gene']:<6} {track['locus']:<14} "
-              f"{track['sequence']}:{span['start']}-{span['end']}")
+              f"{track['sequence']}:{span['start']}-{span['end']}  "
+              f"{', '.join(t['name'] for t in tissue['specific'][:2]) or tissue['specificity']}"
+              f" / {', '.join(c['name'] for c in cell['specific'][:2]) or cell['specificity']}")
     if failed:
         print(f"\n{len(failed)} protein(s) did not resolve to a band:")
         for line in failed:

@@ -1,0 +1,14 @@
+{
+ "Ensembl": "ENSG00000254647",
+ "Gene": "INS",
+ "RNA single cell type distribution": "Detected in some",
+ "RNA single cell type specific nCPM": {
+  "Pancreatic islet cells": "83209.9"
+ },
+ "RNA single cell type specificity": "Cell type enriched",
+ "RNA tissue distribution": "Detected in many",
+ "RNA tissue specific nTPM": {
+  "pancreas": "12197.1"
+ },
+ "RNA tissue specificity": "Tissue enriched"
+}

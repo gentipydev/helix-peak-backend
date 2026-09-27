@@ -16,8 +16,12 @@ For each target, the payload under `pipeline/data/assets/locus/`:
 - agrees with the record where the record says where it is: a record cut
   from a chromosome is cut from this one, around this span, and a table row
   that names its transcript names the one the span is;
+- reads the Atlas as it reads itself: its categories for how specific the
+  gene's RNA is, and the tissues and cell types named, highest first, only
+  where the gene is specific to something;
 - says where it came from: each UCSC table's genome, update time and
-  digest, the MANE release, and the UniProt release.
+  digest, the MANE release, the UniProt release, and the Protein Atlas
+  version, release date, Ensembl version and licence.
 
 Exits 1 with the problems listed. Reads `pipeline/data/` only.
 """
@@ -36,10 +40,14 @@ if str(BACKEND) not in sys.path:
 
 from pipeline.locus.bake_locus import (  # noqa: E402
     ASSEMBLY,
+    CELL_SPECIFICITY,
     GENOME,
+    HPA_LICENCE,
     LOCUS_TARGETS,
     SCHEMA_VERSION,
     STAINS,
+    TISSUE_SPECIFICITY,
+    UNSPECIFIC,
     locus_asset,
     locus_of,
 )
@@ -55,6 +63,8 @@ _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 _MANE = re.compile(r"^v\d+(\.\d+)*$")
 _RELEASE = re.compile(r"^\d{4}_\d{2}$")
 _DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_ENSEMBL = re.compile(r"^ENSG\d{11}$")
+_VERSION = re.compile(r"^\d+\.\d+$")
 
 
 def problems_of(target: Target, track: dict | None = None) -> list[str]:
@@ -141,6 +151,33 @@ def problems_of(target: Target, track: dict | None = None) -> list[str]:
     if source.transcript_id and transcript != source.transcript_id:
         out.append(f"{where}: transcript {transcript}, the table names {source.transcript_id}")
 
+    # Where in the body, as the Atlas reads it.
+    expression = track.get("expression") or {}
+    if not _ENSEMBL.match(str(expression.get("ensembl_gene"))):
+        out.append(f"{where}: Ensembl gene {expression.get('ensembl_gene')!r}")
+    for key, categories, unit in (("tissue", TISSUE_SPECIFICITY, "ntpm"),
+                                  ("cell_type", CELL_SPECIFICITY, "ncpm")):
+        section = expression.get(key) or {}
+        specificity = section.get("specificity")
+        if specificity not in categories:
+            out.append(f"{where}: {key} specificity {specificity!r}")
+        specific = section.get("specific")
+        if not isinstance(specific, list):
+            out.append(f"{where}: {key} names no list")
+            continue
+        values = [found.get(unit) for found in specific]
+        if any(not isinstance(found.get("name"), str) or not found["name"]
+               for found in specific):
+            out.append(f"{where}: {key} names one without a name")
+        if any(not isinstance(value, (int, float)) or value <= 0 for value in values):
+            out.append(f"{where}: {key} has a level that is not above zero")
+        elif values != sorted(values, reverse=True):
+            out.append(f"{where}: {key} is not highest first")
+        if specificity in UNSPECIFIC and specific:
+            out.append(f"{where}: {key} is {specificity}, yet names {len(specific)}")
+        if specificity not in UNSPECIFIC and specificity in categories and not specific:
+            out.append(f"{where}: {key} is {specificity}, yet names none")
+
     # Where it came from.
     sources = track.get("sources") or {}
     for key, table in (("cytoband", "cytoBand"), ("chrom_alias", "chromAlias")):
@@ -156,6 +193,15 @@ def problems_of(target: Target, track: dict | None = None) -> list[str]:
     uniprot = sources.get("uniprot") or {}
     if not _RELEASE.match(str(uniprot.get("release"))):
         out.append(f"{where}: UniProt release {uniprot.get('release')!r}")
+    hpa = sources.get("hpa") or {}
+    if not _VERSION.match(str(hpa.get("version"))):
+        out.append(f"{where}: Protein Atlas version {hpa.get('version')!r}")
+    if not _DAY.match(str(hpa.get("release_date"))):
+        out.append(f"{where}: Protein Atlas release date {hpa.get('release_date')!r}")
+    if not str(hpa.get("ensembl", "")).isdigit():
+        out.append(f"{where}: Protein Atlas Ensembl version {hpa.get('ensembl')!r}")
+    if hpa.get("licence") != HPA_LICENCE:
+        out.append(f"{where}: Protein Atlas licence {hpa.get('licence')!r}")
     if not _DAY.match(str(track.get("retrieved"))):
         out.append(f"{where}: retrieved {track.get('retrieved')!r}")
     return out
