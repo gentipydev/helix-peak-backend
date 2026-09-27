@@ -1,0 +1,5 @@
+# The folding bake re-runs the structure bake's own export to find the frame
+# the stored model was cut in, so it runs in that environment: PyMOL 3.1.0 on
+# PATH and pipeline/structure/requirements.txt (numpy, scipy, trimesh). The
+# check, and the uploader that runs it, need numpy alone, on the backend's .venv.
+numpy==2.5.3

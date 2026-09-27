@@ -95,6 +95,10 @@ def asset_of(kind: str, target) -> Path | None:
     if kind == "trafficking":
         # Where `trafficking/bake_trafficking.py` writes it (`trafficking_asset`).
         return DATA / f"assets/trafficking/{target.slug}_trafficking.json"
+    if kind == "folding":
+        # Where `folding/bake_folding.py` writes it (`folding_asset`).
+        path = DATA / f"assets/folding/{target.slug}_folding.json"
+        return path if target.structure else None
     raise SystemExit(f"unknown kind {kind!r}")
 
 
@@ -194,6 +198,26 @@ def validate(kind: str, target, payload: bytes) -> dict:
                 ("source", "release", "release_date", "retrieved", "entry_version",
                  "sequence_version", "schema_version", "built_by")}
 
+    if kind == "folding":
+        # The whole of `check_folding.py` on this protein: the mature chain
+        # residue for residue, the record's letters, the entry's own CA atoms
+        # in a chain, and each on its ribbon in the stored model. The
+        # provenance is the entry, its chains and the frame they were put in.
+        from pipeline.folding.check_folding import problems_of
+        found = problems_of(target, data)
+        if found:
+            raise ValueError("; ".join(found))
+        return {
+            "pdb": data["pdb"],
+            "chains": [{key: chain[key] for key in
+                        ("node", "pdb_chain", "offset", "first", "last")}
+                       for chain in data["chains"]],
+            "frame": data["frame"],
+            "secondary_structure": data["secondary_structure"],
+            "schema_version": data["schema_version"],
+            "built_by": data["built_by"],
+        }
+
     raise SystemExit(f"unknown kind {kind!r}")
 
 
@@ -243,7 +267,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Upload baked tracks to Supabase.")
     parser.add_argument("--kind", required=True, choices=[
         "record", "impact_explanations", "constraint", "impact", "clinvar", "structure",
-        "structure_ar", "trafficking"])
+        "structure_ar", "trafficking", "folding"])
     parser.add_argument("--target", action="append", default=None)
     parser.add_argument("--dry-run", action="store_true")
     arguments = parser.parse_args()

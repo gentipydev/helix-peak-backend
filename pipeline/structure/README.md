@@ -108,9 +108,14 @@ entries needs, so that each reads them one way:
   bridges, fitted to the ribbon's CA atoms where it has none.
 
 They need numpy and nothing else, so a baker that reads the stored model, as
-`structure_ar/` does, runs on the backend's `.venv` without PyMOL. They moved
-out of `bake.py`,
-`structure_ar/bake_ar.py` and `verify_frame.py` unchanged.
+`structure_ar/` does, runs on the backend's `.venv` without PyMOL. The three
+moved out of `bake.py`, `structure_ar/bake_ar.py` and `verify_frame.py`
+unchanged.
+
+`folding/` reads the entry through `pdb.py` too, but takes its frame from
+`bake.py` itself: `export` and `normalisation`, re-run and held to the stored
+model vertex for vertex. That is exact on all twenty, where `frame.py`'s ribbon
+fit is not (see `folding/README.md`).
 
 ### Re-baking on Windows
 
