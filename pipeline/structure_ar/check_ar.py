@@ -34,7 +34,7 @@ if str(BACKEND) not in sys.path:
 
 from pipeline.paths import DATA  # noqa: E402
 from pipeline.structure_ar.bake_ar import AR_TARGETS, METERS_PER_UNIT, ar_asset, ar_glb  # noqa: E402
-from pipeline.structure_ar.glb import read_glb  # noqa: E402
+from pipeline.structure.glb import read_glb  # noqa: E402
 
 # How far a residual may run before the size it gave is not believed: the
 # bridges fix the scale exactly, and a CA fit to a cartoon lands within about

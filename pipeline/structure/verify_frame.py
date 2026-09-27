@@ -4,18 +4,21 @@ A rotation would show up as tens of angstroms. Run after `bake.py --target
 insulin`, which leaves the .obj files in output/insulin/.
 """
 
+import sys
+from pathlib import Path
+
 import numpy as np, trimesh
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from pipeline.structure.pdb import atoms  # noqa: E402  the bake's own reading
 
 ORIGIN = np.array([-18.0825, -1.3525, -9.326])
 PDB = 'structures/3I40.pdb'
 OUT = 'output/insulin'
 
 def ca_atoms(chain):
-    out = []
-    for line in open(PDB):
-        if line.startswith('ATOM') and line[12:16].strip() == 'CA' and line[21] == chain:
-            out.append([float(line[30:38]), float(line[38:46]), float(line[46:54])])
-    return np.array(out)
+    return np.array([xyz for (c, _, name), xyz in atoms(Path(PDB)).items()
+                     if c == chain and name == 'CA'])
 
 for chain, obj in (('A', f'{OUT}/chainA.obj'), ('B', f'{OUT}/chainB.obj')):
     m = trimesh.load(obj, process=False)

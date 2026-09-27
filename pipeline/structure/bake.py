@@ -20,7 +20,6 @@ import re
 import shutil
 import subprocess
 import sys
-import urllib.request
 
 HERE = Path(__file__).resolve().parent
 BACKEND = HERE.parents[1]
@@ -31,9 +30,9 @@ import numpy as np  # noqa: E402
 import trimesh  # noqa: E402
 
 from pipeline.paths import DATA  # noqa: E402
+from pipeline.structure.pdb import atoms, pdb_path, ssbonds  # noqa: E402
 from pipeline.targets import BY_SLUG, TARGETS, Structure, Target  # noqa: E402
 
-STRUCTURES = HERE / "structures"
 OUTPUT = HERE / "output"
 PYMOL = shutil.which("pymol") or "/opt/homebrew/bin/pymol"
 
@@ -44,17 +43,6 @@ TUBE_RADIUS = 0.6  # For a peptide with no secondary structure to draw.
 
 # What `AnatomyLayout`-sized pages can afford. Insulin's compiles to 173 kB.
 FSCENEB_BUDGET_BYTES = 900_000
-
-
-def pdb_path(structure: Structure) -> Path:
-    path = STRUCTURES / f"{structure.pdb}.pdb"
-    if not path.exists():
-        url = f"https://files.rcsb.org/download/{structure.pdb}.pdb"
-        print(f"  fetching {url}", flush=True)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with urllib.request.urlopen(url, timeout=120) as response:
-            path.write_bytes(response.read())
-    return path
 
 
 def selection(chain: str, structure: Structure) -> str:
@@ -141,44 +129,6 @@ def run_pymol(script: Path) -> np.ndarray:
     if not found:
         raise RuntimeError(f"pymol printed no export origin:\n{result.stdout}\n{result.stderr}")
     return np.array([float(g) for g in found[-1]])
-
-
-def atoms(path: Path) -> dict:
-    """{(chain, resi, name): xyz} for the atoms the bridges need."""
-    out = {}
-    for line in path.read_text(errors="replace").splitlines():
-        if not line.startswith("ATOM"):
-            continue
-        name = line[12:16].strip()
-        if name not in ("SG", "CB", "CA"):
-            continue
-        out[(line[21], int(line[22:26]), name)] = np.array(
-            [float(line[30:38]), float(line[38:46]), float(line[46:54])]
-        )
-    return out
-
-
-def ssbonds(path: Path, structure: Structure) -> list[tuple]:
-    """The SSBOND records with both ends inside what was exported.
-
-    PyMOL cannot export sticks at all, so the bridges — the entire point of the
-    page, where there are any — would be silently missing from a plain cartoon
-    export. They are built from the crystallographic coordinates instead, with
-    the pairs taken from the file's own records.
-    """
-    wanted = {c.pdb_chain for c in structure.chains}
-    span = structure.residues
-    out = []
-    for line in path.read_text(errors="replace").splitlines():
-        if not line.startswith("SSBOND"):
-            continue
-        bond = (line[15], int(line[17:21]), line[29], int(line[31:35]))
-        if bond[0] not in wanted or bond[2] not in wanted:
-            continue
-        if span is not None and not all(span[0] <= r <= span[1] for r in (bond[1], bond[3])):
-            continue
-        out.append(bond)
-    return out
 
 
 def rod(a, b):

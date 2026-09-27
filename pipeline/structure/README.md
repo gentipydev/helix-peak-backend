@@ -95,6 +95,41 @@ Do not "simplify" these back. Each was found by checking the output.
    longest axis to exactly 1.0, so the Dart side carries no scale constant and
    the camera can be framed once. See `_framingMargin` in `structure_view.dart`.
 
+## Shared with the other bakers
+
+Three modules here hold what every baker that starts from these twenty
+entries needs, so that each reads them one way:
+
+- `pdb.py`: the entry as the bake reads it (`pdb_path`, `atoms`, `ssbonds`),
+  and what it exported (`ca_atoms`, `bridge_atoms`).
+- `glb.py`: a stored model's meshes, node by node, with numpy alone.
+- `frame.py`: where a point of the entry lands in a stored model,
+  `(p - centre) / L`. Exact from the bridges' joints where the model has
+  bridges, fitted to the ribbon's CA atoms where it has none.
+
+They need numpy and nothing else, so a baker that reads the stored model, as
+`structure_ar/` does, runs on the backend's `.venv` without PyMOL. They moved
+out of `bake.py`,
+`structure_ar/bake_ar.py` and `verify_frame.py` unchanged.
+
+### Re-baking on Windows
+
+PyMOL 3.1.0 is conda-forge's `pymol-open-source=3.1.0`, installed with
+micromamba beside numpy 2.5.3, scipy 1.18.1 and trimesh 5.1.0 as pinned; put
+its `Scripts` directory on `PATH` and run `bake.py` with its Python. It
+reproduces the stored models' structure exactly (the same nodes, vertex counts
+and triangle counts) but not their bytes: none of the twenty matches storage's
+sha256. Every vertex lands within 2.8e-6 model units of the stored one, about
+0.00005 Å, and the two tube-drawn peptides wind three and nine zero-area
+triangles the other way. That is an x86-64 build's floating point against the
+arm64 Mac the models were baked on.
+
+So on Windows a refactor is proved by baking before and after the change on
+the same machine and comparing those two byte for byte. Moving the shared
+modules out was proved that way: twenty of twenty `.glb`s identical, the same
+PyMOL `.obj` intermediates, the same log, and `verify_frame.py` printing the
+same distances. Comparing with storage's sha256 needs the Mac.
+
 ## What a correct bake produces
 
 Insulin is the reference. Its ribbons reproduce the original hand-made model

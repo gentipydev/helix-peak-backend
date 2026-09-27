@@ -52,7 +52,6 @@ import json
 import shutil
 import sys
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -63,10 +62,9 @@ if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
 from pipeline.paths import DATA  # noqa: E402
-from pipeline.structure_ar.glb import Mesh, read_glb, write_glb  # noqa: E402
-from pipeline.targets import BY_SLUG, TARGETS, Structure, Target  # noqa: E402
-
-STRUCTURES = BACKEND / "pipeline" / "structure" / "structures"
+from pipeline.structure.frame import model_frame  # noqa: E402
+from pipeline.structure.glb import Mesh, read_glb, write_glb  # noqa: E402
+from pipeline.targets import BY_SLUG, TARGETS, Target  # noqa: E402
 
 # Every protein with a fold gets an AR fold: recorded here, never in targets.py.
 AR_TARGETS = tuple(t for t in TARGETS if t.structure is not None)
@@ -77,10 +75,6 @@ METERS_PER_UNIT = 0.01
 # The walk's material on the fold page: matte, so the form reads from shading.
 ROUGHNESS = 0.65
 
-# The fit stops when a round moves the length by less than this fraction.
-_SETTLED = 1e-7
-_ROUNDS = 60
-
 
 def ar_asset(target: Target) -> str:
     return f"assets/models_ar/{target.slug}.usdz"
@@ -89,159 +83,6 @@ def ar_asset(target: Target) -> str:
 def ar_glb(target: Target) -> str:
     """The same fold as a `.glb` in metres, for Android's Scene Viewer."""
     return f"assets/models_ar/{target.slug}.glb"
-
-
-def ca_atoms(structure: Structure, pdb: Path | None = None) -> np.ndarray:
-    """The CA atoms of what the structure bake exported, in the PDB frame.
-
-    The same selection `structure/bake.py` hands PyMOL: each exported chain,
-    polymer only (ATOM records), clipped to the span where there is one. Of
-    alternate locations, the first.
-    """
-    path = pdb or STRUCTURES / f"{structure.pdb}.pdb"
-    wanted = {c.pdb_chain for c in structure.chains}
-    span = structure.residues
-    seen, out = set(), []
-    for line in path.read_text(errors="replace").splitlines():
-        if line.startswith("ENDMDL"):
-            break   # the first model of an NMR or multi-model entry
-        if not line.startswith("ATOM") or line[12:16].strip() != "CA":
-            continue
-        chain, resi = line[21], int(line[22:26])
-        if chain not in wanted or line[16] not in (" ", "A"):
-            continue
-        if span is not None and not span[0] <= resi <= span[1]:
-            continue
-        key = (chain, resi, line[26])
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append([float(line[30:38]), float(line[38:46]), float(line[46:54])])
-    if len(out) < 4:
-        raise ValueError(f"{structure.pdb}: {len(out)} CA atoms in the exported chains")
-    return np.array(out)
-
-
-def _nearest(points: np.ndarray, vertices: np.ndarray) -> np.ndarray:
-    """For each point, the nearest vertex. Brute force, in slices."""
-    out = np.empty_like(points)
-    squared = (vertices * vertices).sum(axis=1)
-    step = max(1, 4_000_000 // max(1, len(vertices)))
-    for start in range(0, len(points), step):
-        chunk = points[start:start + step]
-        distance = squared[None, :] - 2 * chunk @ vertices.T
-        out[start:start + step] = vertices[distance.argmin(axis=1)]
-    return out
-
-
-@dataclass(frozen=True)
-class Fit:
-    """`(p - centre) / length` puts a PDB point into the stored model."""
-
-    length: float           # angstroms per model unit: the bake's L
-    centre: np.ndarray      # the bake's centre, in the PDB frame
-    rms: float              # CA to its nearest vertex, in angstroms
-    atoms: int
-
-
-def fit_size(vertices: np.ndarray, atoms: np.ndarray) -> Fit:
-    """Recover the bake's centre and length from the CA atoms."""
-    low, high = atoms.min(axis=0), atoms.max(axis=0)
-    model = vertices.max(axis=0) - vertices.min(axis=0)
-    # A first guess from the two bounding boxes, then nearest-vertex rounds.
-    scale = model.max() / (high - low).max()        # model units per angstrom
-    shift = -scale * (low + high) / 2
-    for _ in range(_ROUNDS):
-        mapped = atoms * scale + shift
-        target = _nearest(mapped, vertices)
-        a_mean, t_mean = atoms.mean(axis=0), target.mean(axis=0)
-        a, t = atoms - a_mean, target - t_mean
-        new_scale = float((a * t).sum() / (a * a).sum())
-        new_shift = t_mean - new_scale * a_mean
-        settled = abs(new_scale - scale) / scale < _SETTLED
-        scale, shift = new_scale, new_shift
-        if settled:
-            break
-    mapped = atoms * scale + shift
-    residual = np.linalg.norm(mapped - _nearest(mapped, vertices), axis=1)
-    return Fit(
-        length=1.0 / scale,
-        centre=-shift / scale,
-        rms=float(np.sqrt((residual ** 2).mean()) / scale),
-        atoms=len(atoms),
-    )
-
-
-# How `structure/bake.py` builds one disulfide: five rods (a 12-section
-# cylinder is 26 vertices) and then four joints (a once-subdivided icosphere
-# is 42), centred on CB, SG, SG and CB in that order.
-_ROD_VERTICES = 26
-_JOINT_VERTICES = 42
-_BRIDGE_VERTICES = 5 * _ROD_VERTICES + 4 * _JOINT_VERTICES
-
-
-def bridge_atoms(structure: Structure, pdb: Path | None = None) -> list[np.ndarray]:
-    """Each exported bridge's CB, SG, SG and CB, in the order the bake built them.
-
-    The same reading of the file as `structure/bake.py`'s `ssbonds` and
-    `atoms`: SSBOND records with both ends in the exported chains and span,
-    in file order, and each atom's last ATOM line. Written again here rather
-    than imported, because sharing code with that baker would need its twenty
-    models re-baked byte for byte to prove the move changed nothing, and that
-    needs PyMOL.
-    """
-    path = pdb or STRUCTURES / f"{structure.pdb}.pdb"
-    text = path.read_text(errors="replace").splitlines()
-    wanted = {c.pdb_chain for c in structure.chains}
-    span = structure.residues
-    at = {}
-    for line in text:
-        if line.startswith("ATOM") and line[12:16].strip() in ("CB", "SG"):
-            at[(line[21], int(line[22:26]), line[12:16].strip())] = np.array(
-                [float(line[30:38]), float(line[38:46]), float(line[46:54])])
-    out = []
-    for line in text:
-        if not line.startswith("SSBOND"):
-            continue
-        c1, r1, c2, r2 = line[15], int(line[17:21]), line[29], int(line[31:35])
-        if c1 not in wanted or c2 not in wanted:
-            continue
-        if span is not None and not all(span[0] <= r <= span[1] for r in (r1, r2)):
-            continue
-        out.append(np.array([at[(c1, r1, "CB")], at[(c1, r1, "SG")],
-                             at[(c2, r2, "SG")], at[(c2, r2, "CB")]]))
-    return out
-
-
-def fit_bridges(bonds: Mesh, bridges: list[np.ndarray]) -> Fit | None:
-    """The bake's centre and length, exactly, from the bridges' joints.
-
-    Each joint is a sphere centred on its atom, so the centroid of its
-    vertices in the stored model is that atom's position there. Twelve points
-    and more, known in both frames, fix the scale and shift exactly. None where
-    the `bonds` mesh is not laid out as the bake lays it out.
-    """
-    if not bridges or len(bonds.positions) != _BRIDGE_VERTICES * len(bridges):
-        return None
-    model, pdb = [], []
-    for i, atoms in enumerate(bridges):
-        block = bonds.positions[i * _BRIDGE_VERTICES:(i + 1) * _BRIDGE_VERTICES]
-        for j in range(4):
-            start = 5 * _ROD_VERTICES + j * _JOINT_VERTICES
-            model.append(block[start:start + _JOINT_VERTICES].mean(axis=0))
-            pdb.append(atoms[j])
-    model, pdb = np.array(model), np.array(pdb)
-    p_mean, m_mean = pdb.mean(axis=0), model.mean(axis=0)
-    p, m = pdb - p_mean, model - m_mean
-    scale = float((p * m).sum() / (p * p).sum())
-    shift = m_mean - scale * p_mean
-    residual = np.linalg.norm(pdb * scale + shift - model, axis=1)
-    return Fit(
-        length=1.0 / scale,
-        centre=-shift / scale,
-        rms=float(np.sqrt((residual ** 2).mean()) / scale),
-        atoms=len(pdb),
-    )
 
 
 def place(meshes: dict[str, Mesh], length: float) -> dict[str, Mesh]:
@@ -320,12 +161,7 @@ def bake(target: Target) -> dict:
     payload = source.read_bytes()
     meshes = read_glb(payload)
     vertices = np.vstack([m.positions for m in meshes.values()])
-    # Exact where the model has bridges to read the scale from; fitted to the
-    # ribbon's CA atoms where it has none.
-    exact = fit_bridges(meshes["bonds"], bridge_atoms(structure)) if "bonds" in meshes else None
-    fit = exact or fit_size(vertices, ca_atoms(structure))
-    method = ("disulfide CB and SG atoms at the bridges' joints" if exact
-              else "exported CA atoms fitted to the ribbon")
+    fit, method = model_frame(structure, meshes)
     extent = (vertices.max(axis=0) - vertices.min(axis=0)) * fit.length
 
     from pxr import Usd

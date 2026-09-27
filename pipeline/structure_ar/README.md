@@ -38,11 +38,13 @@ The stored `.glb` of the `structure` track, never a new PyMOL run: the walk's
 fold and the AR fold are the same triangles. Its sha256 is written into the
 USDZ's metadata and checked against the file beside it.
 
-No code is shared with `structure/bake.py`. Sharing would have to be proved
-by re-baking its twenty models byte for byte, which needs PyMOL, and PyMOL is
-not installed here. The two small readers the size needs (SSBOND pairs, atom
-coordinates) are written again in `bake_ar.py`, reading the file exactly as the
-structure bake does.
+The readers the size needs (SSBOND pairs, atom coordinates), the fit itself
+and the `.glb` reader are shared with the structure bake: `structure/pdb.py`
+is the bake's own reading of the entry, `structure/frame.py` the fit and
+`structure/glb.py` the reader. They moved there unchanged, which was proved by
+re-baking the twenty structure models before and after the move and finding
+them byte for byte the same, and this bake's USDZs and room `.glb`s the same
+by content (see `structure/README.md`).
 
 ## How big it really is
 
