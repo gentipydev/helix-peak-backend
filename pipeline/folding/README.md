@@ -1,5 +1,8 @@
 # Baking `folding`: each fold's CA trace, for the fold animation
 
+The walk's fold page plays the animation, drawn in the same scene as the
+model it ends on (the Lab's own fold screen is gone).
+
 The `structure` track is a baked mesh. It draws the finished fold, but it
 cannot morph and it carries no residues, so an animation of a chain folding
 has nothing to move. This track is what it moves: per residue of each chain
@@ -63,6 +66,35 @@ positions where the entry's residue is not the gene's (`entry_differs`), and
   another (an engineered mutation, a sequence conflict, each declared in its
   SEQADV records) the coordinates are the entry's and the letter the gene's.
 
+Schema 2 adds two fields, so that an animation drawn from the track can end on
+the model rather than near it:
+
+- **`bridges`**: each disulfide the model draws, as the atoms its rods run
+  through, in the same frame:
+
+  ```json
+  {"a": 31, "a_node": "chainB", "b": 96, "b_node": "chainA", "path": [[ca], [cb], [sg], [sg], [cb], [ca]]}
+  ```
+
+  From the entry's SSBOND records and `pdb.atoms`, the structure bake's own
+  reading, and only where the model has a `bonds` node: none for the eight
+  that draw none, whatever UniProt lists. Numbered in the precursor, the lower
+  first.
+- **`cartoon`**: what the chains are drawn as, in angstroms: `representation`
+  (`cartoon` or `tube`), `helix` and `strand` as `half_width` and
+  `half_thickness`, `loop_radius`, `tube_radius` and the bridges'
+  `rod_radius`. PyMOL 3.1.0's settings (`cartoon_oval_length` 1.35 and
+  `_width` 0.25, `cartoon_rect_length` 1.4 and `_width` 0.4,
+  `cartoon_loop_radius` 0.2) and the structure bake's radii. Measured on the
+  stored models they are half-extents: insulin's helices are 2.7 A wide and
+  0.5 A thick, its loops 0.4 A across. The bake refuses to run against a PyMOL
+  whose settings differ.
+
+Schema 2 changes an existing track's format, which the backend's contract
+(`CLAUDE.md`) otherwise reserves for a new kind. It was done in place on
+purpose (2026-09-28): the keys are only added, a schema-1 reader ignores
+them, and the fold page is the track's one reader.
+
 ## The frame
 
 The structure bake exports PyMOL's cartoon as a pure translation of the PDB
@@ -104,34 +136,39 @@ axis. That fit is not used here.
   criterion for insulin, now held on all twenty. A strand's CA, which PyMOL's
   flattened arrows smooth past, within 3 A;
 - states that say only what they can, with nothing absent between two
-  residues that are there.
+  residues that are there;
+- the cartoon the model is drawn with, and exactly the model's bridges: one
+  per SSBOND pair where it draws them, each a pair of ordered cysteines whose
+  path starts and ends on their CA atoms, with a cysteine's bond lengths, and
+  whose CB and SG atoms are vertices of the stored `bonds` node, where its
+  rods end.
 
 ## What it found
 
-| slug | residues | ordered | helix | strand | disordered | absent | bytes |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| insulin | 51 | 51 | 30 | 0 | 0 | 0 | 6,447 |
-| hemoglobin | 146 | 145 | 127 | 0 | 1 | 0 | 15,789 |
-| myoglobin | 153 | 149 | 132 | 0 | 4 | 0 | 16,516 |
-| p53 | 194 | 194 | 24 | 64 | 0 | 0 | 20,787 |
-| lysozyme | 130 | 130 | 55 | 8 | 0 | 0 | 14,149 |
-| relaxin | 53 | 51 | 42 | 4 | 1 | 1 | 6,485 |
-| oxytocin | 9 | 9 | 0 | 0 | 0 | 0 | 1,928 |
-| somatotropin | 191 | 186 | 104 | 0 | 5 | 0 | 21,210 |
-| ubiquitin | 76 | 76 | 16 | 33 | 0 | 0 | 8,732 |
-| dystrophin | 238 | 238 | 167 | 3 | 0 | 0 | 25,381 |
-| vasopressin | 9 | 9 | 0 | 0 | 0 | 0 | 1,940 |
-| glucagon | 29 | 29 | 28 | 0 | 0 | 0 | 3,961 |
-| app | 753 | 162 | 27 | 58 | 11 | 580 | 47,090 |
-| cftr | 1,480 | 1,139 | 807 | 91 | 341 | 0 | 135,919 |
-| erythropoietin | 166 | 166 | 105 | 6 | 0 | 0 | 18,333 |
-| leptin | 146 | 130 | 95 | 0 | 16 | 0 | 15,160 |
-| tnf | 157 | 153 | 5 | 78 | 4 | 0 | 16,923 |
-| sod1 | 153 | 153 | 17 | 58 | 0 | 0 | 16,471 |
-| amylase | 496 | 496 | 134 | 85 | 0 | 0 | 51,421 |
-| prion | 208 | 109 | 71 | 13 | 98 | 1 | 17,429 |
+| slug | residues | ordered | helix | strand | disordered | absent | bridges | bytes |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| insulin | 51 | 51 | 30 | 0 | 0 | 0 | 3 | 8,512 |
+| hemoglobin | 146 | 145 | 127 | 0 | 1 | 0 | 0 | 16,082 |
+| myoglobin | 153 | 149 | 132 | 0 | 4 | 0 | 0 | 16,810 |
+| p53 | 194 | 194 | 24 | 64 | 0 | 0 | 0 | 21,080 |
+| lysozyme | 130 | 130 | 55 | 8 | 0 | 0 | 4 | 16,797 |
+| relaxin | 53 | 51 | 42 | 4 | 1 | 1 | 3 | 8,542 |
+| oxytocin | 9 | 9 | 0 | 0 | 0 | 0 | 1 | 2,807 |
+| somatotropin | 191 | 186 | 104 | 0 | 5 | 0 | 2 | 22,678 |
+| ubiquitin | 76 | 76 | 16 | 33 | 0 | 0 | 0 | 9,026 |
+| dystrophin | 238 | 238 | 167 | 3 | 0 | 0 | 0 | 25,674 |
+| vasopressin | 9 | 9 | 0 | 0 | 0 | 0 | 1 | 2,818 |
+| glucagon | 29 | 29 | 28 | 0 | 0 | 0 | 0 | 4,256 |
+| app | 753 | 162 | 27 | 58 | 11 | 580 | 6 | 50,920 |
+| cftr | 1,480 | 1,139 | 807 | 91 | 341 | 0 | 0 | 136,212 |
+| erythropoietin | 166 | 166 | 105 | 6 | 0 | 0 | 2 | 19,810 |
+| leptin | 146 | 130 | 95 | 0 | 16 | 0 | 1 | 16,040 |
+| tnf | 157 | 153 | 5 | 78 | 4 | 0 | 1 | 17,805 |
+| sod1 | 153 | 153 | 17 | 58 | 0 | 0 | 1 | 17,356 |
+| amylase | 496 | 496 | 134 | 85 | 0 | 0 | 5 | 54,662 |
+| prion | 208 | 109 | 71 | 13 | 98 | 1 | 1 | 18,323 |
 
-462,071 bytes for all twenty, 3,775 CA atoms. The playbook's 9,991 is every CA
+486,210 bytes for all twenty, 3,775 CA atoms. The playbook's 9,991 is every CA
 in the twenty files, every chain; the folds export 3,775 of them.
 
 - **The prion protein**: 23-230, of which only 117-225 has a shape. 24-116 and

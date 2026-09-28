@@ -29,7 +29,14 @@ For each target, the payload under `pipeline/data/assets/folding/`:
   insulin's. A strand's CA, which PyMOL's flat arrows smooth past, within 3 A;
 - says only what it can: an ordered residue carries a CA and a helix, strand
   or coil label and the others neither, and an absent residue is never
-  between two that are there.
+  between two that are there;
+- draws the model's cartoon: its representation is the table's, and its sizes
+  are the bake's PyMOL settings and the structure bake's radii;
+- carries the model's bridges and no others: one per SSBOND pair in the
+  exported chains where the model draws them, none where it does not, each a
+  pair of ordered cysteines whose path starts and ends on their CA atoms,
+  with bonds of a cysteine's lengths, and whose CB and SG atoms are where the
+  stored `bonds` node's rods end.
 
 Exits 1 with the problems listed. Reads `pipeline/data/` and the entries in
 `pipeline/structure/structures/`.
@@ -52,12 +59,13 @@ if str(BACKEND) not in sys.path:
 from pipeline.folding.bake_folding import (  # noqa: E402
     FOLDING_TARGETS,
     SCHEMA_VERSION,
+    cartoon_of,
     folding_asset,
 )
 from pipeline.paths import DATA  # noqa: E402
 from pipeline.structure.frame import _nearest  # noqa: E402
 from pipeline.structure.glb import read_glb  # noqa: E402
-from pipeline.structure.pdb import chain_residues, pdb_path, substituted  # noqa: E402
+from pipeline.structure.pdb import chain_residues, pdb_path, ssbonds, substituted  # noqa: E402
 from pipeline.targets import Target  # noqa: E402
 
 STATES = ("ordered", "disordered", "absent")
@@ -75,6 +83,15 @@ ON_RIBBON = 0.25
 ON_TUBE = 0.6
 ON_STRAND = 3.0
 _SLACK = 0.005      # the coordinates are rounded to 1e-5 model units
+
+# A bridge's bonds, in angstroms: CA-CB, CB-SG, SG-SG, and the room a
+# crystal's geometry leaves each (TNF's SG-SG is 2.18).
+BONDS = ((1.53, 0.1), (1.81, 0.1), (2.05, 0.2))
+
+# Each rod on the model's `bonds` node is a capped cylinder from one atom to
+# the next, and a cap's centre is a vertex: every CB and SG of a bridge the
+# model draws is a vertex of it, to the track's rounding.
+_ON_ROD = 0.01
 
 
 def record_of(target: Target) -> dict | None:
@@ -250,10 +267,62 @@ def problems_of(target: Target, track: dict | None = None) -> list[str]:
             if far > allowed + _SLACK:
                 out.append(f"{at} {n} ({label}): {far:.2f} A off its ribbon")
 
+    if track.get("cartoon") != cartoon_of(target):
+        out.append(f"{where}: the cartoon is {track.get('cartoon')!r}, "
+                   f"the model is drawn as {cartoon_of(target)!r}")
+    out += _bridge_problems(target, track, chains, meshes, length, centre)
+
     if track.get("secondary_structure") != f"HELIX and SHEET records of {structure.pdb}":
         out.append(f"{where}: secondary_structure is {track.get('secondary_structure')!r}")
     if not track.get("built_by"):
         out.append(f"{where}: says nothing of what built it")
+    return out
+
+
+def _bridge_problems(target: Target, track: dict, chains: list[dict], meshes: dict,
+                     length: float, centre: np.ndarray) -> list[str]:
+    where = target.slug
+    structure = target.structure
+    bridges = track.get("bridges")
+    if not isinstance(bridges, list):
+        return [f"{where}: no bridges list"]
+    if not structure.bonds:
+        return [] if not bridges else [f"{where}: {len(bridges)} bridges the model does not draw"]
+    wanted = ssbonds(pdb_path(structure), structure)
+    if len(bridges) != len(wanted):
+        return [f"{where}: {len(bridges)} bridges, the entry's SSBOND records give {len(wanted)}"]
+    joints = meshes.get("bonds")
+    if joints is None:
+        return [f"{where}: the model draws bridges and has no bonds node"]
+
+    out: list[str] = []
+    residues = {(c["node"], r["n"]): r for c in chains for r in c["residues"]}
+    for bridge in bridges:
+        at = f"{where} bridge {bridge.get('a')}-{bridge.get('b')}"
+        ends = [residues.get((bridge.get("a_node"), bridge.get("a"))),
+                residues.get((bridge.get("b_node"), bridge.get("b")))]
+        if any(e is None or e["state"] != "ordered" or e["aa"] != "C" for e in ends):
+            out.append(f"{at}: not a pair of ordered cysteines of the chains")
+            continue
+        if bridge["a"] > bridge["b"]:
+            out.append(f"{at}: the lower number goes first")
+        path = np.array(bridge.get("path") or [], dtype=float)
+        if path.shape != (6, 3):
+            out.append(f"{at}: a path of {len(path)} points, not CA CB SG SG CB CA")
+            continue
+        for end, point in ((ends[0], path[0]), (ends[1], path[5])):
+            if np.abs(np.array(end["ca"]) - point).max() > 1e-4:
+                out.append(f"{at}: the path does not start on the CA of {end['n']}")
+        steps = np.linalg.norm(np.diff(path, axis=0), axis=1) * length
+        for step, (want, room) in zip(steps, BONDS + BONDS[1::-1]):
+            if abs(step - want) > room:
+                out.append(f"{at}: a bond of {step:.2f} A, a cysteine's is {want}")
+                break
+        inner = path[1:5]
+        nearest = np.linalg.norm(inner - _nearest(inner, joints.positions), axis=1) * length
+        if nearest.max() > _ON_ROD:
+            out.append(f"{at}: its CB and SG are not where the model's rods end "
+                       f"({', '.join(f'{d:.3f}' for d in nearest)} A off)")
     return out
 
 

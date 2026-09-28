@@ -53,6 +53,15 @@ def _track(slug: str, frame: Frame | None = None) -> dict:
     return bake_folding.payload(target, record, glb, frame)
 
 
+def _fitted(slug: str) -> dict:
+    """The payload in a frame fitted to the CA atoms, for a model with no bridges."""
+    target = BY_SLUG[slug]
+    vertices = np.vstack([m.positions for m in read_glb(
+        (DATA / target.structure_asset).read_bytes()).values()])
+    fit = fit_size(vertices, ca_atoms(target.structure))
+    return _track(slug, Frame(fit.centre, fit.length, "fitted", None))
+
+
 # -- reading an entry against its record ---------------------------------------
 
 
@@ -148,6 +157,36 @@ def test_one_residue_a_line_and_it_reads_back():
     assert sum(1 for line in lines if line.startswith('{"n": ')) == 208
 
 
+@needs
+def test_the_bridges_are_the_atoms_the_models_rods_run_through():
+    track = _track("insulin")
+    pairs = sorted((b["a"], b["b"]) for b in track["bridges"])
+    # A6-A11, A7-B7 and A20-B19, in the precursor's numbering.
+    assert pairs == [(31, 96), (43, 109), (95, 100)]
+    ca = {(c["node"], r["n"]): r["ca"] for c in track["chains"] for r in c["residues"]}
+    for bridge in track["bridges"]:
+        assert len(bridge["path"]) == 6
+        assert np.allclose(bridge["path"][0], ca[(bridge["a_node"], bridge["a"])], atol=1e-4)
+        assert np.allclose(bridge["path"][5], ca[(bridge["b_node"], bridge["b"])], atol=1e-4)
+    (a7_b7,) = [b for b in track["bridges"] if b["a"] == 31]
+    assert (a7_b7["a_node"], a7_b7["b_node"]) == ("chainB", "chainA")
+
+
+@needs
+def test_a_model_that_draws_no_bridges_has_none():
+    assert _fitted("glucagon")["bridges"] == []
+
+
+@needs
+def test_the_cartoon_is_the_one_pymol_draws():
+    cartoon = _track("insulin")["cartoon"]
+    assert cartoon["representation"] == "cartoon"
+    assert cartoon["helix"] == {"half_width": 1.35, "half_thickness": 0.25}
+    assert cartoon["strand"] == {"half_width": 1.4, "half_thickness": 0.4}
+    assert (cartoon["loop_radius"], cartoon["tube_radius"], cartoon["rod_radius"]) == (0.2, 0.6, 0.5)
+    assert bake_folding.cartoon_of(BY_SLUG["oxytocin"])["representation"] == "tube"
+
+
 # -- the check -------------------------------------------------------------------
 
 
@@ -191,18 +230,36 @@ def test_a_moved_frame_is_caught():
 
 
 @needs
+def test_a_moved_bridge_is_caught():
+    track = copy.deepcopy(_track("insulin"))
+    track["bridges"][0]["path"][2][0] += 0.01       # an SG, 0.24 A off the model's rod
+    found = check_folding.problems_of(BY_SLUG["insulin"], track)
+    assert any("where the model's rods end" in p for p in found)
+
+
+@needs
+def test_a_bridge_the_model_does_not_draw_is_caught():
+    track = _fitted("glucagon")
+    track["bridges"] = copy.deepcopy(_track("insulin")["bridges"][:1])
+    found = check_folding.problems_of(BY_SLUG["glucagon"], track)
+    assert any("the model does not draw" in p for p in found)
+
+
+@needs
+def test_another_cartoon_is_caught():
+    track = copy.deepcopy(_track("insulin"))
+    track["cartoon"]["loop_radius"] = 0.3
+    assert any("cartoon" in p for p in check_folding.problems_of(BY_SLUG["insulin"], track))
+
+
+@needs
 def test_a_fitted_frame_is_not_close_enough():
     # Glucagon has no bridges, and a CA fit to its one straight helix comes out
     # 3.9% short: its ends sit up to 1.5 A from the model's. The check holds
     # every helix CA to its ribbon, so the fitted track fails where the bake's
     # own frame passes.
     target = BY_SLUG["glucagon"]
-    glb = (DATA / target.structure_asset).read_bytes()
-    meshes = read_glb(glb)
-    vertices = np.vstack([m.positions for m in meshes.values()])
-    fit = fit_size(vertices, ca_atoms(target.structure))
-    fitted = _track("glucagon", Frame(fit.centre, fit.length, "fitted", None))
-    assert any("off its ribbon" in p for p in check_folding.problems_of(target, fitted))
+    assert any("off its ribbon" in p for p in check_folding.problems_of(target, _fitted("glucagon")))
 
 
 # -- where it lives ---------------------------------------------------------------

@@ -43,6 +43,18 @@ carries another residue at a position -- an engineered mutation, a sequence
 conflict, all of them declared in its SEQADV records -- the coordinates are
 the entry's and the letter the record's, and `entry_differs` says so.
 
+**The bridges** (schema 2). Where the model draws its disulfides (`bonds`),
+each one's atoms as the structure bake builds its rods -- CA, CB, SG, SG, CB,
+CA, from the entry's SSBOND records and its own reading of the atoms -- placed
+in the same frame. A fold drawn from the track can grow each bridge along the
+path the model's rod takes, and end on exactly that rod.
+
+**The cartoon** (schema 2). The half-width and half-thickness PyMOL gives a
+helix's oval and a strand's slab, the radius of a loop, and the tube a peptide
+with no secondary structure is drawn as. They are PyMOL 3.1.0's settings, held
+to the running PyMOL by the bake, so a fold drawn from the track can end as
+wide and as thick as the model it hands over to.
+
 Which proteins get the track: every target with a structure (`FOLDING_TARGETS`),
 recorded here, never in targets.py.
 """
@@ -52,6 +64,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
+import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -68,16 +82,36 @@ from pipeline.paths import DATA  # noqa: E402
 from pipeline.structure.glb import Mesh, read_glb  # noqa: E402
 from pipeline.structure.pdb import (  # noqa: E402
     Residue,
+    atoms,
     chain_residues,
     pdb_path,
     secondary_structure,
+    ssbonds,
 )
 from pipeline.targets import BY_SLUG, TARGETS, Target  # noqa: E402
 
 # Every protein with a fold gets the track.
 FOLDING_TARGETS = tuple(t for t in TARGETS if t.structure is not None)
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+# The cartoon PyMOL draws, in angstroms: each shape's half-width and
+# half-thickness, as PyMOL's own settings name them. Measured on the stored
+# models, a helix is 2.7 A wide and 0.5 thick and a loop 0.4 across, so these
+# are half-extents. `bake` holds them to the PyMOL it runs.
+PYMOL_CARTOON = {
+    "cartoon_loop_radius": 0.2,
+    "cartoon_oval_length": 1.35,
+    "cartoon_oval_width": 0.25,
+    "cartoon_rect_length": 1.4,
+    "cartoon_rect_width": 0.4,
+}
+
+# `structure/bake.py`'s, which imports trimesh and cannot be read offline:
+# the tube a peptide with no secondary structure is drawn as, and the radius
+# of a bridge's rods. `bake` holds these to it too.
+TUBE_RADIUS = 0.6
+ROD_RADIUS = 0.5
 
 # Model units, to five places: 1e-5 of CFTR's 103 A is a thousandth of an angstrom.
 _PLACES = 5
@@ -221,6 +255,82 @@ def chain_track(target: Target, node: str, pdb_chain: str, translation: str,
     }
 
 
+def cartoon_of(target: Target) -> dict:
+    """The shapes the model's chains are drawn with, in angstroms."""
+    return {
+        "representation": target.structure.representation,
+        "loop_radius": PYMOL_CARTOON["cartoon_loop_radius"],
+        "helix": {"half_width": PYMOL_CARTOON["cartoon_oval_length"],
+                  "half_thickness": PYMOL_CARTOON["cartoon_oval_width"]},
+        "strand": {"half_width": PYMOL_CARTOON["cartoon_rect_length"],
+                   "half_thickness": PYMOL_CARTOON["cartoon_rect_width"]},
+        "tube_radius": TUBE_RADIUS,
+        "rod_radius": ROD_RADIUS,
+    }
+
+
+def bridge_track(target: Target, chains: list[dict], frame: Frame) -> list[dict]:
+    """Each bridge the model draws, as the atoms its rods run through.
+
+    The structure bake's own reading: `ssbonds` for the pairs and `atoms` for
+    the coordinates, CA to CB to SG, across, and back. Numbered as the chains
+    are, in the precursor, the lower number first. None where the model has
+    no `bonds` node.
+    """
+    structure = target.structure
+    if not structure.bonds:
+        return []
+    path = pdb_path(structure)
+    at = atoms(path)
+    by_chain = {c["pdb_chain"]: c for c in chains}
+    out = []
+    for c1, r1, c2, r2 in ssbonds(path, structure):
+        ends = [(by_chain[c1], r1, c1), (by_chain[c2], r2, c2)]
+        if ends[0][1] + ends[0][0]["offset"] > ends[1][1] + ends[1][0]["offset"]:
+            ends.reverse()
+        (one, n1, pdb1), (other, n2, pdb2) = ends
+        atoms_along = [at[(pdb1, n1, "CA")], at[(pdb1, n1, "CB")], at[(pdb1, n1, "SG")],
+                       at[(pdb2, n2, "SG")], at[(pdb2, n2, "CB")], at[(pdb2, n2, "CA")]]
+        out.append({
+            "a": n1 + one["offset"],
+            "a_node": one["node"],
+            "b": n2 + other["offset"],
+            "b_node": other["node"],
+            "path": [[round(float(v), _PLACES) for v in (p - frame.centre) / frame.length]
+                     for p in atoms_along],
+        })
+    return out
+
+
+def pymol_cartoon() -> dict[str, float]:
+    """The cartoon settings of the PyMOL on PATH, read from a session of it."""
+    from pipeline.structure import bake as structure_bake
+
+    with tempfile.TemporaryDirectory() as work:
+        script = Path(work) / "settings.pml"
+        script.write_text("python\nfrom pymol import cmd\n" + "".join(
+            f"print('CARTOON_SETTING {name} %.6f' % float(cmd.get({name!r})))\n"
+            for name in PYMOL_CARTOON) + "python end\n")
+        result = subprocess.run([structure_bake.PYMOL, "-cq", str(script)],
+                                capture_output=True, text=True)
+    found = dict(re.findall(r"^CARTOON_SETTING (\w+) (-?\d+\.\d+)$", result.stdout, re.M))
+    return {name: float(value) for name, value in found.items()}
+
+
+def hold_to_pymol() -> None:
+    """Refuses to bake a cartoon other than the one PyMOL and the bake draw."""
+    from pipeline.structure import bake as structure_bake
+
+    running = pymol_cartoon()
+    for name, want in PYMOL_CARTOON.items():
+        if name not in running or abs(running[name] - want) > 1e-6:
+            raise ValueError(f"PyMOL's {name} is {running.get(name)}, the track says {want}")
+    for name, ours, theirs in (("TUBE_RADIUS", TUBE_RADIUS, structure_bake.TUBE_RADIUS),
+                               ("ROD_RADIUS", ROD_RADIUS, structure_bake.ROD_RADIUS)):
+        if ours != theirs:
+            raise ValueError(f"{name} is {ours} here and {theirs} in structure/bake.py")
+
+
 def payload(target: Target, record: dict, glb: bytes, frame: Frame) -> dict:
     """The track for one protein: its stored record and model, in `frame`."""
     structure = target.structure
@@ -232,6 +342,8 @@ def payload(target: Target, record: dict, glb: bytes, frame: Frame) -> dict:
                          f"residues, the table says {target.aa}")
     helices = secondary_structure(pdb_path(structure))
     stacked = np.vstack([m.positions for m in read_glb(glb).values()])
+    chains = [chain_track(target, c.node, c.pdb_chain, translation, helices, frame)
+              for c in structure.chains]
     return {
         "slug": target.slug,
         "gene": target.gene,
@@ -252,8 +364,9 @@ def payload(target: Target, record: dict, glb: bytes, frame: Frame) -> dict:
                        "max": [round(float(v), 6) for v in stacked.max(axis=0)]},
         },
         "secondary_structure": f"HELIX and SHEET records of {structure.pdb}",
-        "chains": [chain_track(target, c.node, c.pdb_chain, translation, helices, frame)
-                   for c in structure.chains],
+        "cartoon": cartoon_of(target),
+        "chains": chains,
+        "bridges": bridge_track(target, chains, frame),
         "built_by": "pipeline/folding/bake_folding.py",
     }
 
@@ -296,6 +409,7 @@ def main() -> int:
     if unknown:
         parser.error(f"no such target: {unknown}")
     chosen = FOLDING_TARGETS if args.all else tuple(BY_SLUG[s] for s in args.target)
+    hold_to_pymol()
     total = 0
     for target in chosen:
         track = bake(target)
@@ -305,7 +419,8 @@ def main() -> int:
         ss = [r["ss"] for c in track["chains"] for r in c["residues"] if "ss" in r]
         print(f"{target.slug:<16} {len(states):>5} residues: {states.count('ordered'):>4} ordered "
               f"({ss.count('helix'):>3} helix {ss.count('strand'):>3} strand), "
-              f"{states.count('disordered'):>3} disordered, {states.count('absent'):>3} absent  "
+              f"{states.count('disordered'):>3} disordered, {states.count('absent'):>3} absent, "
+              f"{len(track['bridges'])} bridges  "
               f"frame matched to {track['frame']['matched_within']:.0e}  {size:>9,} B")
     print(f"{len(chosen)} tracks, {total:,} B", file=sys.stderr)
     return 0
