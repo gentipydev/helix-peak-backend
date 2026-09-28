@@ -30,6 +30,10 @@ For each target, the payload under `pipeline/data/assets/folding/`:
 - says only what it can: an ordered residue carries a CA and a helix, strand
   or coil label and the others neither, and an absent residue is never
   between two that are there;
+- measures the model's ribbon where it says it does: only by a helix or strand
+  residue, a centre as near its CA as the ribbon runs (0.7 A for a helix, 3.4
+  for a strand, which PyMOL flattens into its sheet) and inside the ribbon,
+  and a direction of unit length;
 - draws the model's cartoon: its representation is the table's, and its sizes
   are the bake's PyMOL settings and the structure bake's radii;
 - carries the model's bridges and no others: one per SSBOND pair in the
@@ -83,6 +87,11 @@ ON_RIBBON = 0.25
 ON_TUBE = 0.6
 ON_STRAND = 3.0
 _SLACK = 0.005      # the coordinates are rounded to 1e-5 model units
+
+# Where a residue's measured ribbon may be, in angstroms: from its CA, by the
+# residue's shape, and from the nearest vertex of the ribbon itself.
+RIBBON_FROM_CA = {"helix": 0.7, "strand": 3.4}
+RIBBON_INSIDE = 1.2
 
 # A bridge's bonds, in angstroms: CA-CB, CB-SG, SG-SG, and the room a
 # crystal's geometry leaves each (TNF's SG-SG is 2.18).
@@ -241,6 +250,24 @@ def problems_of(target: Target, track: dict | None = None) -> list[str]:
             if np.abs((entry_cas[n] - centre) / length - point).max() > 1e-4:
                 out.append(f"{at} {n}: the CA is not the entry's in this frame")
                 break
+
+        # Where the ribbon runs, measured on the model, and nowhere else.
+        mesh = meshes.get(chain["node"])
+        for r in residues:
+            ribbon = r.get("ribbon")
+            if ribbon is None:
+                continue
+            if r.get("ss") not in RIBBON_FROM_CA or len(ribbon) != 6 or mesh is None:
+                out.append(f"{at} {r['n']}: a ribbon on a residue with none to measure")
+                continue
+            middle, across = np.array(ribbon[:3], dtype=float), np.array(ribbon[3:], dtype=float)
+            if abs(np.linalg.norm(across) - 1) > 1e-3:
+                out.append(f"{at} {r['n']}: the ribbon's direction is not a unit vector")
+            if np.linalg.norm(middle - np.array(r["ca"])) * length > RIBBON_FROM_CA[r["ss"]]:
+                out.append(f"{at} {r['n']}: the ribbon is measured too far from its CA")
+            inside = np.linalg.norm(middle - _nearest(middle[None], mesh.positions)[0]) * length
+            if inside > RIBBON_INSIDE:
+                out.append(f"{at} {r['n']}: the ribbon's centre is {inside:.2f} A off the ribbon")
 
         # A chain: each CA a peptide bond from the next.
         previous = None

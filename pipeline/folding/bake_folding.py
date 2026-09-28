@@ -49,6 +49,14 @@ CA, from the entry's SSBOND records and its own reading of the atoms -- placed
 in the same frame. A fold drawn from the track can grow each bridge along the
 path the model's rod takes, and end on exactly that rod.
 
+**The ribbon** (schema 2). For each helix and strand residue, where the
+model's ribbon passes it and which way the ribbon lies across: the centre and
+the widest direction of the ribbon's cross-section nearest the CA, measured on
+the stored model itself. A helix's ribbon runs within 0.25 A of its CA atoms,
+but PyMOL flattens a sheet, so a strand's can run up to 3 A from them, and its
+twist is PyMOL's own; an animation ending on these ends on the model's ribbon
+rather than beside it.
+
 **The cartoon** (schema 2). The half-width and half-thickness PyMOL gives a
 helix's oval and a strand's slab, the radius of a loop, and the tube a peptide
 with no secondary structure is drawn as. They are PyMOL 3.1.0's settings, held
@@ -112,6 +120,15 @@ PYMOL_CARTOON = {
 # of a bridge's rods. `bake` holds these to it too.
 TUBE_RADIUS = 0.6
 ROD_RADIUS = 0.5
+
+# Measuring the ribbon, in angstroms: how far from a CA its ribbon may be
+# looked for, how thick a slice of it is taken across, and how far out from
+# its centre (an arrowhead's half-width is 2.4). A slice at least this much
+# wider than it is thick is flat enough to have a direction.
+_RIBBON_REACH = 3.2
+_RIBBON_SLICE = 0.3
+_RIBBON_RADIUS = 2.8
+_RIBBON_FLAT = 2.5
 
 # Model units, to five places: 1e-5 of CFTR's 103 A is a thousandth of an angstrom.
 _PLACES = 5
@@ -208,8 +225,47 @@ def mature_span(target: Target, located: list[int]) -> tuple[int, int]:
     return start, end
 
 
+def ribbon_at(ribbon: np.ndarray, ca: np.ndarray, before: np.ndarray, after: np.ndarray,
+              length: float) -> list[float] | None:
+    """The ribbon's centre and widest direction where it passes [ca].
+
+    [ribbon] is the chain's vertices in model units, and [before] and [after]
+    the CA atoms either side, which give the way the chain runs. The slice of
+    ribbon across that way, through the vertex nearest the CA, is measured:
+    its mean is where the ribbon is, and its first principal axis the way it
+    lies across. None where no ribbon is near, or the slice is not flat.
+    """
+    along = after - before
+    if np.linalg.norm(along) == 0:
+        return None
+    along = along / np.linalg.norm(along)
+    distance = np.linalg.norm(ribbon - ca, axis=1)
+    if distance.min() > _RIBBON_REACH / length:
+        return None
+    nearest = ribbon[distance.argmin()]
+    offset = ribbon - nearest
+    taken = offset[(np.abs(offset @ along) < _RIBBON_SLICE / length)
+                   & (np.linalg.norm(offset, axis=1) < _RIBBON_RADIUS / length)]
+    if len(taken) < 8:
+        return None
+    across = taken - np.outer(taken @ along, along)
+    centre = across.mean(axis=0)
+    _, _, axes = np.linalg.svd(across - centre)
+    spread = (across - centre) @ axes.T
+    extent = spread.max(axis=0) - spread.min(axis=0)
+    if extent[0] < _RIBBON_FLAT * max(extent[1], 1e-12):
+        return None
+    widest = axes[0]
+    # A direction has no sign; this one is given the sign of its largest part,
+    # so that the same model always bakes the same bytes.
+    if widest[np.abs(widest).argmax()] < 0:
+        widest = -widest
+    return ([round(float(v), _PLACES) for v in nearest + centre]
+            + [round(float(v), 4) for v in widest])
+
+
 def chain_track(target: Target, node: str, pdb_chain: str, translation: str,
-                helices: dict, frame: Frame) -> dict:
+                helices: dict, frame: Frame, ribbon: np.ndarray | None = None) -> dict:
     structure = target.structure
     residues = chain_residues(structure, pdb_chain)
     if not residues:
@@ -238,6 +294,18 @@ def chain_track(target: Target, node: str, pdb_chain: str, translation: str,
         else:
             entry["state"] = "absent"
         out.append(entry)
+
+    # Where the model's ribbon runs, by each helix and strand residue.
+    if ribbon is not None:
+        placed = {e["n"]: np.array(e["ca"]) for e in out if e["state"] == "ordered"}
+        for e in out:
+            if e.get("ss") not in ("helix", "strand"):
+                continue
+            n = e["n"]
+            found = ribbon_at(ribbon, placed[n], placed.get(n - 1, placed[n]),
+                              placed.get(n + 1, placed[n]), frame.length)
+            if found is not None:
+                e["ribbon"] = found
 
     differs = [
         {"n": r.number + k, "entry": r.letter, "record": translation[r.number + k - 1]}
@@ -341,8 +409,11 @@ def payload(target: Target, record: dict, glb: bytes, frame: Frame) -> dict:
         raise ValueError(f"{target.slug}: the record translates {len(translation)} "
                          f"residues, the table says {target.aa}")
     helices = secondary_structure(pdb_path(structure))
-    stacked = np.vstack([m.positions for m in read_glb(glb).values()])
-    chains = [chain_track(target, c.node, c.pdb_chain, translation, helices, frame)
+    meshes = read_glb(glb)
+    stacked = np.vstack([m.positions for m in meshes.values()])
+    chains = [chain_track(target, c.node, c.pdb_chain, translation, helices, frame,
+                          meshes[c.node].positions if structure.representation == "cartoon"
+                          else None)
               for c in structure.chains]
     return {
         "slug": target.slug,

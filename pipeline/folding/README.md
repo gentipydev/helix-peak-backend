@@ -66,8 +66,16 @@ positions where the entry's residue is not the gene's (`entry_differs`), and
   another (an engineered mutation, a sequence conflict, each declared in its
   SEQADV records) the coordinates are the entry's and the letter the gene's.
 
-Schema 2 adds two fields, so that an animation drawn from the track can end on
-the model rather than near it:
+Schema 2 adds three fields, so that an animation drawn from the track can end
+on the model rather than near it:
+
+- **`ribbon`**, on a helix or strand residue: where the model's ribbon passes
+  it and which way it lies across, `[x, y, z, dx, dy, dz]`, the centre and the
+  widest direction of the ribbon's cross-section through the vertex nearest
+  the CA, measured on the stored model. A helix's runs within 0.63 A of its
+  CA; a strand's, which PyMOL flattens into its sheet, up to 3.3 A. Measured
+  for 1,964 of 1,986 helix residues and 393 of 501 strand residues; where the
+  slice is not flat (an arrow's tip, a one-residue strand) there is none.
 
 - **`bridges`**: each disulfide the model draws, as the atoms its rods run
   through, in the same frame:
@@ -147,28 +155,28 @@ axis. That fit is not used here.
 
 | slug | residues | ordered | helix | strand | disordered | absent | bridges | bytes |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| insulin | 51 | 51 | 30 | 0 | 0 | 0 | 3 | 8,512 |
-| hemoglobin | 146 | 145 | 127 | 0 | 1 | 0 | 0 | 16,082 |
-| myoglobin | 153 | 149 | 132 | 0 | 4 | 0 | 0 | 16,810 |
-| p53 | 194 | 194 | 24 | 64 | 0 | 0 | 0 | 21,080 |
-| lysozyme | 130 | 130 | 55 | 8 | 0 | 0 | 4 | 16,797 |
-| relaxin | 53 | 51 | 42 | 4 | 1 | 1 | 3 | 8,542 |
+| insulin | 51 | 51 | 30 | 0 | 0 | 0 | 3 | 10,440 |
+| hemoglobin | 146 | 145 | 127 | 0 | 1 | 0 | 0 | 24,275 |
+| myoglobin | 153 | 149 | 132 | 0 | 4 | 0 | 0 | 24,973 |
+| p53 | 194 | 194 | 24 | 64 | 0 | 0 | 0 | 26,002 |
+| lysozyme | 130 | 130 | 55 | 8 | 0 | 0 | 4 | 20,731 |
+| relaxin | 53 | 51 | 42 | 4 | 1 | 1 | 3 | 11,392 |
 | oxytocin | 9 | 9 | 0 | 0 | 0 | 0 | 1 | 2,807 |
-| somatotropin | 191 | 186 | 104 | 0 | 5 | 0 | 2 | 22,678 |
-| ubiquitin | 76 | 76 | 16 | 33 | 0 | 0 | 0 | 9,026 |
-| dystrophin | 238 | 238 | 167 | 3 | 0 | 0 | 0 | 25,674 |
+| somatotropin | 191 | 186 | 104 | 0 | 5 | 0 | 2 | 29,416 |
+| ubiquitin | 76 | 76 | 16 | 33 | 0 | 0 | 0 | 11,776 |
+| dystrophin | 238 | 238 | 167 | 3 | 0 | 0 | 0 | 36,573 |
 | vasopressin | 9 | 9 | 0 | 0 | 0 | 0 | 1 | 2,818 |
-| glucagon | 29 | 29 | 28 | 0 | 0 | 0 | 0 | 4,256 |
-| app | 753 | 162 | 27 | 58 | 11 | 580 | 6 | 50,920 |
-| cftr | 1,480 | 1,139 | 807 | 91 | 341 | 0 | 0 | 136,212 |
-| erythropoietin | 166 | 166 | 105 | 6 | 0 | 0 | 2 | 19,810 |
-| leptin | 146 | 130 | 95 | 0 | 16 | 0 | 1 | 16,040 |
-| tnf | 157 | 153 | 5 | 78 | 4 | 0 | 1 | 17,805 |
-| sod1 | 153 | 153 | 17 | 58 | 0 | 0 | 1 | 17,356 |
-| amylase | 496 | 496 | 134 | 85 | 0 | 0 | 5 | 54,662 |
-| prion | 208 | 109 | 71 | 13 | 98 | 1 | 1 | 18,323 |
+| glucagon | 29 | 29 | 28 | 0 | 0 | 0 | 0 | 6,081 |
+| app | 753 | 162 | 27 | 58 | 11 | 580 | 6 | 55,512 |
+| cftr | 1,480 | 1,139 | 807 | 91 | 341 | 0 | 0 | 192,038 |
+| erythropoietin | 166 | 166 | 105 | 6 | 0 | 0 | 2 | 26,829 |
+| leptin | 146 | 130 | 95 | 0 | 16 | 0 | 1 | 22,183 |
+| tnf | 157 | 153 | 5 | 78 | 4 | 0 | 1 | 22,247 |
+| sod1 | 153 | 153 | 17 | 58 | 0 | 0 | 1 | 21,496 |
+| amylase | 496 | 496 | 134 | 85 | 0 | 0 | 5 | 67,555 |
+| prion | 208 | 109 | 71 | 13 | 98 | 1 | 1 | 23,442 |
 
-486,210 bytes for all twenty, 3,775 CA atoms. The playbook's 9,991 is every CA
+638,586 bytes for all twenty, 3,775 CA atoms. The playbook's 9,991 is every CA
 in the twenty files, every chain; the folds export 3,775 of them.
 
 - **The prion protein**: 23-230, of which only 117-225 has a shape. 24-116 and

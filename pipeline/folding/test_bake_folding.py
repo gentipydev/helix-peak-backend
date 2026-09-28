@@ -187,6 +187,27 @@ def test_the_cartoon_is_the_one_pymol_draws():
     assert bake_folding.cartoon_of(BY_SLUG["oxytocin"])["representation"] == "tube"
 
 
+@needs
+def test_the_ribbon_is_measured_where_the_model_draws_one():
+    track = _track("insulin")
+    residues = [r for c in track["chains"] for r in c["residues"]]
+    helix = [r for r in residues if r["ss"] == "helix"]
+    assert all("ribbon" in r for r in helix)
+    assert not any("ribbon" in r for r in residues if r["ss"] == "coil")
+    for r in helix:
+        if "ribbon" in r:
+            assert np.linalg.norm(np.array(r["ribbon"][3:])) == pytest.approx(1, abs=1e-3)
+
+
+@needs
+def test_a_ribbon_off_the_model_is_caught():
+    track = copy.deepcopy(_track("insulin"))
+    residue = next(r for c in track["chains"] for r in c["residues"] if "ribbon" in r)
+    residue["ribbon"][0] += 0.1                 # 2.4 A off
+    found = check_folding.problems_of(BY_SLUG["insulin"], track)
+    assert any("ribbon" in p for p in found)
+
+
 # -- the check -------------------------------------------------------------------
 
 
