@@ -225,6 +225,36 @@ The loader refuses to write if a listed protein has no buildable row, or if a
 build would take a listed protein's slug. `apply_migration.py` is `psql -f` for a
 machine without psql.
 
+## Resolving any protein (Phase 6)
+
+```
+POST /proteins/resolve        {"gene": "BRCA1"}  -> {"slug", "state", "reason"}
+GET  /proteins/resolve/{gene}                     -> the same, without asking
+```
+
+A `buildable` suggestion can be asked for. The service writes one
+`resolve_request` row (`migrations/0009_resolve_request.sql`) and returns: 202
+`pending` while it is built, or 200 with what the protein already is --
+`ready` (its `slug` opens the walk; for one of the twenty, the slug it shipped
+with), `refused` or `unavailable` with a `reason`, or `failed` (asking again
+queues a new request). A read also says `buildable` for a protein nobody has
+asked for. A gene the index does not hold is a 404, and an unreadable database
+a 503.
+
+The service resolves nothing itself. The resolver runs on Modal
+([`pipeline/resolver/`](pipeline/resolver/README.md)): it makes the protein row from
+UniProt and MANE, stores the record track, and scores ESM-2 650M on a GPU; the
+app polls `GET /proteins/resolve/{gene}`, then `/protein/{slug}/tracks` while
+the constraint track goes from `pending` to `ready`. A resolved protein has a
+row like any other but never joins `/catalog`, which stays the twenty.
+
+Two readers asking for one gene make one request. A request costs GPU time and
+the service has no auth, so a day's are capped (`RESOLVES_PER_DAY`, default
+50; past it, 429). After writing a request the service calls the resolver's
+wake URL (`MODAL_WAKE_URL`, with a Modal proxy auth token in `MODAL_KEY` and
+`MODAL_SECRET`); unset, the resolver's five-minute schedule takes it.
+`pipeline/resolver/README.md` is the runbook.
+
 ## Rate limiting
 
 Not implemented here, and not needed yet: Biopython already sleeps ~0.37s between
@@ -255,6 +285,7 @@ app/
   genbank_parser.py   extract_gene(record, gene) -- pure, no I/O
   protein_index.py    how index rows and search terms are made, and normalize()
   suggest.py          /proteins/suggest: ranked prefix tiers, near misses last
+  resolves.py         /proteins/resolve: what an ask means, the request row, the wake
   schemas.py          pydantic response models
   router.py           the endpoints and the 404/502/503 mapping
 migrations/           applied by hand, in order
@@ -267,6 +298,7 @@ pipeline/             the bake tools, moved from helix-peek/tool/ in Phase 3; se
   upload_tracks.py    validated tracks into storage, and their protein_track rows
   seed_catalog.py     the protein and protein_alias rows; --check diffs the live ones
   mock/ constraint/ impact/ clinvar/ structure/   one baker each
+  resolver/           Phase 6 on Modal: any buildable protein resolved on demand
 scripts/
   apply_migration.py      psql -f, for a machine without psql
   load_protein_index.py   UniProt + MANE + LRG_RefSeqGene -> protein_index
@@ -280,6 +312,7 @@ tests/
   test_record_cache.py    hit, miss, eviction and degradation, against a fake pool
   test_protein_index.py   normalising, MANE and RefSeqGene parsing, rows and terms
   test_suggest.py         statuses, the short and near-miss rules, against a fake pool
+  test_resolve_api.py     /proteins/resolve's states, cap and wake, against a fake pool
   test_pipeline.py        the pipeline imports, the curated rows, check_against's comparisons
   conftest.py             shared fixtures, incl. the efetch patches
   ncbi_errors.py          real NCBI failure bodies

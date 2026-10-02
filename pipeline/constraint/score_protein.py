@@ -229,7 +229,14 @@ def score_protein(target: Target, output_path: Path, context: int) -> None:
     from transformers import AutoModelForMaskedLM, AutoTokenizer
 
     torch.manual_seed(0)
-    device = "mps" if torch.backends.mps.is_available() else "cpu"
+    # CUDA where there is one: the resolver scores proteins resolved on demand
+    # on a Modal GPU (`pipeline/resolver/`). The machine that baked the twenty
+    # has none, so its path, and every byte it writes, is what it was.
+    device = (
+        "cuda" if torch.cuda.is_available()
+        else "mps" if torch.backends.mps.is_available()
+        else "cpu"
+    )
     print(f"Loading {MODEL}@{REVISION} on {device} (float32).", flush=True)
     tokenizer = AutoTokenizer.from_pretrained(MODEL, revision=REVISION)
     model = AutoModelForMaskedLM.from_pretrained(

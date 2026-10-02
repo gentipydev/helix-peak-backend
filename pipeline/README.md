@@ -2,9 +2,10 @@
 
 The bake tools. They were `helix-peek/tool/` until Phase 3 of
 `HANDOFF-ONDEMAND.md`, when the app stopped carrying protein data and storage
-became the place the tracks live. Everything here runs by hand, offline, and the
-web service never imports it (yet: Phase 6 turns the record builder into a
-library the resolver calls).
+became the place the tracks live. Everything here runs by hand, offline, except
+[`resolver/`](resolver/README.md) (Phase 6), which runs the same record builder
+and ESM-2 scorer, unchanged, on Modal for a protein a reader asks for that the
+catalog does not list. The web service never imports any of it.
 
 One table drives the twenty curated proteins: [`targets.py`](targets.py). A row
 says where the gene comes from, which regions and disulfides the precursor has,
@@ -116,7 +117,13 @@ gene against its record before writing anything --
 [protein-verification.md](../../helix-peek/docs/protein-verification.md) is how
 the second ten were checked. Then add a row to `targets.py` and one to
 `curated/catalog.json`, bake with `--target <slug>`, run `check_assets.py`,
-upload, and seed. Phase 6 replaces the hand-written row with a resolver.
+upload, and seed.
+
+That is how a protein joins the curated list. Any other reviewed human protein
+with a MANE Select transcript can be resolved on demand instead, with no row
+written by hand: [`resolver/`](resolver/README.md) makes its row from UniProt
+and MANE, stores its record and scores it with ESM-2, and it opens in the walk
+without joining the list (`catalog_order` is null).
 
 Two things to check before committing to a protein:
 

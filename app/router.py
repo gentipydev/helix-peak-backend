@@ -4,17 +4,20 @@ import contextlib
 from typing import Optional
 from urllib.error import HTTPError, URLError
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Response
 from fastapi.responses import RedirectResponse
 
-from . import assemblies, catalog, suggest, tracks
+from . import assemblies, catalog, resolves, suggest, tracks
 from .catalog import CatalogUnavailable
+from .config import settings
 from .genbank_parser import GeneNotFound, extract_gene
 from .record_cache import fetch as fetch_genbank_record
 from .schemas import (
     CatalogPage,
     GeneResponse,
     ProteinDetail,
+    ResolveRequest,
+    ResolveResponse,
     SearchResponse,
     SuggestResponse,
     Track,
@@ -188,6 +191,51 @@ def suggest_proteins(
     """
     with _catalog_errors():
         return suggest.suggest(q, limit=limit)
+
+
+def _not_indexed(gene: str) -> HTTPException:
+    return HTTPException(
+        status_code=404,
+        detail="No reviewed human protein made by {!r} in the index.".format(gene),
+    )
+
+
+@router.post("/proteins/resolve", response_model=ResolveResponse)
+def request_resolve(
+    asked: ResolveRequest, response: Response, background: BackgroundTasks
+) -> dict:
+    """Ask for the protein a gene makes, built on demand where it is not one yet.
+
+    202 while it is being built; 200 with what it already is otherwise. The
+    request is a row the resolver on Modal works (`app/resolves.py`); this
+    returns as soon as the row is written, and wakes the resolver afterwards.
+    """
+    try:
+        with _catalog_errors():
+            said, queued = resolves.request(asked.gene.strip(), asked.taxon)
+    except resolves.DailyCapReached:
+        raise HTTPException(
+            status_code=429,
+            detail="The service builds {:,} proteins a day, and today's are taken. "
+                   "Ask again tomorrow.".format(settings.resolves_per_day),
+        )
+    if said is None:
+        raise _not_indexed(asked.gene)
+    if queued:
+        background.add_task(resolves.wake)
+    if said["state"] == "pending":
+        response.status_code = 202
+    return said
+
+
+@router.get("/proteins/resolve/{gene}", response_model=ResolveResponse)
+def read_resolve(gene: str) -> dict:
+    """What a gene's protein is now, without asking for it: polled while it builds."""
+    with _catalog_errors():
+        said = resolves.current(gene)
+    if said is None:
+        raise _not_indexed(gene)
+    return said
 
 
 @router.get("/protein/{slug}", response_model=ProteinDetail)

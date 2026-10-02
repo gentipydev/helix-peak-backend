@@ -1,0 +1,4 @@
+# To deploy `modal_app.py`: the Modal client, at the version the app was written
+# and tested against. The containers install their own packages (see the images
+# in modal_app.py); never install this in the service's container.
+modal==1.6.0

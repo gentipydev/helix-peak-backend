@@ -14,7 +14,7 @@ Annotations stay in ``typing`` form (``List``/``Optional``, not ``list[...]`` or
 
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Segment(BaseModel):
@@ -250,11 +250,22 @@ class SuggestResponse(BaseModel):
 
 
 class ResolveRequest(BaseModel):
-    gene: str
+    """A reader asking for the protein a gene makes (`POST /proteins/resolve`)."""
+
+    # The symbol `/proteins/suggest` names it by. Matched without case.
+    gene: str = Field(min_length=1, max_length=64)
     taxon: int = 9606
 
 
 class ResolveResponse(BaseModel):
+    """What a gene's protein is now: ``ready``, ``pending``, ``refused``,
+    ``failed``, ``unavailable`` or (read only) ``buildable``.
+
+    ``slug`` is where a ready protein opens, and the slug a pending or
+    buildable one will take; ``reason`` says why for refused, failed and
+    unavailable. `app/resolves.py` has what each means.
+    """
+
     slug: Optional[str] = None
     state: str
     reason: Optional[str] = None
