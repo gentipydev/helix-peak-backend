@@ -19,7 +19,10 @@ pipeline/.esm-venv/bin/python -u pipeline/constraint/score_protein.py --all
 
 `requirements.txt` records direct dependencies; `requirements-lock.txt` records
 the environment used for generation. Apple Silicon uses MPS, with CPU fallback
-on machines without MPS. Forward passes use float32 and evaluation mode.
+on machines without MPS. A machine with CUDA uses it: that is the resolver's
+Modal GPU (`pipeline/resolver/`), which scores proteins resolved on demand with
+this same model and revision, and records `cuda` as the track's device. Forward
+passes use float32 and evaluation mode.
 
 About fifty minutes for the first ten on an M-series laptop, of which dystrophin
 is forty-five, and thirty-four for the ten after them, of which CFTR is

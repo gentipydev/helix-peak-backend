@@ -37,13 +37,16 @@ differs from storage. A mismatch means the refactor changed data. Stop; never up
 ## What the service is, and is not
 
 - Is: `/gene/{id}/{gene}` (read-through cache of whole records), `/catalog`, `/catalog/search`,
-  `/protein/{slug}`, `/protein/{slug}/tracks`, `/proteins/suggest`, `.../impact-explanations`,
-  `/assembly/{slug}/tracks`, `/health`, `/health/db`. It writes only `genbank_record`. It names bytes and never carries
+  `/protein/{slug}`, `/protein/{slug}/tracks`, `/proteins/suggest`, `/proteins/resolve` (POST,
+  and GET `/{gene}`), `.../impact-explanations`, `/assembly/{slug}/tracks`, `/health`, `/health/db`.
+  It writes `genbank_record`, and one `resolve_request` row per new ask. It names bytes and never carries
   them: a ready track resolves to a public Supabase storage URL the client fetches directly.
 - Is not: authenticated (there is no auth), rate limited (Biopython's ~0.37 s spacing between
-  Entrez calls is the only throttle) or CORS-restricted (`allow_origins=["*"]`). It holds no
-  service_role key; rows are reached through `DATABASE_URL` only. It is not a resolver
-  yet, so `candidates` is always empty.
+  Entrez calls is the only throttle; resolve requests alone are capped per day,
+  `RESOLVES_PER_DAY`) or CORS-restricted (`allow_origins=["*"]`). It holds no
+  service_role key; rows are reached through `DATABASE_URL` only. It resolves nothing itself:
+  a request is a row the resolver on Modal (`pipeline/resolver/`) works, and the service only
+  wakes it (`MODAL_WAKE_URL`, proxy auth). `/catalog/search`'s `candidates` stays empty.
 - Only `NCBI_EMAIL` is required; with no `DATABASE_URL`, `/gene` still works and the catalog is 503.
 - `app/` stays Python 3.9-compatible (`Optional`/`List`, never `X | Y`); the image runs 3.12.
 
@@ -62,6 +65,8 @@ differs from storage. A mismatch means the refactor changed data. Stop; never up
 - `impact_explanations.py`: AVI explanations. Storage redirect first, then the local directory.
 - `protein_index.py`: pure. `normalize()`, UniProt/MANE parsing, index rows and terms. Shared with `scripts/load_protein_index.py`.
 - `suggest.py`: `/proteins/suggest`. Ranked prefix tiers over `protein_index_term`, near misses last.
+- `resolves.py`: `/proteins/resolve`. What an ask means (ready, pending, refused, failed, unavailable,
+  buildable), the `resolve_request` row, the daily cap and the best-effort wake.
 - `schemas.py`: pydantic response models that mirror the Dart entities field for field.
 - `router.py`: every non-health endpoint, with the NCBI 404/502 and catalog 503 mappings.
 
@@ -83,6 +88,12 @@ The Dockerfile copies only `requirements.txt` and `app/`, so `import pipeline` i
 breaks the deployed service at import. Pipeline code also needs bake environments (ESM,
 AlphaGenome, PyMOL) and write credentials. `config.impact_explanations_dir` defaults to a
 path under `pipeline/data/`; that is the only link, and it is a path, not an import.
+
+`pipeline/resolver/` (Phase 6) is the one part of `pipeline/` that runs unattended: on Modal,
+with the uploader's credentials in a Modal secret, calling the record builder and the ESM-2
+scorer unchanged. A protein it resolves is a `protein` row with a null `catalog_order` and
+`resolver_version` 1, so it never joins `/catalog`. It may never write over a curated row
+(the upsert is guarded), and a change to a baker it calls needs the same sha256 proof.
 
 ## Checklist: adding a track kind
 
@@ -117,6 +128,9 @@ path under `pipeline/data/`; that is the only link, and it is a path, not an imp
 - `client` is `TestClient(app)` outside a `with`, so the lifespan never runs and the real
   `DATABASE_URL` in `.env` is never dialled. Never write `with TestClient(app)`.
 - Tests that need stored tracks skip until `fetch_tracks.py`, run by hand, fills `pipeline/data/`.
+- `pipeline/resolver/test_worker_pg.py` runs the resolver's and `/proteins/resolve`'s SQL against
+  a real Postgres, and skips unless `RESOLVER_TEST_DATABASE_URL` names one it may create a scratch
+  database on (a local server, never Supabase). `test_modal_app.py` skips without the Modal client.
 
 ## NCBI error mapping
 

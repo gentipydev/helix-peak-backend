@@ -65,5 +65,22 @@ class Settings(BaseSettings):
 
     models_bucket: str = "models"
 
+    # Phase 6: a protein the catalog does not list, resolved on demand by the
+    # resolver on Modal (`pipeline/resolver/`). A request is a row; the
+    # resolver's schedule takes every queued one within five minutes, and this
+    # URL -- the `wake` endpoint `modal deploy` prints -- starts it at once.
+    # Unset, requests still resolve, on the schedule.
+    modal_wake_url: Optional[str] = None
+
+    # One of the Modal workspace's proxy auth tokens, which the wake endpoint
+    # requires. Not a Supabase credential: it can start a sweep and nothing
+    # else.
+    modal_key: Optional[str] = None
+    modal_secret: Optional[str] = None
+
+    # The service has no auth, and a request is the one thing it does that
+    # costs money (a GPU scores each protein), so a day's are capped.
+    resolves_per_day: int = 50
+
 
 settings = Settings()
