@@ -5,8 +5,9 @@ six of the twenty (release 2026_03), keeping what the protein index's join
 reads; their six MANE Select rows from the v1.5 summary; UCSC's cytoBand
 and chromAlias tables for hg38, as its API served them, for the five
 chromosomes those genes are on; and the Human Protein Atlas's summaries of the
-six genes (version 25.1), keeping the fields the bake reads, with the text of
-its releases page that the parser reads. Nothing here fetches.
+six genes (version 25.1), keeping the fields the bake reads (since schema 2,
+its tissue cell type pairs, subcellular and secretome locations too), with the
+text of its releases page that the parser reads. Nothing here fetches.
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ if str(BACKEND) not in sys.path:
 
 from app.protein_index import parse_mane  # noqa: E402
 from pipeline import fetch_tracks, upload_tracks  # noqa: E402
-from pipeline.locus import bake_locus, check_locus, verify_locus  # noqa: E402
+from pipeline.locus import bake_locus, cell_types, check_locus, tissues, verify_locus  # noqa: E402
 from pipeline.targets import BY_SLUG  # noqa: E402
 from pipeline.uniprot import Entry  # noqa: E402
 
@@ -213,6 +214,159 @@ def test_reads_the_atlas_release_from_its_releases_page():
     assert provenance["url"] == "https://www.proteinatlas.org/ENSG00000254647.json"
     with pytest.raises(LookupError):
         bake_locus.atlas_of("<html>no release here</html>")
+
+
+# -- schema 2: the readings it adds, and the zoom's path --------------------------------
+
+
+def test_schema_two_adds_the_atlas_pairs_locations_and_secretome(sources):
+    assert bake_locus.SCHEMA_VERSION == 2
+    insulin = _track("insulin", sources)
+    assert insulin["schema_version"] == 2
+    expression = insulin["expression"]
+    assert expression["tissue_cell_type"] == [
+        {"tissue": "Adrenal gland", "cell_type": "Adrenal medulla cells"},
+        {"tissue": "Pancreas", "cell_type": "Beta cells"},
+    ]
+    assert expression["subcellular"] == {"main": [], "additional": []}
+    assert expression["secretome"] == "Secreted to blood"
+    p53 = _track("p53", sources)["expression"]
+    assert p53["subcellular"]["main"] == ["Nucleoplasm"]
+    assert p53["secretome"] is None
+    # A schema 1 reader finds every key it read where it was.
+    for key in ("ensembl_gene", "tissue", "cell_type"):
+        assert key in expression
+
+
+PATHS = {
+    # slug: (tissue, tissue_from, cell_type, cell_from, lands_in)
+    "insulin": ("pancreas", "tissue", "Beta cells", "tissue_cell_type", None),
+    "hemoglobin": ("bone marrow", "tissue", "Erythrocytes", "single_cell_type",
+                   {"cell": "erythroblasts", "place": "bone marrow", "why": "no nucleus"}),
+    "cftr": ("pancreas", "tissue", "Pancreatic duct cells", "single_cell_type", None),
+    "sod1": ("liver", "tissue", "Hepatocytes", "tissue_cell_type", None),
+    "dystrophin": ("skeletal muscle", "cell_type", "Myonuclei", "single_cell_type", None),
+    "p53": ("stomach", "tissue_cell_type", "Mitotic cells (Stomach)", "tissue_cell_type",
+            None),
+}
+
+
+@pytest.mark.parametrize("slug", sorted(PATHS))
+def test_each_gene_takes_one_path_through_an_organ_and_a_cell_of_it(slug, sources):
+    path = _track(slug, sources)["path"]
+    tissue, tissue_from, cell, cell_from, lands = PATHS[slug]
+    assert (path["tissue"], path["tissue_from"]) == (tissue, tissue_from)
+    assert (path["cell_type"], path["cell_from"]) == (cell, cell_from)
+    assert path["lands_in"] == lands
+    assert path["cell_class"] in cell_types.CLASSES
+    # The cell lives in the organ: by its home, or by the Atlas's own pair.
+    if cell_from == "single_cell_type":
+        assert tissue in cell_types.homes(cell)
+
+
+def _reading(tissues=(), cells=(), pairs=()):
+    return {
+        "tissue": {"specific": [{"name": n, "ntpm": 10.0} for n in tissues]},
+        "cell_type": {"specific": [{"name": n, "ncpm": 10.0} for n in cells]},
+        "tissue_cell_type": [{"tissue": t, "cell_type": c} for t, c in pairs],
+    }
+
+
+def test_the_rule_takes_a_pair_in_the_organ_before_a_single_cell_type():
+    path = bake_locus.path_of(_reading(
+        tissues=["pancreas"], cells=["Pancreatic islet cells"],
+        pairs=[("Liver", "Hepatocytes"), ("Pancreas", "Beta cells")]))
+    assert (path["tissue"], path["cell_type"], path["cell_from"]) == (
+        "pancreas", "Beta cells", "tissue_cell_type")
+    assert path["cell_class"] == "Endocrine cells"
+
+
+def test_the_rule_never_takes_a_cell_of_another_organ():
+    # Bone marrow first, microglia the only cell type: microglia live in the
+    # brain, so no cell is named and the app draws the marrow's own.
+    path = bake_locus.path_of(_reading(
+        tissues=["bone marrow", "lymphoid tissue"], cells=["Microglia"],
+        pairs=[("Breast", "T-cells")]))
+    assert path == {"tissue": "bone marrow", "tissue_from": "tissue", "cell_type": None,
+                    "cell_class": None, "cell_from": None, "lands_in": None}
+
+
+def test_a_sampled_tissue_is_the_tissue_without_its_sample_number():
+    path = bake_locus.path_of(_reading(tissues=["stomach 1"], cells=["Foveolar cells"]))
+    assert (path["tissue"], path["cell_type"]) == ("stomach", "Foveolar cells")
+
+
+def test_a_gene_specific_to_no_tissue_goes_to_its_cell_type_home():
+    # The first cell type with a home: lacrimal acinar cells live where the
+    # consensus reading does not sample, so the next one leads.
+    path = bake_locus.path_of(_reading(
+        cells=["Lacrimal acinar cells", "Late primary spermatocytes"]))
+    assert (path["tissue"], path["tissue_from"], path["cell_type"]) == (
+        "testis", "cell_type", "Late primary spermatocytes")
+
+
+def test_a_gene_specific_to_nothing_follows_its_first_pair_or_nowhere():
+    path = bake_locus.path_of(_reading(pairs=[("Stomach", "Mitotic cells (Stomach)")]))
+    assert (path["tissue"], path["cell_type"], path["cell_class"]) == (
+        "stomach", "Mitotic cells (Stomach)", "Stem and proliferating cells")
+    assert bake_locus.path_of(_reading()) == {
+        "tissue": None, "tissue_from": None, "cell_type": None, "cell_class": None,
+        "cell_from": None, "lands_in": None}
+
+
+def test_a_cell_with_no_nucleus_lands_in_the_one_that_has_one():
+    path = bake_locus.path_of(_reading(tissues=["bone marrow"], cells=["Platelets"]))
+    assert path["lands_in"] == {"cell": "megakaryocytes", "place": "bone marrow",
+                                "why": "no nucleus"}
+
+
+@pytest.mark.parametrize("reading, word", [
+    (dict(tissues=["thymus gland"]), "tissue 'thymus gland'"),
+    (dict(cells=["Glow cells"]), "cell type 'Glow cells'"),
+    (dict(pairs=[("Pancreas islets", "Beta cells")]), "tissue cell type tissue"),
+    (dict(pairs=[("Pancreas", "Moon cells")]), "has no class"),
+])
+def test_the_rule_refuses_a_name_the_atlas_does_not_list(reading, word):
+    with pytest.raises(LookupError, match=word):
+        bake_locus.path_of(_reading(**reading))
+
+
+def test_the_pairs_are_read_as_the_atlas_writes_them():
+    assert bake_locus._pairs(["Adipose subcutaneous - Adipocytes (Subcutaneous)"]) == [
+        {"tissue": "Adipose subcutaneous", "cell_type": "Adipocytes (Subcutaneous)"}]
+    with pytest.raises(ValueError, match="Tissue - Cell type"):
+        bake_locus._pairs(["Pancreas: Beta cells"])
+
+
+def test_the_vocabularies_are_the_atlas_own():
+    assert len(cell_types.CELL_TYPES) == 154
+    assert len(cell_types.CLASSES) == 15
+    assert {kind for kind, _ in cell_types.CELL_TYPES.values()} == set(cell_types.CLASSES)
+    assert set(cell_types.PAIR_CELL_CLASSES.values()) <= set(cell_types.CLASSES)
+    assert len(tissues.TISSUES) == 37
+    for kind, homes in cell_types.CELL_TYPES.values():
+        assert set(homes) <= set(tissues.TISSUES)
+    assert set(tissues.PAIR_TISSUES.values()) <= set(tissues.TISSUES)
+    # Case is the Atlas's, not the reader's.
+    assert cell_types.single("monocytes") == "Monocytes"
+    assert cell_types.cell_class("cDC") == "Blood and immune cells"
+
+
+@pytest.mark.parametrize("damage, finding", [
+    (lambda t: t["path"].update(cell_type="Pancreatic islet cells"), "the rule takes"),
+    (lambda t: t.pop("path"), "no path"),
+    (lambda t: t["expression"]["subcellular"]["main"].append("Cytoplasm"), "Atlas's word"),
+    (lambda t: t["expression"].update(secretome="Secreted to lymph"), "Atlas's word"),
+    (lambda t: t["expression"]["tissue_cell_type"].append(
+        {"tissue": "Pancreas islets", "cell_type": "Beta cells"}), "one the Atlas lists"),
+    (lambda t: t["expression"]["cell_type"]["specific"][0].update(name="Glow cells"),
+     "not a name the Atlas lists"),
+])
+def test_the_check_holds_schema_two_to_the_atlas_and_the_rule(damage, finding, sources):
+    track = _track("insulin", sources)
+    damage(track)
+    found = check_locus.problems_of(BY_SLUG["insulin"], track)
+    assert any(finding in problem for problem in found), found
 
 
 # -- the table and its version -------------------------------------------------------

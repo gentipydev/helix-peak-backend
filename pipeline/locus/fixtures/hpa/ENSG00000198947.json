@@ -12,7 +12,14 @@
   "Thymic myoid cells": "7067.3"
  },
  "RNA single cell type specificity": "Cell type enhanced",
+ "RNA tissue cell type enrichment": [
+  "Breast - Breast myoepithelial cells",
+  "Prostate - Smooth muscle cells"
+ ],
  "RNA tissue distribution": "Detected in many",
  "RNA tissue specific nTPM": null,
- "RNA tissue specificity": "Low tissue specificity"
+ "RNA tissue specificity": "Low tissue specificity",
+ "Secretome location": null,
+ "Subcellular additional location": null,
+ "Subcellular main location": null
 }

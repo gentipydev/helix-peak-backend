@@ -20,7 +20,14 @@ track carries what that needs, per protein:
 - `expression`: where in the body the gene is read, as the Human Protein
   Atlas measures it: how specific its RNA is to a tissue and to a cell type,
   in the Atlas's own categories, and the tissues and cell types it names,
-  highest first. The zoom walks down to the chromosome through them.
+  highest first. Since schema 2, also the Atlas's tissue cell type pairs
+  (the cell types it finds the gene enriched in within a tissue), where in a
+  cell it finds the protein, and where it is secreted to.
+- `path` (schema 2): the one way down the zoom takes for this gene, chosen
+  by one rule from those readings (`path_of`): the organ, the kind of cell
+  in it, and where that cell has no nucleus, the cell the zoom lands in
+  instead. Every cell is one that lives in the organ, so no gene's zoom
+  lands in a cell of another organ.
 
 A band is a stain pattern seen down a microscope at low resolution, millions
 of bases long. It says where a gene lies, not that the gene can be seen there.
@@ -54,6 +61,8 @@ if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
 from app.protein_index import rows_for_entry, versionless  # noqa: E402
+from pipeline.locus.cell_types import anucleate, cell_class, homes, single  # noqa: E402
+from pipeline.locus.tissues import pair_tissue, tissue_name  # noqa: E402
 from pipeline.mane import current_summary  # noqa: E402
 from pipeline.paths import DATA  # noqa: E402
 from pipeline.targets import BY_SLUG, TARGETS, Target  # noqa: E402
@@ -62,7 +71,10 @@ from pipeline.uniprot import Entry, fetch_entry  # noqa: E402
 # Every protein gets the track: each has a chromosome to zoom to.
 LOCUS_TARGETS = TARGETS
 
-SCHEMA_VERSION = 1
+# 2 adds keys only: the Atlas's tissue cell type pairs, subcellular location
+# and secretome location under `expression`, and the zoom's `path`. A schema 1
+# reader ignores them.
+SCHEMA_VERSION = 2
 
 ASSEMBLY = "GRCh38"
 GENOME = "hg38"
@@ -164,9 +176,22 @@ def _ranked(values: dict | None, unit: str) -> list[dict]:
         key=lambda found: (-found[unit], found["name"]))
 
 
+def _pairs(values: list | None) -> list[dict]:
+    """The Atlas's `Tissue - Cell type` pairs, in the order it lists them."""
+    out = []
+    for value in values or []:
+        tissue, sep, cell = str(value).partition(" - ")
+        if not sep or not tissue.strip() or not cell.strip():
+            raise ValueError(f"the Atlas's tissue cell type {value!r} is not 'Tissue - Cell type'")
+        out.append({"tissue": tissue.strip(), "cell_type": cell.strip()})
+    return out
+
+
 def expression_of(gene: dict) -> dict:
     """What the Atlas says of where a gene is read: its specificity to a
-    tissue and to a cell type, and the ones it names, highest first."""
+    tissue and to a cell type, and the ones it names, highest first; the cell
+    types it finds the gene enriched in within a tissue; where in a cell it
+    finds the protein; and where it is secreted to."""
     return {
         "tissue": {
             "specificity": gene.get("RNA tissue specificity"),
@@ -178,6 +203,78 @@ def expression_of(gene: dict) -> dict:
             "distribution": gene.get("RNA single cell type distribution"),
             "specific": _ranked(gene.get("RNA single cell type specific nCPM"), "ncpm"),
         },
+        "tissue_cell_type": _pairs(gene.get("RNA tissue cell type enrichment")),
+        "subcellular": {
+            "main": list(gene.get("Subcellular main location") or []),
+            "additional": list(gene.get("Subcellular additional location") or []),
+        },
+        "secretome": gene.get("Secretome location"),
+    }
+
+
+def path_of(expression: dict) -> dict:
+    """The one way down the zoom takes, from the Atlas's readings alone.
+
+    The organ is the tissue the gene's RNA is highest in. The cell is one
+    that lives there: the first cell type the Atlas finds the gene enriched
+    in within that tissue, else the single cell type it is highest in among
+    those whose home is that tissue, else none, and the app draws the
+    tissue's own cells and says so. A gene specific to no tissue goes to the
+    home of the single cell type it is highest in, else to its first tissue
+    cell type pair, else nowhere in particular. A cell with no nucleus lands
+    in the cell that still has one.
+
+    Refuses a reading whose names the Atlas's vocabularies do not have, so a
+    new Atlas release that renames a tissue or a cell type stops the bake
+    rather than lead a zoom astray.
+    """
+    tissues = []
+    for found in expression["tissue"]["specific"]:
+        name = tissue_name(found["name"])
+        if name is None:
+            raise LookupError(f"the Atlas's tissue {found['name']!r} is not one it lists")
+        tissues.append(name)
+    cells = []
+    for found in expression["cell_type"]["specific"]:
+        if single(found["name"]) is None:
+            raise LookupError(f"the Atlas's cell type {found['name']!r} is not one it lists")
+        cells.append(found["name"])
+    pairs = []
+    for pair in expression["tissue_cell_type"]:
+        tissue = pair_tissue(pair["tissue"])
+        if tissue is None:
+            raise LookupError(f"the Atlas's tissue cell type tissue {pair['tissue']!r} "
+                              "is not one it lists")
+        pairs.append((tissue, pair["cell_type"]))
+
+    tissue = cell = tissue_from = cell_from = None
+    if tissues:
+        tissue, tissue_from = tissues[0], "tissue"
+        cell = next((c for t, c in pairs if t == tissue), None)
+        if cell is not None:
+            cell_from = "tissue_cell_type"
+        else:
+            cell = next((c for c in cells if tissue in homes(c)), None)
+            cell_from = "single_cell_type" if cell is not None else None
+    elif any(homes(c) for c in cells):
+        cell = next(c for c in cells if homes(c))
+        tissue, tissue_from, cell_from = homes(cell)[0], "cell_type", "single_cell_type"
+    elif pairs:
+        (tissue, cell), tissue_from, cell_from = pairs[0], "tissue_cell_type", "tissue_cell_type"
+
+    kind = None
+    if cell is not None:
+        kind = cell_class(cell)
+        if kind is None:
+            raise LookupError(f"the path's cell type {cell!r} has no class the Atlas gives")
+    lands = anucleate(cell) if cell is not None else None
+    return {
+        "tissue": tissue,
+        "tissue_from": tissue_from,
+        "cell_type": cell,
+        "cell_class": kind,
+        "cell_from": cell_from,
+        "lands_in": None if lands is None else {**lands, "why": "no nucleus"},
     }
 
 
@@ -276,6 +373,7 @@ def payload(target: Target, entry: Entry, mane: dict, mane_release: str,
     chromosome = chrom[3:] if chrom.startswith("chr") else chrom
     names = [b["name"] for b in inside]
     audit = body.get("entryAudit", {})
+    expression = {"ensembl_gene": ensembl, **expression_of(atlas_gene)}
     return {
         "slug": target.slug,
         "gene": target.gene,
@@ -290,7 +388,8 @@ def payload(target: Target, entry: Entry, mane: dict, mane_release: str,
         "band": {"names": names, "start": inside[0]["start"], "end": inside[-1]["end"]},
         "locus": locus_of(chromosome, names),
         "bands": bands,
-        "expression": {"ensembl_gene": ensembl, **expression_of(atlas_gene)},
+        "expression": expression,
+        "path": path_of(expression),
         "sources": {
             "cytoband": cytoband.provenance(),
             "chrom_alias": aliases.provenance(),
@@ -349,12 +448,13 @@ def main() -> int:
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(encode(track))
         span = track["span"]
-        tissue = track["expression"]["tissue"]
-        cell = track["expression"]["cell_type"]
+        path = track["path"]
+        lands = path["lands_in"]
         print(f"{target.slug:<16} {track['gene']:<6} {track['locus']:<14} "
               f"{track['sequence']}:{span['start']}-{span['end']}  "
-              f"{', '.join(t['name'] for t in tissue['specific'][:2]) or tissue['specificity']}"
-              f" / {', '.join(c['name'] for c in cell['specific'][:2]) or cell['specificity']}")
+              f"{path['tissue'] or '-'} ({path['tissue_from'] or '-'}) / "
+              f"{path['cell_type'] or 'drawn'} ({path['cell_from'] or '-'})"
+              f"{' -> ' + lands['cell'] if lands else ''}")
     if failed:
         print(f"\n{len(failed)} protein(s) did not resolve to a band:")
         for line in failed:

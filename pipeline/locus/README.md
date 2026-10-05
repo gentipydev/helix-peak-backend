@@ -81,7 +81,8 @@ GRCh38, as MANE and GenBank count; UCSC's 0-based band starts are made 1-based.
 | `bands` | every band of the chromosome in order from the end of the short arm: name, start, end and stain (`gneg`, `gpos25` to `gpos100`, `acen`, `gvar`, `stalk`) |
 | `band` | the band or bands the span lies in, and where they begin and end |
 | `locus` | the place as cytogenetics writes it: `11p15.5`; `Xp21.2-p21.1` across two bands |
-| `expression` | the Ensembl gene, and for `tissue` and for `cell_type` the Atlas's `specificity` (`Tissue enriched`, `Group enriched`, `Tissue enhanced`, `Low tissue specificity`, `Not detected`, and the cell-type counterparts), its `distribution`, and the `specific` ones it names with their levels (nTPM for a tissue, nCPM for a cell type), highest first; none where nothing is specific |
+| `expression` | the Ensembl gene, and for `tissue` and for `cell_type` the Atlas's `specificity` (`Tissue enriched`, `Group enriched`, `Tissue enhanced`, `Low tissue specificity`, `Not detected`, and the cell-type counterparts), its `distribution`, and the `specific` ones it names with their levels (nTPM for a tissue, nCPM for a cell type), highest first; none where nothing is specific. Since schema 2 also `tissue_cell_type`, the Atlas's tissue cell type pairs as it lists them (`{tissue, cell_type}`, from `Pancreas - Beta cells`); `subcellular`, its `main` and `additional` locations of the protein in a cell (`[]` where it has none); and `secretome`, where it is secreted to, or null |
+| `path` | schema 2: the zoom's one way down for this gene, chosen by `path_of` from those readings: `tissue` and how it was chosen (`tissue_from`), the `cell_type` in it, its Atlas `cell_class` and how it was chosen (`cell_from`), and `lands_in`, the cell with a nucleus the zoom enters where that cell type has none |
 | `sources` | `cytoband` and `chrom_alias`: the table, its genome, when UCSC last updated it (its version: UCSC tables carry no other), how many rows were read and their digest; `mane`: the release; `uniprot`: the release, its date and the entry's version; `hpa`: the Atlas version, its release date, its Ensembl version, its licence and the gene's URL |
 
 A band is a stain pattern seen down a microscope at low resolution, millions of
@@ -103,7 +104,10 @@ seen there, and the app must not say so either.
   around this span, and a table row naming its transcript names this one;
 - the Atlas as it reads itself: its categories only, levels above zero and
   highest first, and tissues or cell types named exactly when the gene is
-  specific to some;
+  specific to some, each by a name the Atlas lists; its tissue cell type
+  pairs, each in a tissue it lists; its subcellular and secretome words;
+- the path the rule takes, recomputed from those readings, with a class for
+  its cell;
 - a version for every source, and the Atlas's licence.
 
 `verify_locus.py` holds each baked place to the one HGNC curates for the gene
@@ -129,7 +133,72 @@ from insulin and glucagon in the pancreas and hemoglobin in the bone marrow to
 growth hormone in the pituitary; TP53, UBB, DMD and APP are read in every
 tissue it measured. Hemoglobin's cell type is `Erythrocytes`: mature red
 cells, which have no nucleus, so the zoom lands in the marrow precursor that
-still has one and says so. The Atlas's top cell type is not always a cell of
-its top tissue (myoglobin's is thymic myoid cells, the muscle-like cells of the
-thymus, where its tissue is skeletal muscle), so the app states each as the
-Atlas's reading rather than zooming one into the other.
+still has one and says so.
+
+The Atlas's top cell type is not always a cell of its top tissue: myoglobin's
+is thymic myoid cells, the muscle-like cells of the thymus, where its tissue
+is skeletal muscle; tumour necrosis factor's is microglia, a cell of the
+brain, where its tissue is bone marrow. Schema 1 left the app to take each
+on its own, and seven of the twenty zooms went down into a cell of another
+organ. Schema 2 chooses one path per gene (below).
+
+## Schema 2: one path per gene
+
+Schema 2 adds keys and changes none: `expression.tissue_cell_type`,
+`expression.subcellular`, `expression.secretome` and `path`. All of them are
+read from the same Atlas answer the bake already fetched, which carries 119
+fields of which schema 1 kept six. Changing an existing track's format
+departs from the contract on purpose, as folding's schema 2 did: the keys are
+only added, a schema 1 reader ignores them, and the zoom is the track's one
+reader. Every re-baked object has new bytes and a new name.
+
+`path_of` takes the path from the readings alone, the same way for every gene:
+
+1. The organ is the tissue the RNA is highest in, without its sample number.
+2. The cell is one that lives there: the first cell type the Atlas finds the
+   gene enriched in within that tissue (its tissue cell type pairs), else the
+   single cell type it is highest in among those whose home is that tissue,
+   else none, and the app draws the tissue's own cells and says so.
+3. A gene specific to no tissue goes to the home of the single cell type it
+   is highest in (the first with a home), else to its first pair, else
+   nowhere in particular.
+4. A cell type with no nucleus lands in the one that still has one.
+
+The rule reads two tables of the Atlas's own vocabularies, once for every
+gene: `tissues.py`, its 37 consensus tissues and the 19 tissues its pairs
+name, each made one of those; and `cell_types.py`, its 154 single cell types
+with their class as the Atlas gives it (one of fifteen) and the tissues each
+lives in, the classes of the pairs' own cell type names, the two cell types
+with no nucleus, and its subcellular and secretome words. A name the tables
+lack stops the bake, so a release that renames a tissue cannot lead a zoom
+astray. The homes are general biology; a cell type found along nerves or in
+connective tissue everywhere, or in a tissue the consensus reading does not
+sample (the lacrimal gland, the conjunctiva), has none.
+
+The twenty paths, Protein Atlas 25.1:
+
+| protein | organ (from) | cell (from) | protein in the cell | secreted |
+|---|---|---|---|---|
+| insulin | pancreas (tissue) | Beta cells (pair) | | to blood |
+| glucagon | pancreas (tissue) | Alpha cells (pair) | endoplasmic reticulum; vesicles | to blood |
+| cftr | pancreas (tissue) | Pancreatic duct cells (single cell) | | |
+| amylase | salivary gland (tissue) | Salivary acinar cells (single cell) | Golgi apparatus, cytosol | to digestive system |
+| lysozyme | salivary gland (tissue) | Minor salivary glandular cells (pair) | Golgi apparatus, actin filaments; nucleoplasm | to blood |
+| hemoglobin | bone marrow (tissue) | Erythrocytes (single cell), lands in erythroblasts | | |
+| tnf | bone marrow (tissue) | none in it: the app draws the marrow's cells | | to blood |
+| erythropoietin | liver (tissue) | Hepatocytes (single cell) | | to blood |
+| sod1 | liver (tissue) | Hepatocytes (pair) | nucleoplasm; cytosol | |
+| leptin | adipose tissue (tissue) | Adipocytes (Subcutaneous) (pair) | vesicles, plasma membrane | to blood |
+| myoglobin | skeletal muscle (tissue) | Skeletal myocytes (pair) | | |
+| dystrophin | skeletal muscle (its cell's home) | Myonuclei (single cell) | | |
+| oxytocin | brain (tissue) | Other brain neurons (single cell) | | to blood |
+| vasopressin | brain (tissue) | Other brain neurons (single cell) | | to blood |
+| prion | choroid plexus (tissue) | none in it: the app draws the plexus's cells | nuclear membrane, cytosol; vesicles | |
+| somatotropin | pituitary gland (tissue) | Somatotropes (pair) | | to blood |
+| relaxin | fallopian tube (tissue) | Fallopian tube ciliated cells (single cell) | | to blood |
+| ubiquitin | testis (its cell's home) | Late primary spermatocytes (single cell) | cytosol; acrosome, equatorial segment | |
+| app | lymphoid tissue (its cell's home) | Lymphatic endothelial cells (single cell) | Golgi apparatus; vesicles | to blood |
+| p53 | stomach (its pair) | Mitotic cells (Stomach) (pair) | nucleoplasm; vesicles, cytosol | |
+
+Main locations come before the semicolon, additional ones after it. A blank
+means the Atlas gives none.

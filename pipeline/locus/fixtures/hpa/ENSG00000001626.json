@@ -10,11 +10,22 @@
   "Salivary ionocytes": "1519.9"
  },
  "RNA single cell type specificity": "Cell type enhanced",
+ "RNA tissue cell type enrichment": [
+  "Adipose visceral - Mesothelial cells",
+  "Colon - Colon enterocytes",
+  "Lung - Alveolar cells type 2",
+  "Minor Salivary Gland - Minor salivary glandular cells",
+  "Skin - Eccrine sweat gland cells",
+  "Testis - Early spermatids"
+ ],
  "RNA tissue distribution": "Detected in many",
  "RNA tissue specific nTPM": {
   "gallbladder": "47.0",
   "intestine": "42.2",
   "pancreas": "187.0"
  },
- "RNA tissue specificity": "Tissue enhanced"
+ "RNA tissue specificity": "Tissue enhanced",
+ "Secretome location": null,
+ "Subcellular additional location": null,
+ "Subcellular main location": null
 }

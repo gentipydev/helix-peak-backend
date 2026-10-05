@@ -6,9 +6,16 @@
   "Erythrocytes": "521402.5"
  },
  "RNA single cell type specificity": "Cell type enriched",
+ "RNA tissue cell type enrichment": [
+  "Liver - Erythroid cells",
+  "Spleen - Erythrocytes"
+ ],
  "RNA tissue distribution": "Detected in all",
  "RNA tissue specific nTPM": {
   "bone marrow": "125480.9"
  },
- "RNA tissue specificity": "Tissue enriched"
+ "RNA tissue specificity": "Tissue enriched",
+ "Secretome location": null,
+ "Subcellular additional location": null,
+ "Subcellular main location": null
 }

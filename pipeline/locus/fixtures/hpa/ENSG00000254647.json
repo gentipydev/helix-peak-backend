@@ -6,9 +6,16 @@
   "Pancreatic islet cells": "83209.9"
  },
  "RNA single cell type specificity": "Cell type enriched",
+ "RNA tissue cell type enrichment": [
+  "Adrenal gland - Adrenal medulla cells",
+  "Pancreas - Beta cells"
+ ],
  "RNA tissue distribution": "Detected in many",
  "RNA tissue specific nTPM": {
   "pancreas": "12197.1"
  },
- "RNA tissue specificity": "Tissue enriched"
+ "RNA tissue specificity": "Tissue enriched",
+ "Secretome location": "Secreted to blood",
+ "Subcellular additional location": null,
+ "Subcellular main location": null
 }

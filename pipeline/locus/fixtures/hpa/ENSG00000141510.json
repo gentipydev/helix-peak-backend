@@ -4,7 +4,18 @@
  "RNA single cell type distribution": "Detected in many",
  "RNA single cell type specific nCPM": null,
  "RNA single cell type specificity": "Low cell type specificity",
+ "RNA tissue cell type enrichment": [
+  "Stomach - Mitotic cells (Stomach)"
+ ],
  "RNA tissue distribution": "Detected in all",
  "RNA tissue specific nTPM": null,
- "RNA tissue specificity": "Low tissue specificity"
+ "RNA tissue specificity": "Low tissue specificity",
+ "Secretome location": null,
+ "Subcellular additional location": [
+  "Vesicles",
+  "Cytosol"
+ ],
+ "Subcellular main location": [
+  "Nucleoplasm"
+ ]
 }

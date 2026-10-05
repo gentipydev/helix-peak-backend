@@ -18,7 +18,11 @@ For each target, the payload under `pipeline/data/assets/locus/`:
   that names its transcript names the one the span is;
 - reads the Atlas as it reads itself: its categories for how specific the
   gene's RNA is, and the tissues and cell types named, highest first, only
-  where the gene is specific to something;
+  where the gene is specific to something, each by a name the Atlas lists;
+  its tissue cell type pairs, each a tissue it lists and a cell type; where
+  in a cell and where it is secreted to, in the Atlas's own words;
+- takes the zoom's path the rule takes (`path_of`), recomputed from the
+  readings, with a class for its cell;
 - says where it came from: each UCSC table's genome, update time and
   digest, the MANE release, the UniProt release, and the Protein Atlas
   version, release date, Ensembl version and licence.
@@ -50,7 +54,10 @@ from pipeline.locus.bake_locus import (  # noqa: E402
     UNSPECIFIC,
     locus_asset,
     locus_of,
+    path_of,
 )
+from pipeline.locus.cell_types import CLASSES, SECRETOME, SUBCELLULAR, single  # noqa: E402
+from pipeline.locus.tissues import pair_tissue, tissue_name  # noqa: E402
 from pipeline.paths import DATA  # noqa: E402
 from pipeline.targets import Target  # noqa: E402
 
@@ -177,6 +184,53 @@ def problems_of(target: Target, track: dict | None = None) -> list[str]:
             out.append(f"{where}: {key} is {specificity}, yet names {len(specific)}")
         if specificity not in UNSPECIFIC and specificity in categories and not specific:
             out.append(f"{where}: {key} is {specificity}, yet names none")
+        for found in specific:
+            name = found.get("name")
+            if not isinstance(name, str):
+                continue
+            known = tissue_name(name) if key == "tissue" else single(name)
+            if known is None:
+                out.append(f"{where}: {key} {name!r} is not a name the Atlas lists")
+    pairs = expression.get("tissue_cell_type")
+    if not isinstance(pairs, list):
+        out.append(f"{where}: tissue_cell_type names no list")
+        pairs = []
+    for pair in pairs:
+        tissue, cell = (pair or {}).get("tissue"), (pair or {}).get("cell_type")
+        if not isinstance(tissue, str) or pair_tissue(tissue) is None:
+            out.append(f"{where}: tissue cell type tissue {tissue!r} is not one the Atlas lists")
+        if not isinstance(cell, str) or not cell:
+            out.append(f"{where}: tissue cell type in {tissue!r} names no cell type")
+    subcellular = expression.get("subcellular")
+    if not isinstance(subcellular, dict):
+        out.append(f"{where}: subcellular names no locations")
+    else:
+        for part in ("main", "additional"):
+            locations = subcellular.get(part)
+            if not isinstance(locations, list):
+                out.append(f"{where}: subcellular {part} is not a list")
+                continue
+            for location in locations:
+                if location not in SUBCELLULAR:
+                    out.append(f"{where}: subcellular {part} {location!r} is not the Atlas's word")
+    secretome = expression.get("secretome", "absent")
+    if secretome is not None and secretome not in SECRETOME:
+        out.append(f"{where}: secretome {secretome!r} is not the Atlas's word")
+
+    # The zoom's path, as the rule takes it from those readings.
+    path = track.get("path")
+    if not isinstance(path, dict):
+        out.append(f"{where}: no path")
+    else:
+        try:
+            want = path_of(expression)
+        except (KeyError, LookupError, TypeError, ValueError) as exc:
+            out.append(f"{where}: the path's readings do not resolve: {exc}")
+        else:
+            if path != want:
+                out.append(f"{where}: path is {path!r}, the rule takes {want!r}")
+            if path.get("cell_type") is not None and path.get("cell_class") not in CLASSES:
+                out.append(f"{where}: path cell class {path.get('cell_class')!r}")
 
     # Where it came from.
     sources = track.get("sources") or {}

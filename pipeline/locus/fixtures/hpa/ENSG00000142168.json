@@ -9,9 +9,23 @@
   "Oocytes": "1662.4"
  },
  "RNA single cell type specificity": "Cell type enhanced",
+ "RNA tissue cell type enrichment": [
+  "Adipose subcutaneous - Adipocytes (Subcutaneous)",
+  "Heart muscle - Cardiomyocytes",
+  "Liver - Hepatocytes",
+  "Testis - Spermatogonia",
+  "Thyroid gland - Thyroid glandular cells"
+ ],
  "RNA tissue distribution": "Detected in all",
  "RNA tissue specific nTPM": {
   "liver": "1537.1"
  },
- "RNA tissue specificity": "Tissue enhanced"
+ "RNA tissue specificity": "Tissue enhanced",
+ "Secretome location": null,
+ "Subcellular additional location": [
+  "Cytosol"
+ ],
+ "Subcellular main location": [
+  "Nucleoplasm"
+ ]
 }
