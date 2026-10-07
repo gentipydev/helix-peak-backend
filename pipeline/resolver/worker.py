@@ -9,7 +9,8 @@ and either can be run by hand on any machine with the same credentials.
 
 What ends a request or a bake, and how the reader hears of it:
 
-- A refusal -- the resolver's `Refused`, or the scorer's own `ValueError` (its
+- A refusal -- the resolver's `Refused`, the uploader's gate declining the
+  record it built (`Declined`), or the scorer's own `ValueError` (its
   alignment gate, its budget, a sequence that is not the record's) -- is final
   for this resolver version. The request or the track says `refused`, with
   the sentence why.
@@ -31,6 +32,11 @@ from pipeline.targets import Target
 Score = Callable[[Target, bytes], bytes]
 
 
+class Declined(ValueError):
+    """The uploader's gate turned a payload down. It would turn the same bytes
+    down again, so this is never worth another try."""
+
+
 def _said(error: BaseException) -> str:
     """An exception as one line a request or a track can carry."""
     text = " ".join(str(error).split()) or type(error).__name__
@@ -43,9 +49,13 @@ def stage(storage, kind: str, target: Target, payload: bytes) -> dict:
     The uploader's own gate (`upload_tracks.validate`) decides what is
     storable and what its provenance says, and the object is named as the
     uploader names it, `<kind>/<slug>.<sha12>.json`, so a track resolved on
-    demand cannot be told from one uploaded by hand.
+    demand cannot be told from one uploaded by hand. A payload the gate turns
+    down raises `Declined`, and nothing is stored.
     """
-    provenance = upload_tracks.validate(kind, target, payload)
+    try:
+        provenance = upload_tracks.validate(kind, target, payload)
+    except ValueError as exc:
+        raise Declined(str(exc)) from exc
     digest = hashlib.sha256(payload).hexdigest()
     path = f"{kind}/{target.slug}.{digest[:12]}.json"
     storage.put(store.TRACKS_BUCKET, path, payload, "application/json")
@@ -73,7 +83,12 @@ def resolve_next(conn, storage, *, fetch_entry=uniprot.fetch_entry) -> Optional[
             raise Refused(f"The protein index no longer holds {request['uniprot']} "
                           f"made by {request['gene']}.")
         resolution = resolve(row, fetch_entry(row.uniprot), mane_release=store.mane_release(conn))
-        record = stage(storage, "record", resolution.target, resolution.record)
+        try:
+            record = stage(storage, "record", resolution.target, resolution.record)
+        except Declined as exc:
+            # This resolver builds the same record for this gene every time,
+            # so the gate's verdict on it is a refusal, not a failure to retry.
+            raise Refused(str(exc)) from exc
         store.write_resolution(conn, request["id"], resolution, record, RESOLVER_VERSION)
         return {**outcome, "state": "done", "slug": resolution.target.slug}
     except Refused as exc:

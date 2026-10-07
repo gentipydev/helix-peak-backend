@@ -36,6 +36,7 @@ os.environ.setdefault("NCBI_EMAIL", "tests@example.com")
 
 from pipeline.resolver import store, worker  # noqa: E402
 from pipeline.resolver.test_resolve import INS, _body, _mutated  # noqa: E402
+from pipeline.resolver.test_worker import _another_genes_record  # noqa: E402
 
 MIGRATIONS = sorted((BACKEND / "migrations").glob("0*.sql"))
 
@@ -220,6 +221,22 @@ def test_a_refused_protein_writes_nothing_but_the_reason(conn, offline):
     state, reason, version = _one(conn, "select state, reason, resolver_version from resolve_request")
     assert state == "refused" and "at 4 residues" in reason and version == 1
     assert _one(conn, "select count(*) from protein") == (0,)
+
+
+def test_a_record_the_upload_gate_declines_is_refused_once(conn, offline, monkeypatch):
+    monkeypatch.setattr(worker, "resolve", _another_genes_record)
+    storage = Storage()
+    _ask(conn)
+    outcome = worker.resolve_next(conn, storage, fetch_entry=lambda accession: offline(_body()))
+
+    assert outcome["state"] == "refused"
+    state, reason, attempts, version = _one(
+        conn, "select state, reason, attempts, resolver_version from resolve_request")
+    assert (state, attempts, version) == ("refused", 1, 1) and "expected 'INS'" in reason
+    assert _one(conn, "select count(*) from protein") == (0,)
+    assert storage.objects == {}
+    # Nothing is left on the queue to try again.
+    assert worker.resolve_next(conn, storage, fetch_entry=lambda accession: offline(_body())) is None
 
 
 def test_an_unreachable_uniprot_is_retried_then_failed(conn, offline):
