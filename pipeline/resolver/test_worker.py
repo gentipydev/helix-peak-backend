@@ -111,8 +111,15 @@ def test_a_failed_alignment_gate_is_told_as_a_sentence():
     said = worker._refusal(ValueError(
         "Alignment gate FAILED: 48.2% before, 51.0% after. No JSON written. "
         "Inspect token offsets and how scores are filed before any UI work."))
-    assert said == ("ESM-2's scores failed the check that each is filed under its own residue "
-                    "(48.2% and 51.0% where more than half is needed), so they are not drawn.")
+    assert said == (
+        "ESM-2 prefers the residue that is there to the one before it 48.2% of the time, "
+        "and to the one after it 51.0%. More than half is needed to check that its scores "
+        "sit on their own residues, and a protein the model knows little about falls short. "
+        "The scores are not drawn.")
+    # What was measured, and no claim that anything was misfiled. As long as
+    # any other reason is allowed to be, at its longest.
+    assert "filed" not in said
+    assert len(said.replace("48.2%", "100.0%").replace("51.0%", "100.0%")) <= 300
 
 
 def test_any_other_refusal_is_its_own_message_on_one_line():

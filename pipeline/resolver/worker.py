@@ -104,12 +104,22 @@ def resolve_next(conn, storage, *, fetch_entry=uniprot.fetch_entry) -> Optional[
 
 
 def _refusal(error: ValueError) -> str:
-    """The scorer's refusals, as the sentence a reader is shown."""
+    """The scorer's refusals, as the sentence a reader is shown.
+
+    A failed alignment gate is told as what was measured, never as scores
+    misfiled. The gate cannot tell a track shifted by a position from a
+    protein ESM-2 knows too little about to prefer its own residues, and among
+    proteins resolved on demand it is the second that turns up: micropeptides
+    and orphan proteins fall short, while a familiar one of 25 residues clears
+    it (`README.md` has the measurement).
+    """
     found = re.search(r"Alignment gate FAILED: ([\d.]+%) before, ([\d.]+%) after", str(error))
     if found:
-        return (f"ESM-2's scores failed the check that each is filed under its own residue "
-                f"({found.group(1)} and {found.group(2)} where more than half is needed), "
-                f"so they are not drawn.")
+        return (f"ESM-2 prefers the residue that is there to the one before it "
+                f"{found.group(1)} of the time, and to the one after it {found.group(2)}. "
+                f"More than half is needed to check that its scores sit on their own "
+                f"residues, and a protein the model knows little about falls short. "
+                f"The scores are not drawn.")
     return _said(error)
 
 

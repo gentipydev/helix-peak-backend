@@ -195,7 +195,8 @@ def test_a_scorer_refusal_is_said_on_the_track(conn, offline):
     state, reason = _one(conn, "select state, reason from protein_track "
                                "where slug = 'ins' and kind = 'constraint'")
     assert state == "refused"
-    assert reason.startswith("ESM-2's scores failed the check") and "40.0% and 45.0%" in reason
+    assert reason.startswith("ESM-2 prefers the residue that is there to the one before it 40.0%")
+    assert "to the one after it 45.0%" in reason and reason.endswith("The scores are not drawn.")
     assert _one(conn, "select state from bake_job") == ("failed",)
 
 

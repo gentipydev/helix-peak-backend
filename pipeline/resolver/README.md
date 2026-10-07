@@ -53,6 +53,16 @@ rule; in short:
   model's tracks, so no app change is needed for them. A protein that fails the
   gate has its constraint track `refused`, with the reason.
 
+  The gate was written to catch scores filed a position off, and each of the
+  twenty clears it, the lowest at 64.9%. It also falls short where ESM-2 knows
+  little about a protein, and it cannot tell the two apart. Of 34 buildable
+  proteins of 150 residues or fewer, resolved live and scored on the dev Mac on
+  2026-10-07, nine fell short: six of the eight of 40 residues or fewer, but
+  also AKAIN1 (69 residues, 38.7%) and FAM24B (94, 43.8%), while RPL41, 25
+  residues, cleared it at 95.2%. So the reason says what was measured, how
+  often the model prefers the residue that is there to its neighbour's, and
+  does not say the scores were misfiled (`worker._refusal`).
+
 On insulin, which is one of the twenty, the automatic row reproduces the
 hand-written one: the same cut, short names, cleavage sites, numbering and
 disulfides (`test_resolve.py`).
