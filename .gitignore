@@ -16,3 +16,7 @@ venv/
 # checkpoints are ignored by the .gitignore beside each of them.
 pipeline/data/
 .esm-venv/
+
+# The Modal client's environment, made to deploy the resolver
+# (pipeline/resolver/README.md).
+.modal-venv/
