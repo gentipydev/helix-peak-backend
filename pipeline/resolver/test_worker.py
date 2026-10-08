@@ -12,7 +12,7 @@ BACKEND = Path(__file__).resolve().parents[2]
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
-from pipeline.resolver import store, worker  # noqa: E402
+from pipeline.resolver import scoring, store, worker  # noqa: E402
 from pipeline.resolver.resolve import resolve  # noqa: E402
 from pipeline.resolver.test_resolve import INS, _body  # noqa: E402
 
@@ -126,3 +126,11 @@ def test_any_other_refusal_is_its_own_message_on_one_line():
     assert worker._refusal(ValueError("ins asset is 1,000 bytes,\n over its budget")) == \
         "ins asset is 1,000 bytes, over its budget"
     assert len(worker._said(RuntimeError("x" * 1000))) == 300
+
+
+def test_the_worker_scores_with_the_function_the_scorers_environment_imports():
+    # One function, not a copy of it: what Modal calls in the worker's own
+    # process is what an environment holding only the scorer calls.
+    assert worker.score_with_esm is scoring.score_with_esm
+    assert worker.score_next.__kwdefaults__["score"] is scoring.score_with_esm
+    assert worker.score_all.__kwdefaults__["score"] is scoring.score_with_esm

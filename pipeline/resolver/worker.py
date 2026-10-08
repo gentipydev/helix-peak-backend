@@ -27,6 +27,7 @@ from typing import Callable, Optional
 from pipeline import uniprot, upload_tracks
 from pipeline.resolver import store
 from pipeline.resolver.resolve import RESOLVER_VERSION, Refused, resolve, target_of
+from pipeline.resolver.scoring import score_with_esm
 from pipeline.targets import Target
 
 Score = Callable[[Target, bytes], bytes]
@@ -121,25 +122,6 @@ def _refusal(error: ValueError) -> str:
                 f"residues, and a protein the model knows little about falls short. "
                 f"The scores are not drawn.")
     return _said(error)
-
-
-def score_with_esm(target: Target, record: bytes) -> bytes:
-    """The constraint track, from the unchanged scorer, for the record given.
-
-    The scorer reads the protein out of the record where the bakes keep it
-    (`paths.DATA`) and writes its track beside it; both are put there and read
-    back here. Torch is imported inside the scorer, so this module is cheap to
-    import where no GPU is.
-    """
-    from pipeline.constraint import score_protein
-    from pipeline.targets import ESM_CONTEXT_RESIDUES
-
-    source = score_protein.DATA / target.mock_asset
-    source.parent.mkdir(parents=True, exist_ok=True)
-    source.write_bytes(record)
-    destination = score_protein.DATA / target.constraint_asset
-    score_protein.score_protein(target, destination, ESM_CONTEXT_RESIDUES)
-    return destination.read_bytes()
 
 
 def score_next(conn, storage, *, score: Score = score_with_esm) -> Optional[dict]:

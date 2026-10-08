@@ -55,6 +55,7 @@ def test_the_scorer_image_is_built_from_the_scorers_own_lock():
 def test_only_code_goes_up():
     sent = _uploaded(PIPELINE)
     assert {"resolver/resolve.py", "resolver/worker.py", "resolver/store.py",
+            "resolver/scoring.py",
             "mock/build_gene_record.py", "constraint/score_protein.py",
             "upload_tracks.py", "seed_catalog.py", "targets.py"} <= sent
     assert all(path.endswith(".py") for path in sent)
