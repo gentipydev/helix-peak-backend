@@ -222,16 +222,12 @@ def normalisation(meshes: dict) -> tuple[np.ndarray, np.ndarray]:
     return (low + high) / 2, (high - low)
 
 
-def bake(target: Target) -> None:
-    structure = target.structure
-    workspace = OUTPUT / target.slug
-    if workspace.exists():
-        shutil.rmtree(workspace)
-    workspace.mkdir(parents=True)
-
-    print(f"{target.slug} <- {structure.pdb}", flush=True)
-    origin, meshes = export(target, workspace)
-
+def assemble(slug: str, meshes: dict) -> trimesh.Scene:
+    """The model the exported meshes make: normalised, one node a mesh, in the
+    order given. What `bake` writes for the twenty, and what a model made from
+    another source (`alphafold.py`) is written with, so that the two are cut
+    to one measure.
+    """
     centre, extent = normalisation(meshes)
     scale = 1.0 / extent.max()
     print(f"  pre  {extent[0]:.2f} x {extent[1]:.2f} x {extent[2]:.2f} A", flush=True)
@@ -248,7 +244,20 @@ def bake(target: Target) -> None:
     low2, high2 = after.min(axis=0), after.max(axis=0)
     spread, middle = high2 - low2, (low2 + high2) / 2
     if abs(spread.max() - 1.0) > 1e-6 or np.abs(middle).max() > 1e-6:
-        raise ValueError(f"{target.slug}: normalisation left {spread} centred at {middle}")
+        raise ValueError(f"{slug}: normalisation left {spread} centred at {middle}")
+    return scene
+
+
+def bake(target: Target) -> None:
+    structure = target.structure
+    workspace = OUTPUT / target.slug
+    if workspace.exists():
+        shutil.rmtree(workspace)
+    workspace.mkdir(parents=True)
+
+    print(f"{target.slug} <- {structure.pdb}", flush=True)
+    origin, meshes = export(target, workspace)
+    scene = assemble(target.slug, meshes)
 
     staged = workspace / f"{target.slug}.glb"
     scene.export(staged)
