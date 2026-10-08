@@ -16,6 +16,8 @@ What ends a request or a bake, and how the reader hears of it:
   the sentence why.
 - Anything else (NCBI or UniProt not answering, a storage hiccup) is tried
   again, up to `store.MAX_ATTEMPTS` times, and then fails, saying so.
+- A stop by the reader who asked (`Stopped`) ends a scoring where it is. The
+  service has already written it on the rows, so nothing more is.
 """
 
 from __future__ import annotations
@@ -87,6 +89,15 @@ def score_in_process(target: Target, record: bytes, report: Report) -> bytes:
     progress the scorer prints passed to `report` as it prints it."""
     with contextlib.redirect_stdout(_ProgressTee(sys.stdout, report)):
         return score_with_esm(target, record)
+
+
+class Stopped(Exception):
+    """The reader who asked stopped the bake (`POST /proteins/resolve/{gene}/stop`).
+
+    The service has already said so on its rows: the job is `stopped` and its
+    track `absent`. It is raised out through the scorer, which ends, and
+    nothing is written after it.
+    """
 
 
 class Declined(ValueError):
@@ -180,16 +191,36 @@ def _refusal(error: ValueError) -> str:
     return _said(error)
 
 
-def _reporter(conn, job_id: int) -> Report:
+class _Reporter:
     """`Report` for one job: its progress written where a reader asking after
-    the protein reads it. A write that fails costs the bake nothing; the next
-    line tries again, and the track is what the bake is for."""
-    def report(done: int, total: int, left: float) -> None:
+    the protein reads it, and a stop noticed there.
+
+    A write that fails costs the bake nothing; the next line tries again, and
+    the track is what the bake is for. A job no longer running has been
+    stopped, and `Stopped` is raised.
+    """
+
+    def __init__(self, conn, job_id: int):
+        self._conn = conn
+        self._job = job_id
+
+    def __call__(self, done: int, total: int, left: float) -> None:
         try:
-            store.note_progress(conn, job_id, done, total, left)
+            running = store.note_progress(self._conn, self._job, done, total, left)
         except Exception:  # noqa: BLE001 -- see the docstring
-            pass
-    return report
+            return
+        if not running:
+            raise Stopped()
+
+    def check(self) -> None:
+        """Between two progress lines: `Stopped` once the job has been stopped.
+        A scorer that can ask (the Mac's) asks this while the model loads."""
+        try:
+            running = store.still_running(self._conn, self._job)
+        except Exception:  # noqa: BLE001 -- as a write that fails
+            return
+        if not running:
+            raise Stopped()
 
 
 def score_next(conn, storage, *, score: Score = score_in_process) -> Optional[dict]:
@@ -207,10 +238,12 @@ def score_next(conn, storage, *, score: Score = score_in_process) -> Optional[di
         if hashlib.sha256(record).hexdigest() != record_row["sha256"]:
             raise RuntimeError("The stored record does not match the sha256 its row carries.")
         target = target_of(protein)
-        report = _reporter(conn, job["id"])
+        report = _Reporter(conn, job["id"])
         track = stage(storage, "constraint", target, score(target, record, report))
         store.finish_bake(conn, job["id"], track)
         return {**outcome, "state": "ready"}
+    except Stopped:
+        return {**outcome, "state": "stopped"}
     except (Refused, ValueError) as exc:
         reason = _refusal(exc) if isinstance(exc, ValueError) else _said(exc)
         store.refuse_bake(conn, job["id"], job["slug"], "constraint", reason)

@@ -340,7 +340,9 @@ class Scorer:
         The scorer's last progress line goes to the log every
         `_PROGRESS_EVERY` seconds, and to `report` (`worker.Report`), where
         there is one, every `_REPORT_EVERY`: a reader watching the protein
-        build is told sooner than the log needs to be.
+        build is told sooner than the log needs to be. `report` raises
+        `worker.Stopped` once the reader who asked has stopped the bake, and
+        the scorer is ended on the way out.
         """
         from pipeline.resolver.worker import progress_of
 
@@ -366,6 +368,10 @@ class Scorer:
                 if found is not None and found[:2] != told:
                     told = found[:2]
                     report(*found)
+                elif callable(getattr(report, "check", None)):
+                    # No new line (the model loading, a long window): a stop
+                    # is still heard within the interval.
+                    report.check()
             if now >= report_at:
                 report_at = now + _PROGRESS_EVERY
                 progress = _PROGRESS.findall(_read(printed))

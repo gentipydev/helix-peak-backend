@@ -182,4 +182,51 @@ def test_progress_that_cannot_be_written_costs_the_bake_nothing():
         def execute(self, *args):
             raise OSError("server closed the connection unexpectedly")
 
-    worker._reporter(Unreachable(), 7)(450, 838, 245.0)
+    report = worker._Reporter(Unreachable(), 7)
+    report(450, 838, 245.0)
+    report.check()
+
+
+class _Rows:
+    """A connection whose bake is in `state`: what the reporter's two
+    statements read back."""
+
+    def __init__(self, state):
+        self.state = state
+
+    def execute(self, sql, params=None):
+        flat = " ".join(sql.split())
+        running = self.state == "running"
+
+        class Cursor:
+            def fetchone(cursor):
+                if flat.startswith("update bake_job set progress_done"):
+                    return (7,) if running else None
+                return (self.state,)
+
+        return Cursor()
+
+
+def test_a_bake_the_reader_stopped_is_stopped_at_its_next_line_or_check():
+    running = worker._Reporter(_Rows("running"), 7)
+    running(450, 838, 245.0)
+    running.check()
+
+    stopped = worker._Reporter(_Rows("stopped"), 7)
+    with pytest.raises(worker.Stopped):
+        stopped(475, 838, 230.0)
+    with pytest.raises(worker.Stopped):
+        stopped.check()
+
+
+def test_a_stop_printed_through_is_raised_out_of_the_scorer(monkeypatch):
+    def scorer(target, record):
+        print("Scored 25/838 (15.9s, 8.6 min left)", flush=True)
+        raise AssertionError("the scorer went on after it was stopped")
+
+    def stopped(*said):
+        raise worker.Stopped()
+
+    monkeypatch.setattr(worker, "score_with_esm", scorer)
+    with pytest.raises(worker.Stopped):
+        worker.score_in_process("target", b"record", stopped)

@@ -343,6 +343,29 @@ def test_a_reader_is_told_how_far_esm2_has_got_sooner_than_the_log(tmp_path, mon
     assert not [r for r in caplog.records if "Scored" in r.getMessage()]
 
 
+def test_a_stop_heard_between_lines_ends_the_scorer(tmp_path, monkeypatch, spawned):
+    monkeypatch.setattr(local_worker, "_REPORT_EVERY", 0.05)
+    # The model loading: nothing printed for a long while.
+    python = fake_python(tmp_path, "import time; time.sleep(120)")
+
+    class Report:
+        checks = 0
+
+        def __call__(self, done, total, left):
+            raise AssertionError("no line was printed")
+
+        def check(self):
+            Report.checks += 1
+            if Report.checks >= 3:
+                raise worker.Stopped()
+
+    with pytest.raises(worker.Stopped):
+        local_worker.Scorer(make_settings(tmp_path, python), threading.Event())(
+            INS, RECORD, Report())
+    assert Report.checks == 3
+    assert len(spawned) == 1 and spawned[0].poll() is not None
+
+
 @pytest.mark.parametrize("body, said", [
     ("sys.exit(0)", "The scorer exited with status 0 and wrote no track."),
     ("sys.exit(3)", "The scorer exited with status 3 and gave no reason."),

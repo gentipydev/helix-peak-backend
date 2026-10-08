@@ -46,13 +46,14 @@ class FakeCursor:
 
 class FakePool:
     def __init__(self, ranked=(), near=(), release=("2026_03", "v1.5"), failing=False,
-                 building=()):
+                 building=(), stopped=()):
         self.ranked = list(ranked)
         self.near = list(near)
         self.release = release
         self.failing = failing
-        # Genes, lower-cased, with a build under way.
+        # Genes, lower-cased, with a build under way, and whose scoring was stopped.
         self.building = list(building)
+        self.stopped = list(stopped)
         self.statements = []
 
     def connection(self):
@@ -75,8 +76,10 @@ class FakePool:
             return FakeCursor(self.near)
         if "from protein_index_release" in flat:
             return FakeCursor([self.release] if self.release else [])
-        if flat.startswith("select lower(gene) from resolve_request"):
-            return FakeCursor([(gene,) for gene in self.building if gene in params["genes"]])
+        if flat.startswith("select lower(gene), 'building' from resolve_request"):
+            return FakeCursor(
+                [(gene, "building") for gene in self.building if gene in params["genes"]]
+                + [(gene, "stopped") for gene in self.stopped if gene in params["genes"]])
         return FakeCursor([])
 
 
@@ -143,8 +146,16 @@ def test_a_protein_being_built_says_so_whatever_its_status(client, fake_pool):
         ("INSR", "buildable", True), ("TP53BP2", "unavailable", False),
     ]
     (asked,) = [params for flat, params in pool.statements
-                if flat.startswith("select lower(gene) from resolve_request")]
+                if flat.startswith("select lower(gene), 'building' from resolve_request")]
     assert asked == {"genes": ["b2m", "ins", "insr", "tp53bp2"]}
+
+
+def test_a_protein_whose_scoring_was_stopped_says_so(client, fake_pool):
+    fake_pool(ranked=[READY, BUILDABLE], stopped=["b2m"])
+    body = client.get("/proteins/suggest?q=ins").json()
+    assert [(s["gene"], s["status"], s["building"], s["stopped"]) for s in body["suggestions"]] == [
+        ("B2M", "ready", False, True), ("INSR", "buildable", False, False),
+    ]
 
 
 def test_no_gene_no_question_about_builds(client, fake_pool):

@@ -19,6 +19,7 @@ from .schemas import (
     ResolveRequest,
     ResolveResponse,
     SearchResponse,
+    StopRequest,
     SuggestResponse,
     Track,
 )
@@ -212,7 +213,7 @@ def request_resolve(
     """
     try:
         with _catalog_errors():
-            said, queued = resolves.request(asked.gene.strip(), asked.taxon)
+            said, queued = resolves.request(asked.gene.strip(), asked.taxon, asked.asker)
     except resolves.DailyCapReached:
         raise HTTPException(
             status_code=429,
@@ -225,6 +226,28 @@ def request_resolve(
         background.add_task(resolves.wake)
     if said["state"] == "pending":
         response.status_code = 202
+    return said
+
+
+@router.post("/proteins/resolve/{gene}/stop", response_model=ResolveResponse)
+def stop_resolve(gene: str, asked: StopRequest) -> dict:
+    """Stop a build, for the install that asked for it (`asker`).
+
+    200 with ``stopped`` and the build as it ended; 403 where another install
+    asked; 409 where nothing a stop could end is under way, saying what is.
+    Stopped while ESM-2 scores, the protein stays built without its track, and
+    asking for it again scores it afresh.
+    """
+    try:
+        with _catalog_errors():
+            said = resolves.stop(gene.strip(), asked.asker)
+    except resolves.NotYours:
+        raise HTTPException(status_code=403,
+                            detail="Only the phone that asked for it can stop it.")
+    except resolves.NothingToStop as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    if said is None:
+        raise _not_indexed(gene)
     return said
 
 

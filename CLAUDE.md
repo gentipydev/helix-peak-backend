@@ -38,7 +38,7 @@ differs from storage. A mismatch means the refactor changed data. Stop; never up
 
 - Is: `/gene/{id}/{gene}` (read-through cache of whole records), `/catalog`, `/catalog/search`,
   `/protein/{slug}`, `/protein/{slug}/tracks`, `/proteins/suggest`, `/proteins/resolve` (POST,
-  and GET `/{gene}`), `.../impact-explanations`, `/assembly/{slug}/tracks`, `/health`, `/health/db`.
+  GET `/{gene}`, and POST `/{gene}/stop`), `.../impact-explanations`, `/assembly/{slug}/tracks`, `/health`, `/health/db`.
   It writes `genbank_record`, and one `resolve_request` row per new ask. It names bytes and never carries
   them: a ready track resolves to a public Supabase storage URL the client fetches directly.
 - Is not: authenticated (there is no auth), rate limited (Biopython's ~0.37 s spacing between
@@ -70,7 +70,8 @@ differs from storage. A mismatch means the refactor changed data. Stop; never up
 - `resolves.py`: `/proteins/resolve`. What an ask means (ready, pending, refused, failed, unavailable,
   buildable), the `resolve_request` row, the daily cap and the best-effort wake, and how far a
   build has got (`build`: step, residues scored, seconds left), read from the request and the
-  constraint bake's progress (`0010`), which the worker writes as the scorer prints it.
+  constraint bake's progress (`0010`), which the worker writes as the scorer prints it; and
+  stopping a build for the install that asked (`asker`, `0011`).
 - `schemas.py`: pydantic response models that mirror the Dart entities field for field.
 - `router.py`: every non-health endpoint, with the NCBI 404/502 and catalog 503 mappings.
 

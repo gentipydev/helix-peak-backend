@@ -12,6 +12,8 @@ type instead. A suggestion says what the app can do with the protein today:
 or a constraint bake not yet over. A protein is ``ready`` once its row is
 written, minutes before ESM-2 has scored it, and a walk opened then keeps the
 track it read as pending; so the app watches the build instead of opening it.
+``stopped`` is true for one whose scoring the reader who asked stopped: it
+opens unscored, and asking for it again scores it.
 
 Ranking is in tiers. An exact match of a whole term comes first -- an
 accession, a symbol, a synonym or a name, never one word of a name -- then a
@@ -98,20 +100,26 @@ limit %(limit)s
 
 _RELEASE = "select uniprot, mane from protein_index_release"
 
-# Which of these genes have a build under way: a request not yet resolved, or a
-# protein resolved on demand whose ESM-2 bake is not over.
-_BUILDING = """
-select lower(gene) from resolve_request
+# Which of these genes have a build under way (a request not yet resolved, or a
+# protein resolved on demand whose latest ESM-2 bake is not over), and which a
+# reader stopped while ESM-2 scored, with nothing on the track since.
+_BUILDS = """
+select lower(gene), 'building' from resolve_request
 where state in ('queued', 'running') and lower(gene) = any(%(genes)s)
 union
-select lower(p.gene) from protein p
-join bake_job j on j.slug = p.slug and j.kind = 'constraint'
-where j.state in ('queued', 'running') and p.catalog_order is null
-  and lower(p.gene) = any(%(genes)s)
+select lower(p.gene), case when j.state = 'stopped' then 'stopped' else 'building' end
+from protein p
+join lateral (
+    select b.state from bake_job b where b.slug = p.slug and b.kind = 'constraint'
+    order by b.requested_at desc, b.id desc limit 1
+) j on true
+join protein_track t on t.slug = p.slug and t.kind = 'constraint'
+where p.catalog_order is null and lower(p.gene) = any(%(genes)s)
+  and (j.state in ('queued', 'running') or (j.state = 'stopped' and t.state = 'absent'))
 """
 
 
-def _suggestion(row, building: bool = False) -> dict:
+def _suggestion(row, building: bool = False, stopped: bool = False) -> dict:
     (uniprot, gene, name, length, buildable, reason,
      slug, display, catalog_order) = row[:9]
     if catalog_order is not None:
@@ -134,6 +142,7 @@ def _suggestion(row, building: bool = False) -> dict:
         "status": status,
         "reason": reason,
         "building": building,
+        "stopped": stopped,
     }
 
 
@@ -162,10 +171,11 @@ def suggest(query: str, limit: int = 12) -> Dict:
                 rows = conn.execute(_FUZZY, params).fetchall()
             release = conn.execute(_RELEASE).fetchone()
             genes = sorted({row[1].lower() for row in rows if row[1]})
-            building = set()
+            said = []
             if genes:
-                building = {found[0] for found in
-                            conn.execute(_BUILDING, {"genes": genes}).fetchall()}
+                said = conn.execute(_BUILDS, {"genes": genes}).fetchall()
+            building = {gene for gene, what in said if what == "building"}
+            stopped = {gene for gene, what in said if what == "stopped"} - building
     except Exception as exc:
         logger.exception("Protein index search failed for %r", query)
         raise CatalogUnavailable("The protein index could not be searched.") from exc
@@ -174,6 +184,8 @@ def suggest(query: str, limit: int = 12) -> Dict:
     if release is not None:
         label = "UniProt {} · MANE {}".format(release[0], release[1])
     suggestions: List[dict] = [
-        _suggestion(row, bool(row[1]) and row[1].lower() in building) for row in rows
+        _suggestion(row, bool(row[1]) and row[1].lower() in building,
+                    bool(row[1]) and row[1].lower() in stopped)
+        for row in rows
     ]
     return {"q": query, "release": label, "suggestions": suggestions}

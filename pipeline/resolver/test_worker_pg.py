@@ -334,21 +334,74 @@ def test_proteins_ahead_are_counted_in_the_order_the_worker_takes_them(
         assert resolves.current("INS")["build"]["ahead"] == 0
 
 
-def test_suggestions_know_which_proteins_are_being_built(conn, offline):
+def _builds(conn):
     from app import suggest
 
-    def building():
-        return {row[0] for row in conn.execute(
-            suggest._BUILDING, {"genes": ["ins", "b2m"]}).fetchall()}
+    return set(conn.execute(suggest._BUILDS, {"genes": ["ins", "b2m"]}).fetchall())
 
-    assert building() == set()
+
+def test_suggestions_know_which_proteins_are_being_built(conn, offline):
+    assert _builds(conn) == set()
     _ask(conn)
-    assert building() == {"ins"}  # asked for, not resolved
+    assert _builds(conn) == {("ins", "building")}  # asked for, not resolved
     storage = Storage()
     worker.resolve_next(conn, storage, fetch_entry=lambda accession: offline(_body()))
-    assert building() == {"ins"}  # resolved, its ESM-2 bake to come
+    assert _builds(conn) == {("ins", "building")}  # resolved, its ESM-2 bake to come
     worker.score_next(conn, storage, score=_constraint)
-    assert building() == set()
+    assert _builds(conn) == set()
+
+
+def test_a_build_is_stopped_by_the_phone_that_asked_and_scored_again_when_asked(
+        conn, offline, database_url, monkeypatch):
+    from app import resolves
+
+    storage = Storage()
+    with _service(database_url, monkeypatch):
+        # Stopped while queued: nothing was built, and asking again starts over.
+        resolves.request("INS", asker="install-a")
+        with pytest.raises(resolves.NotYours):
+            resolves.stop("INS", "install-b")
+        said = resolves.stop("INS", "install-a")
+        assert (said["state"], said["build"]["step"], said["build"]["stopped"]) == \
+            ("stopped", "queued", True)
+        assert resolves.current("INS")["state"] == "buildable"
+        assert worker.resolve_next(conn, storage) is None
+        with pytest.raises(resolves.NothingToStop):
+            resolves.stop("INS", "install-a")
+
+        resolves.request("INS", asker="install-a")
+        worker.resolve_next(conn, storage, fetch_entry=lambda accession: offline(_body()))
+        # The bake the resolution queued is the asker's too.
+        assert _one(conn, "select asker from bake_job where state = 'queued'") == ("install-a",)
+
+        # Stopped mid-scoring: the reader's stop lands, and the scorer hears it
+        # at its next line.
+        def scoring(target, record, report):
+            report(25, 110, 30.0)
+            said = resolves.stop("INS", "install-a")
+            assert said["build"]["reason"] == "Stopped at 25 of 110 residues."
+            report(50, 110, 20.0)
+            raise AssertionError("the scorer went on after it was stopped")
+
+        assert worker.score_next(conn, storage, score=scoring) == \
+            {"id": 1, "slug": "ins", "state": "stopped"}
+        assert _one(conn, "select state, error, progress_done from bake_job") == \
+            ("stopped", "Stopped by the reader who asked.", 25)
+        assert _one(conn, "select state from protein_track "
+                          "where slug = 'ins' and kind = 'constraint'") == ("absent",)
+        assert worker.score_next(conn, storage, score=_constraint) is None
+        assert _builds(conn) == {("ins", "stopped")}
+        said = resolves.current("INS")
+        assert (said["state"], said["build"]["stopped"]) == ("ready", True)
+
+        # Asked again, by anyone: its scoring is queued afresh, theirs to stop.
+        said, queued = resolves.request("INS", asker="install-b")
+        assert queued and said["build"]["step"] == "scoring"
+        assert _builds(conn) == {("ins", "building")}
+        assert resolves.request("INS", asker="install-c")[1] is False  # once
+        assert worker.score_next(conn, storage, score=_constraint)["state"] == "ready"
+        assert resolves.current("INS")["build"]["step"] == "done"
+        assert _builds(conn) == set()
 
 
 def test_a_refused_protein_writes_nothing_but_the_reason(conn, offline):

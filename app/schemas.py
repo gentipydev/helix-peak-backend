@@ -232,7 +232,9 @@ class Suggestion(BaseModel):
 
     ``building`` is true while a build of it is under way: asked for and not
     yet resolved (``buildable``), or resolved with its ESM-2 track still being
-    scored (``ready``, and not to be opened yet).
+    scored (``ready``, and not to be opened yet). ``stopped`` is true for one
+    resolved whose scoring the reader who asked stopped: it opens unscored, and
+    asking again scores it.
     """
 
     uniprot: str
@@ -245,6 +247,7 @@ class Suggestion(BaseModel):
     status: str
     reason: Optional[str] = None
     building: bool = False
+    stopped: bool = False
 
 
 class SuggestResponse(BaseModel):
@@ -260,6 +263,15 @@ class ResolveRequest(BaseModel):
     # The symbol `/proteins/suggest` names it by. Matched without case.
     gene: str = Field(min_length=1, max_length=64)
     taxon: int = 9606
+    # The asking install's own random id: only it may stop the build (0011).
+    asker: Optional[str] = Field(default=None, min_length=1, max_length=64)
+
+
+class StopRequest(BaseModel):
+    """The reader who asked for a build stopping it
+    (`POST /proteins/resolve/{gene}/stop`)."""
+
+    asker: str = Field(min_length=1, max_length=64)
 
 
 class BuildReport(BaseModel):
@@ -271,7 +283,8 @@ class BuildReport(BaseModel):
     or residues being scored), ``check`` (every residue scored, the alignment
     gate and the upload left) or ``done``. A step that ended without its
     result has ``reason``; a request the resolver declined says so in the
-    response's own ``state`` and ``reason`` instead.
+    response's own ``state`` and ``reason`` instead. ``stopped`` says the
+    reader who asked ended it there.
 
     Every number is the database's, so a phone's clock never enters it.
     """
@@ -289,11 +302,15 @@ class BuildReport(BaseModel):
     # The MANE Select transcript its gene record was built from.
     transcript: Optional[str] = None
     reason: Optional[str] = None
+    stopped: bool = False
+    # Seconds the scoring under way has run: what stopping it would give up.
+    ran: Optional[float] = None
 
 
 class ResolveResponse(BaseModel):
     """What a gene's protein is now: ``ready``, ``pending``, ``refused``,
-    ``failed``, ``unavailable`` or (read only) ``buildable``.
+    ``failed``, ``unavailable``, (read only) ``buildable``, or (a stop's own
+    answer only) ``stopped``.
 
     ``slug`` is where a ready protein opens, and the slug a pending or
     buildable one will take; ``reason`` says why for refused, failed and

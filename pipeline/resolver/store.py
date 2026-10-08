@@ -178,12 +178,14 @@ def write_resolution(conn, request_id: int, resolution: Resolution, record: dict
             """,
             (slug,),
         )
+        # The reader who asked may stop the scoring too (0011).
         conn.execute(
             """
-            insert into bake_job (slug, kind) values (%s, 'constraint')
+            insert into bake_job (slug, kind, asker)
+            select %s, 'constraint', asker from resolve_request where id = %s
             on conflict (slug, kind) where state in ('queued', 'running') do nothing
             """,
-            (slug,),
+            (slug, request_id),
         )
         finish_request(conn, request_id, "done", slug=slug, resolver_version=resolver_version)
 
@@ -245,18 +247,29 @@ def queued_bakes(conn, kind: str) -> int:
     ).fetchone()[0]
 
 
-def note_progress(conn, job_id: int, done: int, total: int, left: float) -> None:
+def note_progress(conn, job_id: int, done: int, total: int, left: float) -> bool:
     """How far a running bake has got: `done` of `total`, and the seconds its
     baker estimates are left. Read by `GET /proteins/resolve/{gene}`, never by
-    the worker; a job no longer running is left as it ended."""
-    conn.execute(
+    the worker; a job no longer running is left as it ended.
+
+    Returns whether the job is still running: false once the reader who asked
+    has stopped it (0011)."""
+    written = conn.execute(
         """
         update bake_job
         set progress_done = %s, progress_total = %s, progress_left = %s, progress_at = now()
         where id = %s and state = 'running'
+        returning id
         """,
         (done, total, left, job_id),
-    )
+    ).fetchone()
+    return written is not None
+
+
+def still_running(conn, job_id: int) -> bool:
+    """Whether a bake is still running: false once it has been stopped."""
+    row = conn.execute("select state from bake_job where id = %s", (job_id,)).fetchone()
+    return row is not None and row[0] == "running"
 
 
 def protein(conn, slug: str) -> Optional[dict]:

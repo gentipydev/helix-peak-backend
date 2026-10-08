@@ -92,6 +92,18 @@ running or its constraint bake is not over. It is `ready` from the moment its
 row is written, and a walk opened before ESM-2 is done would keep the pending
 track until the app restarts, so the app watches it instead.
 
+The reader who asked may stop a build (`POST /proteins/resolve/{gene}/stop`,
+`0011`). There are no accounts: the app sends its install's own random id with
+the ask (`asker`), the request keeps it, the bake its resolution queues is
+given it, and only that id may stop either. Stopped while queued, the request
+is `stopped` and nothing was built. Stopped while ESM-2 scores, the bake is
+`stopped` and the track `absent`; the worker hears it the next time it writes
+its progress, or, on the Mac, within 5 s while the model loads, and ends the
+scorer (`worker.Stopped`). The protein opens without scores, suggest marks it
+`stopped`, and asking for it again queues its scoring afresh, for whoever
+asked. A record being written (seconds) cannot be stopped, and a stop that
+lands as the track is made is too late for it.
+
 ## Deploying, once
 
 From the repository root, in order.
@@ -101,6 +113,7 @@ From the repository root, in order.
    ```sh
    .venv/bin/python scripts/apply_migration.py migrations/0009_resolve_request.sql
    .venv/bin/python scripts/apply_migration.py migrations/0010_bake_progress.sql
+   .venv/bin/python scripts/apply_migration.py migrations/0011_build_stop.sql
    ```
 
 2. **The secret.** In the Modal workspace (modal.com → Secrets → Custom), create
