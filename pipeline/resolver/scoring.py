@@ -4,7 +4,8 @@ Kept apart from `worker.py` so that an environment holding only the scorer can
 import it: `worker.py` imports the store, the resolver and Biopython, and
 `pipeline/.esm-venv`, which baked the twenty, has none of them. This imports
 `pipeline.targets` and, when called, the scorer; nothing else may be added.
-`worker.score_with_esm` is this function.
+`worker.score_with_esm` is this function, and `score_local.py` is how that
+environment is asked for it.
 """
 
 from __future__ import annotations
