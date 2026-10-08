@@ -45,8 +45,9 @@ differs from storage. A mismatch means the refactor changed data. Stop; never up
   Entrez calls is the only throttle; resolve requests alone are capped per day,
   `RESOLVES_PER_DAY`) or CORS-restricted (`allow_origins=["*"]`). It holds no
   service_role key; rows are reached through `DATABASE_URL` only. It resolves nothing itself:
-  a request is a row the resolver on Modal (`pipeline/resolver/`) works, and the service only
-  wakes it (`MODAL_WAKE_URL`, proxy auth). `/catalog/search`'s `candidates` stays empty.
+  a request is a row the resolver (`pipeline/resolver/`) works, on Modal or, until it is deployed
+  there, on the dev Mac. The service only wakes Modal's (`MODAL_WAKE_URL`, proxy auth); the Mac's
+  asks the queue every minute. `/catalog/search`'s `candidates` stays empty.
 - Only `NCBI_EMAIL` is required; with no `DATABASE_URL`, `/gene` still works and the catalog is 503.
 - `app/` stays Python 3.9-compatible (`Optional`/`List`, never `X | Y`); the image runs 3.12.
 
@@ -94,6 +95,20 @@ with the uploader's credentials in a Modal secret, calling the record builder an
 scorer unchanged. A protein it resolves is a `protein` row with a null `catalog_order` and
 `resolver_version` 1, so it never joins `/catalog`. It may never write over a curated row
 (the upsert is guarded), and a change to a baker it calls needs the same sha256 proof.
+
+Until Modal has a payment method, the worker is a launchd agent on the dev Mac:
+`local_worker.py`, the same `worker.sweep` and `worker.score_all`, with `.env` for the secret
+(`scripts/resolver_worker.sh status|stop|start|restart`; the runbook is its README). Three
+things follow for anyone working in this checkout:
+
+- It runs this working tree against production. `restart` it after a change under `pipeline/`,
+  and `stop` it before leaving the tree somewhere it cannot run from (a long rebase, an old
+  branch). While its scorer cannot start it claims no bake, so nothing is refused meanwhile.
+- Nothing is installed into `pipeline/.esm-venv`, which baked the twenty. The worker lives in
+  `.worker-venv` and runs the scorer there as a subprocess (`score_local.py`), so what that
+  imports stays `scoring.py`, `score_protein.py`, `targets.py` and `paths.py`.
+- `local_worker.py` imports nothing under `pipeline` at module level: `paths.DATA` is fixed at
+  first import, and the worker's is its own directory, never `pipeline/data/`.
 
 ## Checklist: adding a track kind
 

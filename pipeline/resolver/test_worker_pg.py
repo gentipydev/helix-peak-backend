@@ -543,6 +543,26 @@ def test_the_queue_is_read_as_lines(conn, mac):
     assert _bake_and_track(conn) == (("queued", 0, None, None), ("pending",))
 
 
+def test_a_protein_whose_scoring_broke_is_scored_once_it_is_queued_again_by_hand(conn, mac):
+    # The two statements the README gives an operator ("Operating it").
+    _ask(conn)
+    for attempt in ("first", "second", "third"):
+        mac(attempt, "sys.exit(1)")
+    assert _one(conn, "select state from protein_track where kind = 'constraint'") == ("refused",)
+    assert _one(conn, "select state from bake_job") == ("failed",)
+
+    conn.execute("update protein_track set state = 'pending', reason = null, updated_at = now() "
+                 "where slug = 'ins' and kind = 'constraint' and state = 'refused'")
+    conn.execute("insert into bake_job (slug, kind) values ('ins', 'constraint')")
+
+    done = mac("scores", SCORES_A_TRACK)
+    assert [(o["slug"], o["state"]) for o in done["scored"]] == [("ins", "ready")]
+    assert _one(conn, "select state, reason from protein_track where kind = 'constraint'") == \
+        ("ready", None)
+    assert conn.execute("select state from bake_job order by id").fetchall() == \
+        [("failed",), ("done",)]
+
+
 def test_the_queue_command_prints_the_queue_and_minds_no_reader_leaving(
         conn, database_url, tmp_path):
     import subprocess

@@ -4,8 +4,9 @@ The bake tools. They were `helix-peek/tool/` until Phase 3 of
 `HANDOFF-ONDEMAND.md`, when the app stopped carrying protein data and storage
 became the place the tracks live. Everything here runs by hand, offline, except
 [`resolver/`](resolver/README.md) (Phase 6), which runs the same record builder
-and ESM-2 scorer, unchanged, on Modal for a protein a reader asks for that the
-catalog does not list. The web service never imports any of it.
+and ESM-2 scorer, unchanged, on Modal (or on a Mac until it is deployed there)
+for a protein a reader asks for that the catalog does not list. The web service
+never imports any of it.
 
 One table drives the twenty curated proteins: [`targets.py`](targets.py). A row
 says where the gene comes from, which regions and disulfides the precursor has,

@@ -241,8 +241,9 @@ queues a new request). A read also says `buildable` for a protein nobody has
 asked for. A gene the index does not hold is a 404, and an unreadable database
 a 503.
 
-The service resolves nothing itself. The resolver runs on Modal
-([`pipeline/resolver/`](pipeline/resolver/README.md)): it makes the protein row from
+The service resolves nothing itself. The resolver
+([`pipeline/resolver/`](pipeline/resolver/README.md)) runs on Modal, or on a Mac until it
+is deployed there: it makes the protein row from
 UniProt and MANE, stores the record track, and scores ESM-2 650M on a GPU; the
 app polls `GET /proteins/resolve/{gene}`, then `/protein/{slug}/tracks` while
 the constraint track goes from `pending` to `ready`. A resolved protein has a
@@ -252,7 +253,8 @@ Two readers asking for one gene make one request. A request costs GPU time and
 the service has no auth, so a day's are capped (`RESOLVES_PER_DAY`, default
 50; past it, 429). After writing a request the service calls the resolver's
 wake URL (`MODAL_WAKE_URL`, with a Modal proxy auth token in `MODAL_KEY` and
-`MODAL_SECRET`); unset, the resolver's five-minute schedule takes it.
+`MODAL_SECRET`); unset, the resolver's five-minute schedule takes it. A Mac's
+worker is not woken: it asks the queue every minute.
 `pipeline/resolver/README.md` is the runbook.
 
 ## Rate limiting
@@ -298,9 +300,10 @@ pipeline/             the bake tools, moved from helix-peek/tool/ in Phase 3; se
   upload_tracks.py    validated tracks into storage, and their protein_track rows
   seed_catalog.py     the protein and protein_alias rows; --check diffs the live ones
   mock/ constraint/ impact/ clinvar/ structure/   one baker each
-  resolver/           Phase 6 on Modal: any buildable protein resolved on demand
+  resolver/           Phase 6: any buildable protein resolved on demand, on Modal or a Mac
 scripts/
   apply_migration.py      psql -f, for a machine without psql
+  resolver_worker.sh      the resolver's worker on this Mac, as a launchd agent
   load_protein_index.py   UniProt + MANE + LRG_RefSeqGene -> protein_index
   check_suggest.py        golden queries and warm timings against a running service
 tests/
