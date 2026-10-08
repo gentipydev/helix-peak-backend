@@ -306,6 +306,9 @@ scripts/
   resolver_worker.sh      the resolver's worker on this Mac, as a launchd agent
   load_protein_index.py   UniProt + MANE + LRG_RefSeqGene -> protein_index
   check_suggest.py        golden queries and warm timings against a running service
+  check_built.py          a built protein against the service, storage, its rows and UniProt
+  dry_resolve.py          what the resolver would build for a gene, writing nothing
+  live_resolved_check.dart  a built protein in the app; copied into helix-peek/test/ to run
 tests/
   test_gene.py            /gene against a mocked Entrez.efetch
   test_health.py          the liveness check

@@ -173,6 +173,10 @@ own and runs the scorer there as a subprocess (`score_local.py`).
 - **Overrides** go in `.env`: `RESOLVER_POLL_SECONDS` (60),
   `RESOLVER_SCORE_TIMEOUT` (3600; at most 5100, because a sweep takes a bake
   that has run 90 minutes for a dead worker's) and `RESOLVER_ESM_PYTHON`.
+- **A protein it built** is checked by `.venv/bin/python scripts/check_built.py
+  <GENE> mps`: the service, the stored bytes against their sha256, the rows and
+  UniProt's features, ending `ALL OK`. `scripts/live_resolved_check.dart` reads
+  it through the app; its header says how to run it.
 
 **It works while the Mac is awake and its user is logged in.** A request made
 while it sleeps waits on the queue: the app says "Building…" and, after 15
@@ -234,6 +238,8 @@ one.
 
 A track scored after the switch names `cuda` as its `generation.device` where
 the Mac's name `mps`. The app does not read it, and nothing is scored again.
+`.venv/bin/python scripts/check_built.py <GENE> cuda` checks the first protein
+Modal builds.
 
 Back again: `.modal-venv/bin/modal app stop helix-peak-resolver`, then
 `scripts/resolver_worker.sh install`.
@@ -260,6 +266,10 @@ insert into bake_job (slug, kind) values ('ttn', 'constraint');
 
 On a Mac, `scripts/resolver_worker.sh status` prints the counts by state, the
 last five requests and every bake still waiting, with its last error.
+
+`.venv/bin/python scripts/dry_resolve.py GENE ...` shows what the resolver would
+build for a gene, and whether the upload gate takes its record, writing
+nothing. It does not run ESM-2.
 
 A worker that dies holding a request (or a bake) is noticed by the next sweep
 after 30 minutes (90 for a bake) and put back, or failed once it has been tried
