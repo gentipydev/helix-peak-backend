@@ -175,8 +175,9 @@ own and runs the scorer there as a subprocess (`score_local.py`).
   that has run 90 minutes for a dead worker's) and `RESOLVER_ESM_PYTHON`.
 - **A protein it built** is checked by `.venv/bin/python scripts/check_built.py
   <GENE> mps`: the service, the stored bytes against their sha256, the rows and
-  UniProt's features, ending `ALL OK`. `scripts/live_resolved_check.dart` reads
-  it through the app; its header says how to run it.
+  UniProt's features, ending `ALL OK`. The app's
+  `test/live_resolved_check.dart` reads it as the app does; its header says how
+  to run it.
 
 **It works while the Mac is awake and its user is logged in.** A request made
 while it sleeps waits on the queue: the app says "Building…" and, after 15

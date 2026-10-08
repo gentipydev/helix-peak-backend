@@ -9,7 +9,7 @@ From the repository root: the rows are read through `.env`'s DATABASE_URL.
 Nothing here writes. It prints what it found and exits 1 if anything is wrong.
 
 It checks a protein whose ESM-2 track is ready. One whose scores the scorer
-refused has no track to check here; `live_resolved_check.dart`, beside this,
+refused has no track to check here; the app's test/live_resolved_check.dart
 reads it as the app does (LIVE_EXPECT=refused).
 """
 
