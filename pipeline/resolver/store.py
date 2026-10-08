@@ -26,7 +26,14 @@ TRACKS_BUCKET = "tracks"
 # it has been tried as often as anything is.
 STALE_RESOLVE = "30 minutes"
 STALE_BAKE = "90 minutes"
+# A model is baked in seconds and its baker is stopped at fifteen minutes, so
+# one that has run this long is a dead worker's too.
+STALE_STRUCTURE = "20 minutes"
 MAX_ATTEMPTS = 3
+
+# What a track that was never finished says, by what was baking it.
+_NEVER_SCORED = "The scorer stopped before it finished, every time it was tried."
+_NEVER_MODELLED = "The model's bake stopped before it finished, every time it was tried."
 
 # `seed_catalog`'s upsert, which ends by setting `resolved_at`, made unable to
 # touch a curated row: those have a reading order, and nothing resolved does.
@@ -80,26 +87,29 @@ def reap(conn) -> None:
         {"max": MAX_ATTEMPTS, "stale": STALE_RESOLVE},
     )
     with conn.transaction():
-        dead = conn.execute(
-            """
-            update bake_job
-            set state = 'failed', error = 'The worker stopped before it finished.',
-                finished_at = now()
-            where state = 'running' and attempts >= %(max)s
-              and started_at < now() - %(stale)s::interval
-            returning slug, kind
-            """,
-            {"max": MAX_ATTEMPTS, "stale": STALE_BAKE},
-        ).fetchall()
-        for slug, kind in dead:
-            refuse_track(conn, slug, kind, "The scorer stopped before it finished, every time it was tried.")
-        conn.execute(
-            """
-            update bake_job set state = 'queued', started_at = null
-            where state = 'running' and started_at < now() - %(stale)s::interval
-            """,
-            {"stale": STALE_BAKE},
-        )
+        for which, stale, never in (("kind = 'structure'", STALE_STRUCTURE, _NEVER_MODELLED),
+                                    ("kind <> 'structure'", STALE_BAKE, _NEVER_SCORED)):
+            dead = conn.execute(
+                f"""
+                update bake_job
+                set state = 'failed', error = 'The worker stopped before it finished.',
+                    finished_at = now()
+                where state = 'running' and attempts >= %(max)s and {which}
+                  and started_at < now() - %(stale)s::interval
+                returning slug, kind
+                """,
+                {"max": MAX_ATTEMPTS, "stale": stale},
+            ).fetchall()
+            for slug, kind in dead:
+                refuse_track(conn, slug, kind, never)
+            conn.execute(
+                f"""
+                update bake_job set state = 'queued', started_at = null
+                where state = 'running' and {which}
+                  and started_at < now() - %(stale)s::interval
+                """,
+                {"stale": stale},
+            )
 
 
 def claim_request(conn) -> Optional[dict]:
@@ -153,10 +163,14 @@ def mane_release(conn) -> Optional[str]:
 
 
 def write_resolution(conn, request_id: int, resolution: Resolution, record: dict,
-                     resolver_version: int) -> None:
+                     resolver_version: int, structures: bool = False) -> None:
     """Everything a resolved protein is, in one transaction: its row and aliases,
     its record track ready, its constraint track pending behind a queued bake,
-    and the request done."""
+    and the request done.
+
+    With `structures`, its structure track is pending behind a bake of its own
+    as well. Only a worker that can make a model asks for that (the Mac's):
+    a track is never left pending where nothing will bake it."""
     slug = resolution.target.slug
     protein = {key: (jsonb(value) if key in _JSONB_COLUMNS else value)
                for key, value in resolution.protein.items()}
@@ -187,6 +201,25 @@ def write_resolution(conn, request_id: int, resolution: Resolution, record: dict
             """,
             (slug, request_id),
         )
+        if structures:
+            conn.execute(
+                """
+                insert into protein_track (slug, kind, state, reason, format, provenance)
+                values (%s, 'structure', 'pending', null, 'fsceneb', '{}'::jsonb)
+                on conflict (slug, kind) do update
+                set state = 'pending', reason = null, updated_at = now()
+                where protein_track.state <> 'ready'
+                """,
+                (slug,),
+            )
+            conn.execute(
+                """
+                insert into bake_job (slug, kind, asker)
+                select %s, 'structure', asker from resolve_request where id = %s
+                on conflict (slug, kind) where state in ('queued', 'running') do nothing
+                """,
+                (slug, request_id),
+            )
         finish_request(conn, request_id, "done", slug=slug, resolver_version=resolver_version)
 
 
@@ -301,6 +334,33 @@ def finish_bake(conn, job_id: int, track: dict) -> None:
         )
 
 
+def finish_structure(conn, job_id: int, track: dict, structure: dict) -> None:
+    """A model's track ready, the fold page's words and chains on its protein's
+    row, and its job done, together.
+
+    `structure` is the row's `structure` column as the twenty carry it,
+    `{"chrome": ..., "chains": ...}`. It is written only on a row resolved on
+    demand: one of the twenty is never written over.
+    """
+    with conn.transaction():
+        written = conn.execute(
+            """
+            update protein set structure = %s
+            where slug = %s and catalog_order is null
+            returning slug
+            """,
+            (jsonb(structure), track["slug"]),
+        ).fetchone()
+        if written is None:
+            raise RuntimeError(
+                f"{track['slug']} is a curated protein; the resolver does not write over it.")
+        conn.execute(upload_tracks._UPSERT, {**track, "provenance": jsonb(track["provenance"])})
+        conn.execute(
+            "update bake_job set state = 'done', error = null, finished_at = now() where id = %s",
+            (job_id,),
+        )
+
+
 def refuse_track(conn, slug: str, kind: str, reason: str) -> None:
     conn.execute(
         """
@@ -311,13 +371,17 @@ def refuse_track(conn, slug: str, kind: str, reason: str) -> None:
     )
 
 
-def refuse_bake(conn, job_id: int, slug: str, kind: str, reason: str) -> None:
-    """The bake declined: its track says why, and its job is over."""
+def refuse_bake(conn, job_id: int, slug: str, kind: str, reason: str,
+                error: Optional[str] = None) -> None:
+    """The bake declined: its track says why, and its job is over.
+
+    `error` is what the job keeps where that is more than a reader is told: a
+    reader sees the track's reason, and an operator the job's error."""
     with conn.transaction():
         refuse_track(conn, slug, kind, reason)
         conn.execute(
             "update bake_job set state = 'failed', error = %s, finished_at = now() where id = %s",
-            (reason, job_id),
+            (error or reason, job_id),
         )
 
 

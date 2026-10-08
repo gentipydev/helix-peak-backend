@@ -38,12 +38,13 @@ pytestmark = pytest.mark.skipif(
 
 os.environ.setdefault("NCBI_EMAIL", "tests@example.com")
 
+from pipeline import upload_tracks  # noqa: E402
 from pipeline.resolver import local_worker, store, worker  # noqa: E402
 from pipeline.resolver.test_local_worker import (  # noqa: E402
-    SCORES_A_TRACK, fake_python, make_settings,
+    MAKES_A_MODEL, SCORES_A_TRACK, fake_model_python, fake_python, make_settings,
 )
 from pipeline.resolver.test_resolve import INS, _body, _mutated  # noqa: E402
-from pipeline.resolver.test_worker import _another_genes_record  # noqa: E402
+from pipeline.resolver.test_worker import _another_genes_record, a_model  # noqa: E402
 
 MIGRATIONS = sorted((BACKEND / "migrations").glob("0*.sql"))
 
@@ -788,3 +789,304 @@ def test_the_queue_command_prints_the_queue_and_minds_no_reader_leaving(
     assert piped.wait(timeout=120) == 0
     assert piped.stderr.read() == ""
     piped.stderr.close()
+
+
+# ------------------------------------------------- a model made on demand
+
+
+def _modelled(target, record: bytes):
+    """What a baker hands over, as far as the worker's gate reads it."""
+    return a_model()
+
+
+def _resolved_with_a_model_queued(conn, offline, storage, asker=None):
+    conn.execute("insert into resolve_request (gene, uniprot, slug, asker) "
+                 "values ('INS', 'P01308', 'ins', %s)", (asker,))
+    return worker.resolve_next(conn, storage, fetch_entry=lambda accession: offline(_body()),
+                               structures=True)
+
+
+def _structure(conn):
+    return (_one(conn, "select state, attempts, error from bake_job where kind = 'structure'"),
+            _one(conn, "select state, reason from protein_track where kind = 'structure'"))
+
+
+def test_by_default_no_model_is_queued(conn, offline):
+    # Modal's worker, and every worker before this one: a track is never left
+    # pending where nothing will bake it.
+    _ask(conn)
+    summary = worker.sweep(conn, Storage(), fetch_entry=lambda accession: offline(_body()))
+    assert (summary["constraint_queued"], summary["structure_queued"]) == (1, 0)
+    assert _one(conn, "select count(*) from protein_track where kind = 'structure'") == (0,)
+    assert _one(conn, "select count(*) from bake_job where kind = 'structure'") == (0,)
+    assert worker.structure_next(conn, Storage(), model=_modelled) is None
+
+
+def test_a_worker_that_makes_models_queues_one_beside_the_scoring(conn, offline):
+    outcome = _resolved_with_a_model_queued(conn, offline, Storage(), asker="install-a")
+    assert outcome["state"] == "done"
+    assert conn.execute("select kind, state, asker from bake_job order by kind").fetchall() == \
+        [("constraint", "queued", "install-a"), ("structure", "queued", "install-a")]
+    assert conn.execute("select kind, state, format from protein_track "
+                        "where kind in ('constraint', 'structure') order by kind").fetchall() == \
+        [("constraint", "pending", "json"), ("structure", "pending", "fsceneb")]
+    assert _one(conn, "select structure from protein where slug = 'ins'") == (None,)
+
+
+def test_a_queued_model_is_made_and_lands_ready(conn, offline):
+    storage = Storage()
+    _resolved_with_a_model_queued(conn, offline, storage)
+    job = _one(conn, "select id from bake_job where kind = 'structure'")[0]
+
+    assert worker.structure_next(conn, storage, model=_modelled) == \
+        {"id": job, "slug": "ins", "state": "ready"}
+    built = a_model()
+    bucket, path, sha, fmt, provenance, state = _one(
+        conn, "select bucket, object_path, sha256, format, provenance, state "
+              "from protein_track where slug = 'ins' and kind = 'structure'")
+    assert (bucket, fmt, state) == ("models", "fsceneb", "ready")
+    assert path == f"structure/ins.{sha[:12]}.fsceneb"
+    assert storage.get(bucket, path) == built.scene
+    assert storage.get(bucket, provenance["glb"]["path"]) == built.glb
+    assert (provenance["entry"], provenance["licence"]) == ("AF-P01308-F1", "CC BY 4.0")
+    # The fold page's words and chains, on the protein's own row.
+    assert _one(conn, "select structure from protein where slug = 'ins'") == \
+        ({"chrome": built.chrome, "chains": built.chains},)
+    assert _structure(conn) == (("done", 1, None), ("ready", None))
+    assert worker.structure_next(conn, storage, model=_modelled) is None
+    # The scoring is its own bake, and has not moved.
+    assert _one(conn, "select state from bake_job where kind = 'constraint'") == ("queued",)
+    assert worker.score_next(conn, storage, score=_constraint)["state"] == "ready"
+
+
+def test_the_service_serves_a_model_made_on_demand(conn, offline, database_url, monkeypatch):
+    from fastapi.testclient import TestClient
+    from psycopg_pool import ConnectionPool
+
+    from app import db, resolves
+    from app.config import settings
+    from app.main import app
+
+    monkeypatch.setattr(settings, "supabase_url", "https://project.supabase.co")
+    storage = Storage()
+    _resolved_with_a_model_queued(conn, offline, storage)
+    with ConnectionPool(database_url, kwargs={"autocommit": True}, open=True) as pool:
+        monkeypatch.setattr(db, "pool", pool)
+        client = TestClient(app)
+
+        # Queued, and then being made: the track says a model is on its way,
+        # and the build a reader watches is still its ESM-2 track's alone.
+        assert client.get("/protein/ins").json()["tracks"]["structure"] == "pending"
+        assert resolves.current("INS")["build"]["step"] == "scoring"
+
+        worker.structure_next(conn, storage, model=_modelled)
+        built = a_model()
+        body = client.get("/protein/ins").json()
+        assert body["chains"] == built.chains and body["structure"] == built.chrome
+        assert body["tracks"]["structure"] == "ready"
+        track = client.get("/protein/ins/tracks").json()["structure"]
+        assert (track["state"], track["format"], track["bytes"]) == \
+            ("ready", "fsceneb", len(built.scene))
+        assert track["url"] == ("https://project.supabase.co/storage/v1/object/public/models/"
+                                f"structure/ins.{track['sha256'][:12]}.fsceneb")
+        assert track["provenance"]["glb"]["bytes"] == len(built.glb)
+        assert resolves.current("INS")["build"]["step"] == "scoring"
+        assert client.get("/catalog").json()["proteins"] == []
+
+
+def test_a_protein_with_no_model_says_why_on_its_track(conn, offline):
+    storage = Storage()
+    _resolved_with_a_model_queued(conn, offline, storage)
+    why = "AlphaFold DB has no model of proteins over 2,700 residues; this one has 4,834."
+
+    def none(target, record):
+        raise worker.Unmodelled(why)
+
+    outcome = worker.structure_next(conn, storage, model=none)
+    assert (outcome["state"], outcome["reason"]) == ("refused", why)
+    assert _structure(conn) == (("failed", 1, why), ("refused", why))
+    assert _one(conn, "select structure from protein where slug = 'ins'") == (None,)
+    assert [path for _, path in storage.objects if path.startswith("structure/")] == []
+    # A refusal is final: nothing is left to claim.
+    assert worker.structure_next(conn, storage, model=_modelled) is None
+
+
+def test_a_bake_that_breaks_is_tried_three_times_and_a_reader_is_not_told_how(conn, offline):
+    storage = Storage()
+    _resolved_with_a_model_queued(conn, offline, storage)
+
+    def broken(target, record):
+        raise RuntimeError("the scene importer failed (255):\nUnhandled exception")
+
+    states = [worker.structure_next(conn, storage, model=broken) for _ in range(3)]
+    assert [outcome["state"] for outcome in states] == ["queued", "queued", "refused"]
+    said = ("AlphaFold's model could not be made: the bake broke each of the 3 times "
+            "it was tried.")
+    assert states[2]["reason"] == said
+    # The track carries the reader's sentence, and the job what broke.
+    assert _structure(conn) == (
+        ("failed", 3, "the scene importer failed (255): Unhandled exception"),
+        ("refused", said))
+
+
+def test_a_model_the_gate_declines_is_not_stored_and_is_tried_again(conn, offline):
+    storage = Storage()
+    _resolved_with_a_model_queued(conn, offline, storage)
+    wrong = lambda target, record: a_model(chains=[{"node": "chainA", "tint": "mature1"}])  # noqa: E731
+    outcome = worker.structure_next(conn, storage, model=wrong)
+    assert outcome["state"] == "queued" and "names no tint" in outcome["reason"]
+    assert [path for _, path in storage.objects if path.startswith("structure/")] == []
+    assert _structure(conn)[1] == ("pending", None)
+
+
+def test_a_model_is_never_written_onto_a_curated_row(conn):
+    conn.execute(
+        """
+        insert into protein (slug, gene, uniprot, accession, display, summary, residues, exons,
+            chains, bridges, regions, disulfides, structure, provenance, resolver_version,
+            catalog_order)
+        values ('insulin', 'INS', 'P01308', 'NG_007114', 'Insulin', 'Curated.', 110, 3, 3, 3,
+                '[]', '[]', '{"chrome": {"pdb": "3I40"}, "chains": []}', '{}', 0, 0)
+        """)
+    conn.execute("insert into bake_job (slug, kind) values ('insulin', 'structure')")
+    # Its job is left for the hand bakes, as its scoring would be.
+    assert worker.structure_next(conn, Storage(), model=_modelled) is None
+    assert _one(conn, "select state from bake_job") == ("queued",)
+
+    built = a_model()
+    row, _ = upload_tracks.structure_row("insulin", built.glb, built.scene, built.provenance)
+    with pytest.raises(RuntimeError, match="curated protein"):
+        store.finish_structure(conn, 1, row, {"chrome": built.chrome, "chains": built.chains})
+    assert _one(conn, "select structure from protein where slug = 'insulin'") == \
+        ({"chrome": {"pdb": "3I40"}, "chains": []},)
+    assert _one(conn, "select count(*) from protein_track") == (0,)
+    assert _one(conn, "select state from bake_job") == ("queued",)
+
+
+def test_a_dead_modellers_claim_goes_back_long_before_a_scorers(conn, offline):
+    storage = Storage()
+    _resolved_with_a_model_queued(conn, offline, storage)
+    store.claim_bake(conn, "structure")
+    store.claim_bake(conn, "constraint")
+    # Half an hour: past a model's patience, well inside a scoring's.
+    conn.execute("update bake_job set started_at = now() - interval '30 minutes'")
+
+    store.reap(conn)
+    assert conn.execute("select kind, state from bake_job order by kind").fetchall() == \
+        [("constraint", "running"), ("structure", "queued")]
+
+    # Dead on its last try, its track says so in the modeller's words.
+    conn.execute("update bake_job set state = 'running', attempts = 3, "
+                 "started_at = now() - interval '30 minutes' where kind = 'structure'")
+    store.reap(conn)
+    assert _structure(conn) == (
+        ("failed", 3, "The worker stopped before it finished."),
+        ("refused", "The model's bake stopped before it finished, every time it was tried."))
+    assert _one(conn, "select state from protein_track where kind = 'constraint'") == ("pending",)
+
+
+def test_a_stop_ends_the_scoring_and_leaves_the_model_to_be_made(
+        conn, offline, database_url, monkeypatch):
+    from app import resolves
+
+    storage = Storage()
+    with _service(database_url, monkeypatch):
+        _resolved_with_a_model_queued(conn, offline, storage, asker="install-a")
+        said = resolves.stop("INS", "install-a")
+        assert (said["state"], said["build"]["stopped"]) == ("stopped", True)
+        assert conn.execute("select kind, state from bake_job order by kind").fetchall() == \
+            [("constraint", "stopped"), ("structure", "queued")]
+        # A model takes seconds, as the record did: it is made all the same,
+        # and the protein opens with its fold and without its scores.
+        assert worker.structure_next(conn, storage, model=_modelled)["state"] == "ready"
+        assert worker.score_next(conn, storage, score=_constraint) is None
+        assert _builds(conn) == {("ins", "stopped")}
+
+
+@pytest.fixture
+def mac_with_models(database_url, offline, tmp_path, monkeypatch):
+    """`mac`, for a worker that makes models: one cycle scored by one script
+    and modelled by another."""
+    storage = Storage()
+    sweep = worker.sweep
+    monkeypatch.setattr(store, "TrackStorage", lambda url, key: storage)
+    monkeypatch.setattr(
+        worker, "sweep", lambda conn, storage, **said: sweep(
+            conn, storage, fetch_entry=lambda accession: offline(_body()), **said))
+    monkeypatch.setattr(local_worker, "CAFFEINATE",
+                        (sys.executable, "-c", "import time; time.sleep(120)"))
+    monkeypatch.setattr(local_worker, "_CHILD_POLL", 0.02)
+
+    def run(name, scores, models, **check):
+        folder = tmp_path / name
+        (folder / "scorer").mkdir(parents=True)
+        (folder / "modeller").mkdir()
+        settings = dataclasses.replace(
+            make_settings(tmp_path, fake_python(folder / "scorer", scores)),
+            database_url=database_url, structures=True,
+            structure_python=fake_model_python(folder / "modeller", models, **check))
+        stop = threading.Event()
+        return local_worker.cycle(settings, local_worker.Scorer(settings, stop), stop)
+
+    run.storage = storage
+    return run
+
+
+def test_the_macs_worker_makes_the_model_before_it_scores(conn, mac_with_models, tmp_path):
+    # The scorer notes whether the model was there when it started.
+    seen = tmp_path / "model-first"
+    scores = SCORES_A_TRACK + f"""
+    Path({str(seen)!r}).write_text(os.environ["MODEL_STORED"])
+"""
+    _ask(conn)
+    storage = mac_with_models.storage
+    os.environ["MODEL_STORED"] = "unset"
+    try:
+        put = storage.put
+
+        def noting(bucket, path, payload, content_type):
+            if path.endswith(".fsceneb"):
+                os.environ["MODEL_STORED"] = "stored"
+            put(bucket, path, payload, content_type)
+
+        storage.put = noting
+        done = mac_with_models("first", scores, MAKES_A_MODEL)
+    finally:
+        del os.environ["MODEL_STORED"]
+
+    assert [(o["gene"], o["state"]) for o in done["resolved"]] == [("INS", "done")]
+    assert [(o["slug"], o["state"]) for o in done["modelled"]] == [("ins", "ready")]
+    assert [(o["slug"], o["state"]) for o in done["scored"]] == [("ins", "ready")]
+    assert seen.read_text() == "stored"
+    assert conn.execute("select kind, state, attempts from bake_job order by kind").fetchall() == \
+        [("constraint", "done", 1), ("structure", "done", 1)]
+    assert sorted(path.split("/")[0] for _, path in storage.objects) == \
+        ["constraint", "record", "structure", "structure"]
+    chrome = _one(conn, "select structure from protein where slug = 'ins'")[0]["chrome"]
+    assert chrome["pdb"] == "AF-P01308-F1"
+    assert mac_with_models("again", scores, MAKES_A_MODEL) == \
+        {"resolved": [], "scored": [], "idle": True, "modelled": []}
+
+
+def test_a_modeller_that_cannot_start_claims_no_model_and_the_scoring_goes_on(
+        conn, mac_with_models):
+    _ask(conn)
+    done = mac_with_models("no-pymol", SCORES_A_TRACK, "sys.exit(1)", check=1,
+                           check_says="PyMOL (/opt/homebrew/bin/pymol) could not be run\n")
+    assert done["modelled"] == [] and [o["state"] for o in done["scored"]] == ["ready"]
+    # Left as it was queued, with none of its three tries used.
+    assert _structure(conn) == (("queued", 0, None), ("pending", None))
+
+
+def test_a_protein_alphafold_has_no_model_of_is_refused_by_the_macs_worker(
+        conn, mac_with_models):
+    _ask(conn)
+    done = mac_with_models("no-model", SCORES_A_TRACK, """
+        (out / "refusal.txt").parent.mkdir(parents=True, exist_ok=True)
+        (out / "refusal.txt").write_text("AlphaFold DB holds no model of UniProt P01308.")
+        sys.exit(3)
+    """)
+    assert [(o["state"], o["reason"]) for o in done["modelled"]] == \
+        [("refused", "AlphaFold DB holds no model of UniProt P01308.")]
+    assert _structure(conn)[1] == ("refused", "AlphaFold DB holds no model of UniProt P01308.")
+    assert [o["state"] for o in done["scored"]] == ["ready"]

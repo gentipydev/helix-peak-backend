@@ -14,6 +14,7 @@ BACKEND = Path(__file__).resolve().parents[2]
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
+from pipeline import upload_tracks  # noqa: E402
 from pipeline.resolver import scoring, store, worker  # noqa: E402
 from pipeline.resolver.resolve import resolve  # noqa: E402
 from pipeline.resolver.test_resolve import INS, _body  # noqa: E402
@@ -230,3 +231,149 @@ def test_a_stop_printed_through_is_raised_out_of_the_scorer(monkeypatch):
     monkeypatch.setattr(worker, "score_with_esm", scorer)
     with pytest.raises(worker.Stopped):
         worker.score_in_process("target", b"record", stopped)
+
+
+# ------------------------------------------------------------ a model
+
+
+def a_glb(*nodes: str) -> bytes:
+    """The least a `.glb` can be and still name its nodes: its JSON chunk."""
+    import struct
+
+    document = json.dumps({
+        "asset": {"version": "2.0"}, "scenes": [{"nodes": list(range(len(nodes)))}],
+        "nodes": [{"name": name, "mesh": index} for index, name in enumerate(nodes)],
+        "meshes": [{"primitives": []} for _ in nodes],
+    }).encode()
+    document += b" " * (-len(document) % 4)
+    return (struct.pack("<4sII", b"glTF", 2, 20 + len(document))
+            + struct.pack("<I4s", len(document), b"JSON") + document)
+
+
+def a_model(*nodes: str, **changes) -> worker.Modelled:
+    """What a baker hands over for a model of these nodes (`alphafold.Built`)."""
+    nodes = nodes or ("plddtVeryHigh", "plddtLow", "bonds")
+    said = dict(
+        glb=a_glb(*nodes), scene=b"a compiled scene",
+        chrome={"pdb": "AF-P01308-F1", "modelled": [25, 110], "label": "the predicted fold",
+                "count": 86, "unit": "residues",
+                "sentence": "AlphaFold prediction, mean pLDDT 71.0. 60% of residues at 70 or over.",
+                "semantics": "AlphaFold's predicted fold of Insulin. Drag to turn it."},
+        chains=[{"node": node, "tint": "cysteine" if node == "bonds" else node}
+                for node in nodes],
+        provenance={"pdb": "AF-P01308-F1", "nodes": list(nodes), "source": "AlphaFold DB",
+                    "entry": "AF-P01308-F1", "model_version": 6, "mean_plddt": 71.0,
+                    "licence": "CC BY 4.0", "span": [25, 110], "sampling": 8},
+    )
+    said.update(changes)
+    return worker.Modelled(**said)
+
+
+def test_a_model_is_stored_where_the_uploader_would_store_one(offline):
+    target = resolve(INS, offline(_body())).target
+    storage = Storage()
+    built = a_model()
+    row, structure = worker.stage_structure(storage, target, built)
+
+    glb, scene = (hashlib.sha256(payload).hexdigest() for payload in (built.glb, built.scene))
+    assert row == {
+        "slug": "ins", "kind": "structure", "bucket": "models",
+        # The row is the scene the phone loads; the `.glb` it came from is beside it.
+        "object_path": f"structure/ins.{scene[:12]}.fsceneb",
+        "bytes": len(built.scene), "sha256": scene, "format": "fsceneb",
+        "provenance": {**built.provenance, "glb": {
+            "path": f"structure/ins.{glb[:12]}.glb", "sha256": glb, "bytes": len(built.glb)}},
+    }
+    assert storage.objects == {
+        ("models", f"structure/ins.{glb[:12]}.glb", "model/gltf-binary"): built.glb,
+        ("models", row["object_path"], "application/octet-stream"): built.scene,
+    }
+    # The protein row's `structure` column, as the twenty carry it.
+    assert structure == {"chrome": built.chrome, "chains": built.chains}
+
+
+def test_the_uploader_names_a_models_objects_as_it_named_the_twentys():
+    # Insulin's stored row, from its two digests: `structure_row` is the code
+    # that branch of the uploader ran inline.
+    row, uploads = upload_tracks.structure_row(
+        "insulin", b"glTF-not-the-real-bytes", b"not-the-real-scene",
+        {"pdb": "3I40", "nodes": ["chainA", "chainB"]})
+    glb, scene = (hashlib.sha256(payload).hexdigest()
+                  for payload in (b"glTF-not-the-real-bytes", b"not-the-real-scene"))
+    assert [(path, mime) for path, _, mime in uploads] == [
+        (f"structure/insulin.{glb[:12]}.glb", "model/gltf-binary"),
+        (f"structure/insulin.{scene[:12]}.fsceneb", "application/octet-stream")]
+    assert (row["bucket"], row["format"], row["object_path"], row["sha256"]) == (
+        "models", "fsceneb", uploads[1][0], scene)
+    assert list(row["provenance"]) == ["pdb", "nodes", "glb"]
+
+
+@pytest.mark.parametrize("changes, why", [
+    ({"glb": b"not a model"}, "not a .glb"),
+    ({"scene": b""}, "no compiled scene"),
+    ({"chrome": {"pdb": "AF-P01308-F1", "label": "the predicted fold"}}, "not the seven"),
+    ({"chains": []}, "names no tint"),
+    ({"chains": [{"node": "plddtVeryHigh", "tint": "mauve"}]}, "names no tint"),
+    ({"chains": [{"node": "plddtVeryHigh", "tint": "plddtVeryHigh"}]}, "its row names"),
+    ({"provenance": {"pdb": "AF-P99999-F1"}}, "another entry"),
+])
+def test_a_model_the_app_would_trip_on_is_never_stored(offline, changes, why):
+    target = resolve(INS, offline(_body())).target
+    storage = Storage()
+    with pytest.raises(worker.Declined, match=why):
+        worker.stage_structure(storage, target, a_model(**changes))
+    assert storage.objects == {}
+
+
+def test_a_model_is_made_for_the_protein_as_its_record_and_row_have_it(offline):
+    resolution = resolve(INS, offline(_body()))
+    job = worker.model_job(resolution.target, resolution.record)
+    protein = json.loads(resolution.record)["protein"]["translation"]
+    assert job == {
+        "slug": "ins", "accession": "P01308", "display": "Insulin", "protein": protein,
+        # The kept regions alone: no signal peptide, no C-peptide, no cut site.
+        "kept": [[25, 54], [90, 110]],
+        "disulfides": [[31, 96], [43, 109], [95, 100]],
+        # As far as the resolver let the record differ from UniProt.
+        "allowed": 3,
+    }
+    assert len(protein) == 110
+    long = replace(resolution.target, regions=())
+    record = json.dumps({"protein": {"translation": "M" * 2500}}).encode()
+    assert worker.model_job(long, record)["allowed"] == 25
+    assert worker.model_job(long, record)["kept"] == []
+
+
+def test_the_worker_and_the_bake_agree_on_the_words_and_the_tints():
+    alphafold = pytest.importorskip("pipeline.structure.alphafold")   # needs numpy
+    assert worker._TINTS == {name for name, _ in alphafold.BANDS} | {"cysteine"}
+    job = alphafold.Job(slug="x", accession="P00000", display="X", protein="M" * 9,
+                        kept=((1, 9),))
+    entry = alphafold.Entry("P00000", "AF-P00000-F1", 6, "https://example.invalid/m.pdb")
+    chrome, chains = alphafold.describe(
+        job, entry, (1, 9), alphafold.Confidence(80.0, (0.5, 0.5, 0.0, 0.0)), [(2, 8)],
+        ["plddtVeryHigh", "plddtConfident", alphafold.BONDS])
+    assert tuple(chrome) == worker._CHROME
+    assert {chain["tint"] for chain in chains} <= worker._TINTS
+
+
+def _one_bake(monkeypatch, attempts=1):
+    """`store`'s side of `structure_next` with no database: one bake for INS,
+    and what the worker did with it."""
+    did = []
+    monkeypatch.setattr(store, "claim_bake", lambda conn, kind: {
+        "id": 4, "slug": "ins", "kind": kind, "attempts": attempts})
+    monkeypatch.setattr(store, "protein", lambda conn, slug: None)
+    monkeypatch.setattr(store, "ready_track", lambda conn, slug, kind: None)
+    for name in ("finish_structure", "refuse_bake", "requeue_bake"):
+        monkeypatch.setattr(store, name, lambda conn, *said, _name=name, **more:
+                            did.append((_name, said, more)))
+    return did
+
+
+def test_a_protein_with_no_record_has_no_model_to_be_held_to(monkeypatch):
+    did = _one_bake(monkeypatch)
+    outcome = worker.structure_next(None, Storage(), model=lambda target, record: a_model())
+    assert outcome == {"id": 4, "slug": "ins", "state": "refused",
+                       "reason": "The protein has no ready record to hold a model to."}
+    assert did == [("refuse_bake", (4, "ins", "structure", outcome["reason"]), {})]

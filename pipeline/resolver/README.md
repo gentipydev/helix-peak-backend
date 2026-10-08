@@ -23,6 +23,10 @@ with the uploader's credentials: on Modal, as drawn, or until it is deployed
 there on a Mac, which makes the same two calls from a launchd agent
 ([below](#running-the-worker-on-a-mac-temporary)).
 
+The Mac's worker makes one thing more, between the two: the protein's fold,
+from AlphaFold DB's model ([below](#the-fold-alphafold-dbs-model)). Modal's
+image cannot yet, so only the Mac's asks for it.
+
 ## What a protein resolved on demand is (resolver version 1)
 
 `resolve.py` turns a buildable `protein_index` entry and its UniProt entry into
@@ -49,7 +53,9 @@ rule; in short:
   on demand from UniProt P38398 and MANE Select NM_007294.4, not curated by
   hand."), and `provenance.prose` says `templated`.
 - **Tracks**: `record` ready, `constraint` pending until the GPU has scored it,
-  and nothing else (`impact`, `clinvar`, `structure` read `absent`).
+  and, where the worker makes models, `structure` pending until its model is
+  made (seconds). Nothing else (`impact`, `clinvar` read `absent`, and so does
+  `structure` for a protein resolved by a worker that makes none).
 - **ESM-2** is the twenty's model and revision, `facebook/esm2_t33_650M_UR50D`,
   run through the same scorer and its alignment gate. The app accepts only that
   model's tracks, so no app change is needed for them. A protein that fails the
@@ -103,6 +109,52 @@ scorer (`worker.Stopped`). The protein opens without scores, suggest marks it
 `stopped`, and asking for it again queues its scoring afresh, for whoever
 asked. A record being written (seconds) cannot be stopped, and a stop that
 lands as the track is made is too late for it.
+
+## The fold: AlphaFold DB's model
+
+A protein's fold page draws a model, and the twenty's are cut from entries
+chosen by hand. A protein resolved on demand is drawn from AlphaFold DB's
+(`pipeline/structure/alphafold.py`, whose README has the rules and their
+measurements): the mature span, coloured by pLDDT's four bands, with UniProt's
+disulfides where the model bears them out, and no model at all where the mean
+pLDDT over the span is under 50.
+
+- **Queued with the scoring.** `store.write_resolution(..., structures=True)`
+  puts the `structure` track `pending` behind a `bake_job` of its own, in the
+  transaction that queues the `constraint` one, for the same `asker`. Only a
+  worker that can make a model asks (`worker.sweep(structures=True)`): the
+  Mac's does, and Modal's does not, so a track is never left pending where
+  nothing will bake it.
+- **Made before the scoring.** `worker.structure_next` claims it, and the Mac's
+  cycle runs it between resolving and scoring: about two seconds, so the fold
+  page is ready an hour before a long protein's ESM-2 track is.
+- **Stored as the twenty's are.** The compiled `.fsceneb` in the `models`
+  bucket as `structure/<slug>.<sha12>.fsceneb`, the `.glb` beside it and named
+  in the provenance (`upload_tracks.structure_row`, which is the uploader's
+  own branch). The row's provenance also says which AlphaFold entry and
+  version, the span, the mean pLDDT and each band's share, the bridges drawn
+  and dropped, the licence (CC BY 4.0), the sampling and the importer.
+- **Described on the protein's row.** `store.finish_structure` writes the row's
+  `structure` column, `{"chrome": ..., "chains": ...}` with the keys the
+  twenty's carry: the fold page's seven words, templated from the model's own
+  numbers, and a tint for each node. Only where `catalog_order is null`: it
+  raises rather than write on one of the twenty.
+- **Refused, with the sentence the fold page shows** (`worker.Unmodelled`):
+  "AlphaFold DB has no model of proteins over 2,700 residues; this one has
+  4,834.", no model of this accession, a model of another sequence, a mean
+  pLDDT under the gate (with the number and the span), or a model too large
+  to draw. Anything else (the API down, PyMOL or the importer breaking) is
+  tried three times, a cycle apart; then the track says only that the model
+  could not be made, and the job's `error` keeps what broke.
+- **Not stopped.** A reader's Stop ends the ESM-2 scoring. The model takes
+  seconds, as the gene record does, and is made all the same: a protein
+  stopped while scoring opens with its fold and without its scores.
+- **Not on the build card.** `GET /proteins/resolve/{gene}` reads the
+  `constraint` bake alone, so the service did not change.
+
+`scripts/check_built.py` holds a built protein's model too: the scene and its
+`.glb` to their digests, the nodes to the row's chains, the span, the gate and
+the bridges; or, refused, the sentence why.
 
 ## Deploying, once
 
@@ -188,6 +240,16 @@ weights in the Hugging Face cache, where a bake of the twenty leaves them.
 Nothing is installed into `.esm-venv`: the worker has an environment of its
 own and runs the scorer there as a subprocess (`score_local.py`).
 
+To make models it also needs the structure bake's environment
+(`pipeline/structure/venv`, and PyMOL: its README), and the app's checkout
+beside this one with a Flutter SDK's Dart, for the scene importer. It runs the
+bake there as a subprocess too (`model_local.py`), having first asked whether
+one could be made (`--check`: the packages, PyMOL, and the importer on a box).
+While it could not, no model is claimed, and the log says why each minute.
+The app's checkout is only read and run from: `dart run flutter_scene:import`,
+with the flutter_scene its `pubspec.lock` pins, which has to be the one every
+stored scene was compiled by.
+
 | `scripts/resolver_worker.sh` | |
 |---|---|
 | `status` | whether it runs, what waits in the queue, its last ten lines |
@@ -209,7 +271,12 @@ own and runs the scorer there as a subprocess (`score_local.py`).
   writes under `pipeline/data/`.
 - **Overrides** go in `.env`: `RESOLVER_POLL_SECONDS` (60),
   `RESOLVER_SCORE_TIMEOUT` (3600; at most 5100, because a sweep takes a bake
-  that has run 90 minutes for a dead worker's) and `RESOLVER_ESM_PYTHON`.
+  that has run 90 minutes for a dead worker's) and `RESOLVER_ESM_PYTHON`. For
+  the models: `RESOLVER_STRUCTURES=0` makes none (no structure bake is queued
+  or claimed, as on Modal), and `RESOLVER_STRUCTURE_PYTHON`, `RESOLVER_DART`
+  (default: the SDK inside `~/flutter`, not `flutter/bin/dart`, which takes
+  Flutter's start-up lock) and `RESOLVER_APP_DIR` (`../helix-peek`) say where
+  its three tools are.
 - **A protein it built** is checked by `.venv/bin/python scripts/check_built.py
   <GENE> mps`: the service, the stored bytes against their sha256, the rows and
   UniProt's features, ending `ALL OK`. The app's
@@ -249,6 +316,9 @@ track: sarcolipin, 31 residues, 5 s; beta-2-microglobulin, 119, 12 s; ANTXR1,
 838, 534 s, asked for from the app the same day. Scored again through the
 worker, B2M's stored record gives its stored track byte for byte.
 
+A model, from the modeller's start to its two stored objects: about two
+seconds at any length (OCA2's 838 residues, 2.0 s; a refusal, under one).
+
 Those three grow with the square of the length. Carried on, which is an
 estimate and not a measurement, 1,000 residues is about 11 minutes, each
 residue past ESM-2's 1,022-residue window adds about 0.6 s, and the 60-minute
@@ -260,6 +330,23 @@ times: ESM-2 was still scoring after 60 minutes and was stopped."
 
 Nothing in the code changes: Modal's `sweep` and `score` call what the Mac's
 worker calls.
+
+**Except the fold.** Modal's two images hold neither PyMOL nor a Dart SDK, so
+`modal_app.py` asks for no model (`structures` stays off) and a protein Modal
+resolves has no `structure` track: its fold page says there is no model. To
+keep the models after the switch, one of:
+
+- give Modal a third function and image: `pymol-open-source` 3.1.0 from
+  conda-forge with the structure bake's pins, the Dart SDK, and a package that
+  pins flutter_scene to `alphafold.FLUTTER_SCENE` for `dart run
+  flutter_scene:import` to resolve; then `sweep(structures=True)` and a
+  `structure` function that calls `worker.structure_all` with a baker that
+  wraps `alphafold.build`. An x86-64 PyMOL does not give this Mac's bytes
+  (`pipeline/structure/README.md`, "Re-baking on Windows"), which matters for
+  nothing stored: no model made on demand is ever re-baked against a digest.
+- or leave the Mac's worker running beside Modal's. Whichever resolves a
+  request decides whether its model is queued, so that is a model for some
+  proteins and none for others: queue the rest by hand ("Operating it").
 
 1. In the Modal workspace (Usage & Billing), add the payment method and set a
    spend limit, a monthly cap past which Modal stops workloads. An L4 is $0.80
@@ -301,7 +388,21 @@ delete from resolve_request where lower(gene) = lower('TTN') and state = 'refuse
 update protein_track set state = 'pending', reason = null, updated_at = now()
 where slug = 'ttn' and kind = 'constraint' and state = 'refused';
 insert into bake_job (slug, kind) values ('ttn', 'constraint');
+
+-- make the model of a protein built without one (built before the worker
+-- made models, or by Modal), or again of one whose model was refused: a
+-- Mac's worker takes it within a minute
+insert into protein_track (slug, kind, state, reason, format, provenance)
+values ('oca2', 'structure', 'pending', null, 'fsceneb', '{}')
+on conflict (slug, kind) do update
+set state = 'pending', reason = null, updated_at = now()
+where protein_track.state <> 'ready';
+insert into bake_job (slug, kind) values ('oca2', 'structure');
 ```
+
+A model already `ready` is left as it is by the first statement, and its row
+would then be replaced by the bake: its two stored objects are not deleted,
+and nothing points at them afterwards.
 
 On a Mac, `scripts/resolver_worker.sh status` prints the counts by state, the
 last five requests and every bake still waiting, with its last error.
@@ -333,3 +434,9 @@ client is not installed.
 script stands in for the scorer's environment and two lists for the queue.
 `test_worker_pg.py` runs its cycle on the scratch database as well: a request
 taken to a scored protein, a stop mid-score, a scorer that cannot start.
+
+The fold is tested the same three ways: `test_worker.py` holds the worker's
+gate on a model, `test_worker_pg.py` every statement from a queued model to a
+ready one, a refused one and a reaped one, and the service serving it, and
+`test_local_worker.py` the modeller with a script in the place of the structure
+bake's interpreter. The bake itself is `pipeline/structure/test_alphafold.py`.

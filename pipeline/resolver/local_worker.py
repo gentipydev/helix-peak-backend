@@ -11,8 +11,10 @@ beside this file is the runbook.
 It is `worker.sweep` and `worker.score_all` as `modal_app.py` runs them, on the
 same database and storage, with the same four credentials, read from the
 repository's `.env` where Modal reads its secret. A protein built here cannot
-be told from one built there, except by the device its track names. What
-differs is how the work is started and where ESM-2 runs:
+be told from one built there, except by the device its track names, and by
+its fold: between the two it also makes each protein's model
+(`worker.structure_all`), which Modal's image cannot. What differs is how the
+work is started and where ESM-2 runs:
 
 - Nothing wakes it. It asks the queue every `RESOLVER_POLL_SECONDS` (60).
 - `worker.score_all` scores with whatever it is handed (`worker.Score`). On
@@ -23,6 +25,11 @@ differs is how the work is started and where ESM-2 runs:
   subprocess, one protein at a time, and comes back with what
   `score_with_esm` would have: the track's bytes, or the scorer's own
   `ValueError`.
+- A model wants numpy, trimesh, PyMOL and the app's scene importer, and the
+  worker's environment has none of them. A `Modeller` runs `model_local.py`
+  in the structure bake's own environment (`pipeline/structure/venv`), the
+  same way. A model takes seconds, so it is made before the scoring: a
+  protein's fold page is ready long before its ESM-2 track is.
 
 A laptop is not a container, and four things keep that out of the rows:
 
@@ -32,7 +39,8 @@ A laptop is not a container, and four things keep that out of the rows:
   later, rather than this one at once with whatever broke it still broken:
   three tries in one second would refuse a protein for good over a network
   that was away for two.
-- No bake is claimed while the scorer cannot start (`Scorer.unready`).
+- No bake is claimed while the scorer cannot start (`Scorer.unready`), and no
+  model while the modeller cannot (`Modeller.unready`).
 - The bakers' directories are the worker's own, under Application Support and
   never `pipeline/data/`, and are emptied after each cycle that used them, as
   a container's `/tmp` is. A GenBank reply garbled once is not read twice.
@@ -53,6 +61,7 @@ environment as it is then, and `main` names the worker's directories first.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import logging.handlers
 import math
@@ -115,6 +124,10 @@ _CONNECTION = {"connect_timeout": "20", "keepalives": "1", "keepalives_idle": "6
                "keepalives_interval": "30", "keepalives_count": "10"}
 
 _DRIVER = "pipeline.resolver.score_local"
+_MODEL_DRIVER = "pipeline.resolver.model_local"
+# A model is baked in seconds. One still baking after this has hung, and is
+# ended well inside `store.STALE_STRUCTURE`, as a scoring is inside the bake's.
+MODEL_TIMEOUT = 15 * 60
 _CHECK_TIMEOUT = 120
 _CHILD_POLL = 0.5
 _PROGRESS_EVERY = 60
@@ -124,6 +137,7 @@ _LAST_WORDS = 220
 _EX_CONFIG = 78
 
 STOPPED = "The worker was stopped while ESM-2 was scoring."
+STOPPED_MODELLING = "The worker was stopped while a model was being made."
 
 _DEVICE = re.compile(r"^Loading \S+ on (\w+) ", re.MULTILINE)
 _BEFORE = re.compile(r"over the residue before:\s+([\d.]+%)")
@@ -151,6 +165,14 @@ class Settings:
     poll: float = 60.0
     score_timeout: float = 3600.0
     esm_python: Path = BACKEND / "pipeline" / ".esm-venv" / "bin" / "python"
+    # What a model is made with: the structure bake's interpreter, the Dart
+    # that runs the scene importer, and the app's checkout it is run from.
+    structure_python: Path = BACKEND / "pipeline" / "structure" / "venv" / "bin" / "python"
+    dart: Path = Path("dart")
+    app: Path = BACKEND.parent / "helix-peek"
+    # Whether this worker makes models at all. Off, no structure bake is
+    # queued and none is claimed: the worker is the one Modal runs.
+    structures: bool = False
     # What `load_settings` changed from what was asked, said once the log is open.
     notes: tuple = ()
 
@@ -167,6 +189,11 @@ class Settings:
     @property
     def scoring(self) -> Path:
         return self.state / "scoring"
+
+    @property
+    def modelling(self) -> Path:
+        """Where a model is baked: the model file, PyMOL's export, the scene."""
+        return self.state / "modelling"
 
     @property
     def lock(self) -> Path:
@@ -196,6 +223,19 @@ def _seconds(said: Mapping[str, str], name: str, default: float) -> float:
     if not (math.isfinite(value) and value >= 1):
         raise Misconfigured(f"{name} is {raw!r}; it is a number of seconds, 1 or more.")
     return value
+
+
+def default_dart(home: Path) -> Path:
+    """The Dart SDK inside a Flutter checkout in the home directory, where
+    there is one, and otherwise whichever `dart` is on the path.
+
+    The SDK's own binary and not `flutter/bin/dart`, which is a script that
+    first takes Flutter's start-up lock: a worker should not wait on, or hold
+    up, a `flutter run` in the next terminal. Under launchd the path names
+    neither, so the first is what the agent finds.
+    """
+    sdk = home / "flutter" / "bin" / "cache" / "dart-sdk" / "bin" / "dart"
+    return sdk if sdk.exists() else Path(shutil.which("dart") or "dart")
 
 
 def load_settings(environ: Optional[Mapping[str, str]] = None, env_file: Optional[Path] = None,
@@ -238,6 +278,12 @@ def load_settings(environ: Optional[Mapping[str, str]] = None, env_file: Optiona
         score_timeout=timeout,
         esm_python=Path(said.get("RESOLVER_ESM_PYTHON")
                         or BACKEND / "pipeline" / ".esm-venv" / "bin" / "python"),
+        structure_python=Path(said.get("RESOLVER_STRUCTURE_PYTHON")
+                              or BACKEND / "pipeline" / "structure" / "venv" / "bin" / "python"),
+        dart=Path(said.get("RESOLVER_DART") or default_dart(home)),
+        app=Path(said.get("RESOLVER_APP_DIR") or BACKEND.parent / "helix-peek"),
+        structures=said.get("RESOLVER_STRUCTURES", "1").strip().lower()
+        not in ("0", "false", "no", "off"),
         notes=tuple(notes),
     )
 
@@ -249,16 +295,17 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
 
 
-def _last_words(code: int, errors: str) -> str:
+def _last_words(code: int, errors: str, who: str = "The scorer") -> str:
     """Why the scorer broke, inside `worker._said`'s 300 characters, keeping the
-    end of what it said: a traceback names the fault on its last line."""
+    end of what it said: a traceback names the fault on its last line. `who`
+    names another child, the modeller."""
     how = f"was ended by signal {-code}" if code < 0 else f"exited with status {code}"
     said = " ".join(errors.split())
     if not said:
-        return f"The scorer {how} and said nothing."
+        return f"{who} {how} and said nothing."
     if len(said) > _LAST_WORDS:
         said = "..." + said[-_LAST_WORDS:]
-    return f"The scorer {how}: {said}"
+    return f"{who} {how}: {said}"
 
 
 def _facts(target, printed: str, seconds: float) -> str:
@@ -282,6 +329,23 @@ def _end(child: subprocess.Popen) -> None:
     except subprocess.TimeoutExpired:
         child.kill()
         child.wait()
+
+
+def _end_all(child: subprocess.Popen) -> None:
+    """`_end` for a child that leads a session of its own: it and whatever it
+    started. The modeller runs PyMOL and the scene importer, and ending the
+    modeller alone would leave either running with nobody to read it."""
+    for ask in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(child.pid, ask)
+        except (ProcessLookupError, PermissionError):
+            pass
+        try:
+            child.wait(timeout=5)
+            break
+        except subprocess.TimeoutExpired:
+            continue
+    child.wait()
 
 
 class Scorer:
@@ -427,6 +491,131 @@ class Scorer:
             raise RuntimeError(_last_words(code, said))
 
 
+# ------------------------------------------------------------ the modeller
+
+
+class Modeller:
+    """`worker.Model`, run where the structure bake's packages are:
+    `model_local.py`, one protein a process.
+
+    It raises what `worker.structure_next` reads: `worker.Unmodelled` where no
+    model is drawn for the protein, which is a refusal, and a `RuntimeError`
+    for everything else (the bake breaking, running past its time, or being
+    stopped with the worker), which puts the bake back on the queue, up to
+    `store.MAX_ATTEMPTS` times.
+    """
+
+    def __init__(self, settings: Settings, stop: threading.Event):
+        self.settings = settings
+        self.stop = stop
+
+    def _command(self, *arguments: str) -> list:
+        settings = self.settings
+        return [str(settings.structure_python), "-u", "-m", _MODEL_DRIVER,
+                "--app", str(settings.app), "--dart", str(settings.dart), *arguments]
+
+    def _environment(self) -> dict:
+        # A model is made from public data and handed back as files: the
+        # baker has no use for the database or the storage key either.
+        environment = {key: value for key, value in os.environ.items()
+                       if key not in _CREDENTIALS}
+        environment.update(PYTHONUNBUFFERED="1")
+        return environment
+
+    def unready(self) -> Optional[str]:
+        """Why no model could be made here now. None when one could.
+
+        Asked before a bake is claimed, as the scorer is: a baker that cannot
+        start (no PyMOL, an app checkout on another flutter_scene) would break
+        on every protein alike, and leave each one's fold page refused.
+        """
+        try:
+            done = subprocess.run(
+                self._command("--check"), cwd=str(BACKEND), env=self._environment(),
+                stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                timeout=_CHECK_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            return f"The modeller's check had not finished after {_CHECK_TIMEOUT} s."
+        except OSError as exc:
+            return f"The modeller could not be started: {exc}"
+        return None if done.returncode == 0 else _last_words(
+            done.returncode, done.stderr, "The modeller")
+
+    def _wait(self, child: subprocess.Popen, started: float) -> Optional[str]:
+        """Why the bake was cut short, or None once it has ended by itself."""
+        while True:
+            try:
+                child.wait(timeout=_CHILD_POLL)
+                return None
+            except subprocess.TimeoutExpired:
+                pass
+            if self.stop.is_set():
+                return STOPPED_MODELLING
+            if time.monotonic() - started > MODEL_TIMEOUT:
+                return (f"The model was still being made after {MODEL_TIMEOUT / 60:.0f} "
+                        f"minutes and was stopped.")
+
+    def __call__(self, target, record: bytes):
+        from pipeline.resolver import model_local, worker
+
+        settings = self.settings
+        if self.stop.is_set():
+            raise RuntimeError(STOPPED_MODELLING)
+        settings.modelling.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=settings.modelling,
+                                         prefix=f"{target.slug}-") as folder:
+            work = Path(folder)
+            job_file, out = work / "job.json", work / "out"
+            printed_file, errors_file = work / "stdout.txt", work / "stderr.txt"
+            job_file.write_text(json.dumps(worker.model_job(target, record)), encoding="utf-8")
+
+            started = time.monotonic()
+            with open(printed_file, "wb") as printed, open(errors_file, "wb") as errors:
+                child = subprocess.Popen(
+                    self._command(str(job_file), str(out)), cwd=str(BACKEND),
+                    env=self._environment(), stdin=subprocess.DEVNULL,
+                    stdout=printed, stderr=errors, start_new_session=True)
+                try:
+                    cut = self._wait(child, started)
+                finally:
+                    _end_all(child)
+            seconds = time.monotonic() - started
+            if cut:
+                raise RuntimeError(cut)
+
+            code = child.returncode
+            refusal = out / "refusal.txt"
+            if code == model_local.REFUSED and refusal.exists():
+                raise worker.Unmodelled(refusal.read_text(encoding="utf-8"))
+            glb, scene, described = (out / name for name in
+                                     ("model.glb", "model.fsceneb", "described.json"))
+            if code == 0 and glb.exists() and scene.exists() and described.exists():
+                said = json.loads(described.read_text(encoding="utf-8"))
+                built = worker.Modelled(glb.read_bytes(), scene.read_bytes(), said["chrome"],
+                                        said["chains"], said["provenance"])
+                log.info("%s: %s", target.slug, _model_facts(built, seconds))
+                return built
+
+            said = _read(errors_file)
+            if said.strip():
+                log.error("%s: the modeller's last words:\n%s", target.slug,
+                          said[-2000:].rstrip())
+            if code == 0:
+                raise RuntimeError("The modeller exited with status 0 and wrote no model.")
+            if code == model_local.REFUSED:
+                raise RuntimeError("The modeller exited with status 3 and gave no reason.")
+            raise RuntimeError(_last_words(code, said, "The modeller"))
+
+
+def _model_facts(built, seconds: float) -> str:
+    """What the modeller made, on one line: which model, how sure, how large."""
+    said = built.provenance
+    span = said.get("span") or ["?", "?"]
+    return (f"{said.get('entry')} v{said.get('model_version')}, residues {span[0]}-{span[1]}, "
+            f"mean pLDDT {said.get('mean_plddt')}, sampling {said.get('sampling')}, "
+            f"scene {len(built.scene):,} B, {seconds:.1f} s")
+
+
 # ------------------------------------------------------------ one cycle
 
 
@@ -460,7 +649,7 @@ def clear_workspace(settings: Settings) -> None:
     flat-file cache before it asks NCBI: a reply garbled once, which `resolve`
     takes for a refusal, would be read again when that gene is next asked for.
     """
-    for folder in (settings.data, settings.genbank, settings.scoring):
+    for folder in (settings.data, settings.genbank, settings.scoring, settings.modelling):
         if BACKEND == folder or BACKEND in folder.parents:
             raise RuntimeError(f"{folder} is inside the repository; the worker empties only "
                                f"directories of its own.")
@@ -486,14 +675,19 @@ def _say(name: str, what: str, outcome: dict, seconds: float) -> None:
     log.log(logging.WARNING if state in ("queued", "failed") else logging.INFO, "%s", line)
 
 
-def _resolve(conn, storage, stop: threading.Event, resolved: list) -> int:
-    """Reap, then resolve what is queued. Returns how many bakes wait."""
+def _resolve(conn, storage, stop: threading.Event, resolved: list,
+             structures: bool = False) -> int:
+    """Reap, then resolve what is queued. Returns how many bakes wait.
+
+    `structures` has each protein resolved queue its model too
+    (`worker.sweep`): said only by a cycle that has a modeller."""
     from pipeline.resolver import worker
 
+    asked = {"structures": True} if structures else {}
     waiting = 0
     for _ in range(SWEEP_LIMIT):
         started = time.monotonic()
-        summary = worker.sweep(conn, storage, limit=1)
+        summary = worker.sweep(conn, storage, limit=1, **asked)
         waiting = summary["constraint_queued"]
         for outcome in summary["resolved"]:
             resolved.append(outcome)
@@ -519,28 +713,67 @@ def _score(conn, storage, scorer: Scorer, stop: threading.Event, scored: list) -
             break
 
 
-def cycle(settings: Settings, scorer: Scorer, stop: threading.Event) -> dict:
+def _model(conn, storage, modeller: Modeller, stop: threading.Event, modelled: list) -> None:
+    from pipeline.resolver import worker
+
+    for _ in range(SCORE_LIMIT):
+        if stop.is_set():
+            break
+        started = time.monotonic()
+        done = worker.structure_all(conn, storage, limit=1, model=modeller)
+        for outcome in done:
+            modelled.append(outcome)
+            _say(outcome["slug"], "structure", outcome, time.monotonic() - started)
+        if not done or done[-1]["state"] == "queued":
+            break
+
+
+def cycle(settings: Settings, scorer: Scorer, stop: threading.Event,
+          modeller: Optional[Modeller] = None) -> dict:
     """One pass over the queue: `modal_app`'s `sweep` and then its `score`.
 
-    Returns what was resolved and scored, and whether there was nothing to do.
-    Raises what kept it from the queue, or took the queue away part-way: that
-    is no protein's error, and the loop waits it out.
+    Where the settings say this worker makes models (`structures`, which the
+    Mac's does unless `.env` says `RESOLVER_STRUCTURES=0`), each protein
+    resolved also has its model queued, and the models are made between the
+    two: seconds each, so no fold page waits on an hour of ESM-2. `modeller`
+    is what makes them, a `Modeller` unless one is handed in. Otherwise no
+    model is queued and none is made.
+
+    Returns what was resolved and scored (and `modelled`, where models are
+    made), and whether there was nothing to do. Raises what kept it from the
+    queue, or took the queue away part-way: that is no protein's error, and
+    the loop waits it out.
     """
     from pipeline.resolver import store
 
+    if modeller is None and settings.structures:
+        modeller = Modeller(settings, stop)
     resolved: list = []
     scored: list = []
-    queued = waiting = 0
+    modelled: list = []
+    queued = waiting = models = 0
     awake = Awake()
     conn = store.connect(_conninfo(settings.database_url))
     try:
         with conn:
             storage = store.TrackStorage(settings.supabase_url, settings.service_key)
             queued = store.queued_requests(conn) + store.queued_bakes(conn, "constraint")
+            if modeller is not None:
+                queued += store.queued_bakes(conn, "structure")
             if queued:
                 awake.hold()
             # Every cycle, idle or not: the reaper is in the sweep.
-            waiting = _resolve(conn, storage, stop, resolved)
+            waiting = _resolve(conn, storage, stop, resolved, structures=modeller is not None)
+            if modeller is not None and not stop.is_set():
+                models = store.queued_bakes(conn, "structure")
+                if models:
+                    awake.hold()
+                    unready = modeller.unready()
+                    if unready:
+                        log.error("%d model(s) left on the queue: no model can be made here "
+                                  "now. %s", models, unready)
+                    else:
+                        _model(conn, storage, modeller, stop, modelled)
             if waiting and not stop.is_set():
                 awake.hold()
                 unready = scorer.unready()
@@ -551,10 +784,13 @@ def cycle(settings: Settings, scorer: Scorer, stop: threading.Event) -> dict:
                     _score(conn, storage, scorer, stop, scored)
     finally:
         awake.release()
-        if queued or waiting or resolved or scored:
+        if queued or waiting or models or resolved or scored or modelled:
             clear_workspace(settings)
-    return {"resolved": resolved, "scored": scored,
-            "idle": not (queued or waiting or resolved or scored)}
+    done = {"resolved": resolved, "scored": scored,
+            "idle": not (queued or waiting or models or resolved or scored or modelled)}
+    if modeller is not None:
+        done["modelled"] = modelled
+    return done
 
 
 # ------------------------------------------------------------ the loop
@@ -769,8 +1005,8 @@ def _print_queue(settings: Settings) -> int:
 def main(arguments: Optional[list] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m pipeline.resolver.local_worker",
-        description="The resolver's worker on a Mac: resolves queued requests and scores "
-                    "their ESM-2 tracks, until stopped.")
+        description="The resolver's worker on a Mac: resolves queued requests, makes "
+                    "their models and scores their ESM-2 tracks, until stopped.")
     how = parser.add_mutually_exclusive_group()
     how.add_argument("--once", action="store_true",
                      help="one cycle, then exit: 0 if it reached the queue, 1 if not")

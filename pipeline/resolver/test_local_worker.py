@@ -108,6 +108,60 @@ SCORES_A_TRACK = """
 """
 
 
+def fake_model_python(folder: Path, body: str, check: int = 0, check_says: str = "") -> Path:
+    """A stand-in for the structure bake's interpreter: this one, running `body`.
+
+    The modeller starts it as it starts the real one: `-u -m <driver> --app
+    <checkout> --dart <dart>`, and then `--check`, or the job's file and the
+    folder the model goes into. `body` runs where the driver would, with
+    those two as `job_file` and `out` and the repository importable.
+    `--check` exits `check`, having said `check_says` on stderr.
+    """
+    script = folder / "fake-structure-python"
+    script.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, sys\n"
+        "from pathlib import Path\n"
+        "sys.path.insert(0, os.getcwd())\n"
+        "if sys.argv[-1] == '--check':\n"
+        f"    sys.stderr.write({check_says!r})\n"
+        f"    sys.exit({check})\n"
+        "job_file, out = (Path(p) for p in sys.argv[-2:])\n"
+        + textwrap.dedent(body), encoding="utf-8")
+    script.chmod(0o755)
+    return script
+
+
+# A `fake_model_python` body for the tests that go as far as the worker's gate:
+# what `model_local.py` leaves, as far as the gate reads it.
+MAKES_A_MODEL = """
+    import struct
+    job = json.loads(job_file.read_text())
+    nodes = ["plddtVeryHigh", "bonds"]
+    document = json.dumps({
+        "asset": {"version": "2.0"}, "scenes": [{"nodes": [0, 1]}],
+        "nodes": [{"name": name, "mesh": index} for index, name in enumerate(nodes)],
+        "meshes": [{"primitives": []}, {"primitives": []}]}).encode()
+    document += b" " * (-len(document) % 4)
+    entry = "AF-" + job["accession"] + "-F1"
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "model.glb").write_bytes(
+        struct.pack("<4sII", b"glTF", 2, 20 + len(document))
+        + struct.pack("<I4s", len(document), b"JSON") + document)
+    (out / "model.fsceneb").write_bytes(b"a compiled scene")
+    (out / "described.json").write_text(json.dumps({
+        "chrome": {"pdb": entry, "modelled": None, "label": "the predicted fold",
+                   "count": len(job["protein"]), "unit": "residues",
+                   "sentence": "AlphaFold prediction, mean pLDDT 90.0.",
+                   "semantics": "AlphaFold's predicted fold. Drag to turn it."},
+        "chains": [{"node": "plddtVeryHigh", "tint": "plddtVeryHigh"},
+                   {"node": "bonds", "tint": "cysteine"}],
+        "provenance": {"pdb": entry, "nodes": nodes, "entry": entry, "model_version": 6,
+                       "span": [1, len(job["protein"])], "mean_plddt": 90.0, "sampling": 8},
+    }))
+"""
+
+
 def make_settings(tmp_path: Path, python: Path, **said) -> local_worker.Settings:
     return local_worker.Settings(
         database_url="postgresql://worker:hunter2-secret@db.invalid:5432/postgres",
@@ -951,7 +1005,7 @@ def test_run_once_with_no_database_it_says_so_and_writes_only_under_its_own_home
     assert "the cycle stopped short: OperationalError: " in lines[1]
     assert lines[-1].endswith("stopped") and len(lines) == 3
     assert sorted(path.name for path in state.iterdir()) == \
-        ["data", "genbank", "scoring", "worker.lock"]
+        ["data", "genbank", "modelling", "scoring", "worker.lock"]
     # Not a terminal, as under launchd: the lines are the file's alone.
     assert "started (pid " not in done.stderr
     assert "hunter2-secret" not in "\n".join(lines) + done.stderr + done.stdout
@@ -987,3 +1041,279 @@ def test_a_queue_that_cannot_be_read_is_one_line_with_no_credential(tmp_path):
     # Reading the queue opens no log and makes no directory of the worker's.
     assert not (home / "Library" / "Logs").exists()
     assert not (home / "Library" / "Application Support").exists()
+
+
+# ------------------------------------------------------------ the modeller
+
+A_RECORD = json.dumps({"gene": "INS", "protein": {"translation": "M" * 110}}).encode()
+
+
+def _modeller(tmp_path, body, stop=None, **check):
+    folder = tmp_path / "structure"
+    folder.mkdir(exist_ok=True)
+    settings = make_settings(
+        tmp_path, tmp_path / "no-esm-python",
+        structure_python=fake_model_python(folder, body, **check),
+        dart=Path("/opt/dart-sdk/bin/dart"), app=tmp_path / "helix-peek")
+    return local_worker.Modeller(settings, stop or threading.Event())
+
+
+def test_this_worker_makes_models_unless_its_env_says_not(tmp_path):
+    settings = local_worker.load_settings(_FOUR, tmp_path / "no.env", tmp_path)
+    assert settings.structures is True
+    assert settings.structure_python == \
+        BACKEND / "pipeline" / "structure" / "venv" / "bin" / "python"
+    assert settings.app == BACKEND.parent / "helix-peek"
+    assert settings.modelling == settings.state / "modelling"
+    assert BACKEND not in settings.modelling.parents
+
+    for word in ("0", "false", "No", "off"):
+        said = local_worker.load_settings(
+            {**_FOUR, "RESOLVER_STRUCTURES": word}, tmp_path / "no.env", tmp_path)
+        assert said.structures is False
+    told = local_worker.load_settings(
+        {**_FOUR, "RESOLVER_STRUCTURE_PYTHON": "/opt/bake/python", "RESOLVER_DART": "/opt/dart",
+         "RESOLVER_APP_DIR": "/src/app"}, tmp_path / "no.env", tmp_path)
+    assert (told.structure_python, told.dart, told.app) == \
+        (Path("/opt/bake/python"), Path("/opt/dart"), Path("/src/app"))
+    # A worker built by hand, as every test before this one builds it, makes none.
+    assert make_settings(tmp_path, tmp_path / "python").structures is False
+
+
+def test_dart_is_the_sdks_own_binary_where_a_flutter_checkout_has_one(tmp_path, monkeypatch):
+    # `flutter/bin/dart` is a script that takes Flutter's start-up lock first.
+    sdk = tmp_path / "flutter" / "bin" / "cache" / "dart-sdk" / "bin" / "dart"
+    sdk.parent.mkdir(parents=True)
+    sdk.write_text("")
+    assert local_worker.default_dart(tmp_path) == sdk
+    monkeypatch.setattr(local_worker.shutil, "which", lambda name: "/usr/local/bin/dart")
+    assert local_worker.default_dart(tmp_path / "elsewhere") == Path("/usr/local/bin/dart")
+    monkeypatch.setattr(local_worker.shutil, "which", lambda name: None)
+    assert local_worker.default_dart(tmp_path / "elsewhere") == Path("dart")
+
+
+def test_a_models_time_is_inside_the_reapers_patience_for_one():
+    minutes, unit = store.STALE_STRUCTURE.split()
+    assert unit == "minutes" and local_worker.MODEL_TIMEOUT < int(minutes) * 60
+
+
+def test_the_modeller_hands_over_the_job_and_returns_the_model(tmp_path, monkeypatch, caplog):
+    monkeypatch.setenv("DATABASE_URL", _FOUR["DATABASE_URL"])
+    monkeypatch.setenv("SUPABASE_SERVICE_KEY", _FOUR["SUPABASE_SERVICE_KEY"])
+    modeller = _modeller(tmp_path, MAKES_A_MODEL + """
+    (out / "seen.json").write_text(json.dumps({
+        "started_with": sys.argv[1:8], "cwd": os.getcwd(), "job": job,
+        "environment": {key: os.environ.get(key) for key in (
+            "DATABASE_URL", "SUPABASE_SERVICE_KEY", "PYTHONUNBUFFERED")}}))
+    (Path(os.environ["SEEN"])).write_text((out / "seen.json").read_text())
+""")
+    monkeypatch.setenv("SEEN", str(tmp_path / "seen.json"))
+    with caplog.at_level(logging.INFO, logger="resolver-worker"):
+        built = modeller(INS, A_RECORD)
+
+    assert isinstance(built, worker.Modelled)
+    assert worker.glb_nodes(built.glb) == ["plddtVeryHigh", "bonds"]
+    assert built.scene == b"a compiled scene"
+    assert built.chrome["pdb"] == "AF-P01308-F1" and built.chrome["count"] == 110
+    assert [chain["tint"] for chain in built.chains] == ["plddtVeryHigh", "cysteine"]
+
+    seen = json.loads((tmp_path / "seen.json").read_text())
+    assert seen["started_with"] == [
+        "-u", "-m", "pipeline.resolver.model_local",
+        "--app", str(tmp_path / "helix-peek"), "--dart", "/opt/dart-sdk/bin/dart"]
+    assert Path(seen["cwd"]) == BACKEND
+    # The job is the protein as its record and row have it (`worker.model_job`).
+    assert seen["job"] == worker.model_job(INS, A_RECORD)
+    assert seen["job"]["kept"] == [[25, 54]] and seen["job"]["disulfides"] == [[31, 96]]
+    # Public data in, files out: the baker is given neither credential.
+    assert seen["environment"] == {
+        "DATABASE_URL": None, "SUPABASE_SERVICE_KEY": None, "PYTHONUNBUFFERED": "1"}
+    said = [record.getMessage() for record in caplog.records]
+    assert len(said) == 1 and said[0].startswith(
+        "ins: AF-P01308-F1 v6, residues 1-110, mean pLDDT 90.0, sampling 8, scene 16 B, ")
+    # Nothing of the hand-over is left behind.
+    assert list(modeller.settings.modelling.iterdir()) == []
+
+
+def test_no_model_for_a_protein_is_told_as_that_and_says_why(tmp_path):
+    modeller = _modeller(tmp_path, """
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "refusal.txt").write_text(
+            "AlphaFold DB has no model of proteins over 2,700 residues; this one has 4,834.")
+        sys.exit(3)
+    """)
+    with pytest.raises(worker.Unmodelled) as none:
+        modeller(INS, A_RECORD)
+    assert str(none.value) == ("AlphaFold DB has no model of proteins over 2,700 residues; "
+                               "this one has 4,834.")
+
+
+@pytest.mark.parametrize("body, said", [
+    ("sys.exit(0)", "The modeller exited with status 0 and wrote no model."),
+    ("sys.exit(3)", "The modeller exited with status 3 and gave no reason."),
+    ("sys.stderr.write('pymol failed:\\nSegmentation fault'); sys.exit(1)",
+     "The modeller exited with status 1: pymol failed: Segmentation fault"),
+    ("os.kill(os.getpid(), 9)", "The modeller was ended by signal 9 and said nothing."),
+])
+def test_a_modeller_that_ends_any_other_way_broke(tmp_path, body, said, spawned):
+    modeller = _modeller(tmp_path, body)
+    with pytest.raises(RuntimeError) as broke:
+        modeller(INS, A_RECORD)
+    assert not isinstance(broke.value, worker.Unmodelled) and str(broke.value) == said
+
+
+def test_a_stop_ends_the_modeller_and_its_bake_can_go_back(tmp_path, spawned):
+    stop = threading.Event()
+    modeller = _modeller(tmp_path, """
+        import time
+        Path(os.environ["MODELLING_STARTED"]).write_text("")
+        time.sleep(120)
+    """, stop=stop)
+    started = tmp_path / "modelling-has-started"
+    os.environ["MODELLING_STARTED"] = str(started)
+
+    def stop_once_started():
+        import time
+        while not started.exists():
+            time.sleep(0.01)
+        stop.set()
+
+    try:
+        threading.Thread(target=stop_once_started, daemon=True).start()
+        with pytest.raises(RuntimeError) as cut:
+            modeller(INS, A_RECORD)
+    finally:
+        del os.environ["MODELLING_STARTED"]
+    assert str(cut.value) == local_worker.STOPPED_MODELLING
+    assert spawned[-1].poll() is not None            # ended, not left running
+    with pytest.raises(RuntimeError, match="stopped while a model was being made"):
+        modeller(INS, A_RECORD)                      # and none is started once stopping
+
+
+def test_a_stop_ends_what_the_modeller_started_too(tmp_path, spawned):
+    # PyMOL and the scene importer are the modeller's own children. Ended alone,
+    # the modeller would leave either running, with nobody to read it.
+    stop = threading.Event()
+    grandchild = tmp_path / "grandchild.pid"
+    modeller = _modeller(tmp_path, """
+        import subprocess, time
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
+        Path(os.environ["GRANDCHILD"]).write_text(str(child.pid))
+        time.sleep(120)
+    """, stop=stop)
+    os.environ["GRANDCHILD"] = str(grandchild)
+
+    def stop_once_started():
+        import time
+        while not grandchild.exists() or not grandchild.read_text():
+            time.sleep(0.01)
+        stop.set()
+
+    try:
+        threading.Thread(target=stop_once_started, daemon=True).start()
+        with pytest.raises(RuntimeError, match="stopped while a model was being made"):
+            modeller(INS, A_RECORD)
+    finally:
+        del os.environ["GRANDCHILD"]
+
+    import time
+    pid = int(grandchild.read_text())
+    for _ in range(100):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.05)
+    else:
+        os.kill(pid, 9)
+        raise AssertionError("what the modeller started outlived it")
+
+
+def test_a_modeller_that_can_start_is_ready_and_one_that_cannot_says_why(tmp_path):
+    assert _modeller(tmp_path, "pass").unready() is None
+    pinned = ("The app's checkout pins flutter_scene 0.24.0; every stored scene is "
+              "compiled by 0.23.0.")
+    assert _modeller(tmp_path, "pass", check=1, check_says=pinned + "\n").unready() == \
+        "The modeller exited with status 1: " + pinned
+    settings = make_settings(tmp_path, tmp_path / "python",
+                             structure_python=tmp_path / "no-such-venv" / "python")
+    assert local_worker.Modeller(settings, threading.Event()).unready().startswith(
+        "The modeller could not be started: ")
+
+
+def test_the_model_driver_writes_what_the_bake_made_and_exits_0(tmp_path, monkeypatch):
+    alphafold = pytest.importorskip("pipeline.structure.alphafold")   # needs numpy
+    from pipeline.resolver import model_local
+
+    asked = []
+
+    def build(job, workspace, app, dart):
+        asked.append((job, workspace, app, dart))
+        return alphafold.Built(b"glTF", b"scene", {"pdb": "AF-P01308-F1"},
+                               [{"node": "plddtLow", "tint": "plddtLow"}], {"sampling": 8})
+
+    monkeypatch.setattr(alphafold, "build", build)
+    job_file, out = tmp_path / "job.json", tmp_path / "out"
+    job_file.write_text(json.dumps(worker.model_job(INS, A_RECORD)))
+    assert model_local.main(
+        [str(job_file), str(out), "--app", "/src/app", "--dart", "/opt/dart"]) == 0
+
+    job, workspace, app, dart = asked[0]
+    assert job == alphafold.Job(slug="ins", accession="P01308", display="Insulin",
+                                protein="M" * 110, kept=((25, 54),), disulfides=((31, 96),),
+                                allowed=3)
+    assert (workspace, app, dart) == (out / "work", Path("/src/app"), "/opt/dart")
+    assert (out / "model.glb").read_bytes() == b"glTF"
+    assert (out / "model.fsceneb").read_bytes() == b"scene"
+    assert json.loads((out / "described.json").read_text()) == {
+        "chrome": {"pdb": "AF-P01308-F1"},
+        "chains": [{"node": "plddtLow", "tint": "plddtLow"}], "provenance": {"sampling": 8}}
+
+
+def test_the_model_driver_writes_the_bakes_refusal_and_exits_3(tmp_path, monkeypatch):
+    alphafold = pytest.importorskip("pipeline.structure.alphafold")
+    from pipeline.resolver import model_local
+
+    def refuse(job, workspace, app, dart):
+        raise alphafold.Refused("AlphaFold DB holds no model of UniProt P01308.")
+
+    def broken(job, workspace, app, dart):
+        raise RuntimeError("the scene importer failed (255)")
+
+    job_file, out = tmp_path / "job.json", tmp_path / "out"
+    job_file.write_text(json.dumps(worker.model_job(INS, A_RECORD)))
+    said = [str(job_file), str(out), "--app", "/src/app", "--dart", "/opt/dart"]
+    monkeypatch.setattr(alphafold, "build", refuse)
+    assert model_local.main(said) == model_local.REFUSED == 3
+    assert (out / "refusal.txt").read_text() == "AlphaFold DB holds no model of UniProt P01308."
+    assert not (out / "model.glb").exists()
+    # Anything else is the bake breaking, and is not a verdict on the protein.
+    monkeypatch.setattr(alphafold, "build", broken)
+    with pytest.raises(RuntimeError, match="scene importer"):
+        model_local.main(said)
+    assert model_local.main(["--app", "/src/app", "--dart", "/opt/dart"]) == 2
+
+
+def test_the_model_driver_imports_nothing_heavy_until_it_is_asked():
+    # The worker imports it for its exit status, in an environment with no numpy.
+    code = ("import sys; import pipeline.resolver.model_local as m; "
+            "print(m.REFUSED, sorted(n for n in sys.modules if n.split('.')[0] in "
+            "('numpy', 'scipy', 'trimesh')))")
+    done = subprocess.run([sys.executable, "-c", code], cwd=BACKEND, capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == "3 []"
+
+
+def test_a_model_can_be_made_here_or_the_check_says_why_not(tmp_path):
+    pytest.importorskip("trimesh")
+    pytest.importorskip("scipy")
+    from pipeline.paths import CLIENT
+    from pipeline.resolver import model_local
+    from pipeline.structure import alphafold, bake
+
+    dart = local_worker.default_dart(Path.home())
+    if not Path(bake.PYMOL).exists() or not dart.exists() or alphafold.importer_unready(CLIENT):
+        pytest.skip("needs PyMOL, a Dart SDK and the app's checkout")
+    assert model_local.check(CLIENT, str(dart)) == 0
+    # A checkout that is not the app's is said, before anything is run.
+    assert model_local.check(tmp_path, str(dart)) == 1

@@ -7,6 +7,11 @@ it needs; that is CPU and network, and takes about as long as NCBI does.
 the record holds; that wants a GPU. `modal_app.py` runs each where it belongs,
 and either can be run by hand on any machine with the same credentials.
 
+A third, where a worker asks for it (`structures`): `structure_next` takes one
+queued structure bake and makes the fold page's model from AlphaFold DB's
+(`structure/alphafold.py`). That wants PyMOL and the app's scene importer,
+which the Mac's worker has and Modal's image does not, so only the Mac asks.
+
 What ends a request or a bake, and how the reader hears of it:
 
 - A refusal -- the resolver's `Refused`, the uploader's gate declining the
@@ -17,7 +22,10 @@ What ends a request or a bake, and how the reader hears of it:
 - Anything else (NCBI or UniProt not answering, a storage hiccup) is tried
   again, up to `store.MAX_ATTEMPTS` times, and then fails, saying so.
 - A stop by the reader who asked (`Stopped`) ends a scoring where it is. The
-  service has already written it on the rows, so nothing more is.
+  service has already written it on the rows, so nothing more is. A model is
+  made in seconds, as a record is, and like a record is not stopped.
+- A protein AlphaFold DB has no model of, or none sure enough to draw
+  (`Unmodelled`), has its structure track `refused`, with the sentence why.
 """
 
 from __future__ import annotations
@@ -25,13 +33,16 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import io
+import json
 import re
+import struct
 import sys
-from typing import Callable, Optional, Tuple
+from typing import Callable, NamedTuple, Optional, Tuple
 
 from pipeline import uniprot, upload_tracks
 from pipeline.resolver import store
-from pipeline.resolver.resolve import RESOLVER_VERSION, Refused, resolve, target_of
+from pipeline.resolver.resolve import (
+    RESOLVER_VERSION, VARIANT_FLOOR, VARIANT_SHARE, Refused, resolve, target_of)
 from pipeline.resolver.scoring import score_with_esm
 from pipeline.targets import Target
 
@@ -41,6 +52,29 @@ Report = Callable[[int, int, float], None]
 # The constraint track's bytes, from a target and its record. It tells `Report`
 # how far it has got as it goes, for a reader watching the protein build.
 Score = Callable[[Target, bytes, Report], bytes]
+
+
+
+class Modelled(NamedTuple):
+    """One protein's model as its baker hands it over (`alphafold.Built`): the
+    `.glb`, the scene compiled from it, the fold page's words and chains, and
+    the bake's provenance."""
+
+    glb: bytes
+    scene: bytes
+    chrome: dict
+    chains: list
+    provenance: dict
+
+
+# The model of a protein, from its target and its record.
+Model = Callable[[Target, bytes], Modelled]
+
+# The fold page's words as every row carries them (`StructureChrome` in the
+# app), and the tints a model made on demand may name: pLDDT's four bands
+# (`alphafold.BANDS`) and its bridges.
+_CHROME = ("pdb", "modelled", "label", "count", "unit", "sentence", "semantics")
+_TINTS = frozenset({"plddtVeryHigh", "plddtConfident", "plddtLow", "plddtVeryLow", "cysteine"})
 
 # What the scorer prints every 25 residues (`score_protein.py`).
 _SCORED = re.compile(r"Scored (\d+)/(\d+) \(([\d.]+)s, [\d.]+ min left\)")
@@ -100,6 +134,12 @@ class Stopped(Exception):
     """
 
 
+class Unmodelled(Exception):
+    """No model is drawn for this protein (`alphafold.Refused`): AlphaFold DB
+    has none, or none of this sequence, or none sure enough. The message is
+    the sentence the fold page shows."""
+
+
 class Declined(ValueError):
     """The uploader's gate turned a payload down. It would turn the same bytes
     down again, so this is never worth another try."""
@@ -134,8 +174,79 @@ def stage(storage, kind: str, target: Target, payload: bytes) -> dict:
     }
 
 
-def resolve_next(conn, storage, *, fetch_entry=uniprot.fetch_entry) -> Optional[dict]:
-    """Resolve the oldest queued request. None when there is none."""
+def model_job(target: Target, record: bytes) -> dict:
+    """What a model is made for (`alphafold.Job`), from a resolved protein's
+    target and its record: the protein the walk draws, its kept regions and
+    disulfides, and how far the model may differ from it, which is as far as
+    the resolver let the record differ from UniProt."""
+    protein = json.loads(record)["protein"]["translation"]
+    return {
+        "slug": target.slug, "accession": target.uniprot, "display": target.display,
+        "protein": protein,
+        "kept": [[region.start, region.end] for region in target.regions if region.kept],
+        "disulfides": [list(pair) for pair in target.disulfides],
+        "allowed": max(VARIANT_FLOOR, int(len(protein) * VARIANT_SHARE)),
+    }
+
+
+def glb_nodes(payload: bytes) -> list:
+    """The nodes of a `.glb` that carry a mesh, by name, in file order: read
+    from its JSON chunk, which the format puts first."""
+    if payload[:4] != b"glTF" or payload[16:20] != b"JSON":
+        raise ValueError("not a .glb")
+    length = struct.unpack_from("<I", payload, 12)[0]
+    document = json.loads(payload[20:20 + length])
+    return [node.get("name") for node in document.get("nodes", []) if "mesh" in node]
+
+
+def stage_structure(storage, target: Target, built: Modelled) -> Tuple[dict, dict]:
+    """Check a model, store its two objects, and return the track row and the
+    protein row's `structure` column.
+
+    The objects are named as the uploader names a model's
+    (`upload_tracks.structure_row`): the scene the app loads, and the `.glb`
+    it was compiled from beside it. What is checked is what the app would
+    trip on: the seven words it reads, a tint for every node, and each node
+    the row names in the model. A model that fails raises `Declined`, and
+    nothing is stored.
+    """
+    chrome, chains = built.chrome, built.chains
+    try:
+        nodes = glb_nodes(built.glb)
+    except ValueError as exc:
+        raise Declined(str(exc)) from exc
+    span = chrome.get("modelled") if isinstance(chrome, dict) else None
+    if (not isinstance(chrome, dict) or tuple(chrome) != _CHROME
+            or not all(isinstance(chrome[key], str) and chrome[key]
+                       for key in ("pdb", "label", "unit", "sentence", "semantics"))
+            or not isinstance(chrome["count"], int)
+            or not (span is None or (isinstance(span, list) and len(span) == 2
+                                     and all(isinstance(end, int) for end in span)))):
+        raise Declined("the fold page's words are not the seven the app reads")
+    if (not chains or any(not isinstance(chain, dict) or set(chain) != {"node", "tint"}
+                          or chain["tint"] not in _TINTS for chain in chains)):
+        raise Declined("a chain names no tint the app has")
+    if [chain["node"] for chain in chains] != nodes:
+        raise Declined(f"the model's nodes are {nodes}, and its row names "
+                       f"{[chain['node'] for chain in chains]}")
+    if not built.scene:
+        raise Declined("the model has no compiled scene")
+    if built.provenance.get("pdb") != chrome["pdb"]:
+        raise Declined("the provenance names another entry than the fold page does")
+
+    row, uploads = upload_tracks.structure_row(target.slug, built.glb, built.scene,
+                                               built.provenance)
+    for path, payload, content_type in uploads:
+        storage.put(row["bucket"], path, payload, content_type)
+    return row, {"chrome": chrome, "chains": chains}
+
+
+def resolve_next(conn, storage, *, fetch_entry=uniprot.fetch_entry,
+                 structures: bool = False) -> Optional[dict]:
+    """Resolve the oldest queued request. None when there is none.
+
+    `structures` also queues the protein's structure bake
+    (`store.write_resolution`): for a worker that goes on to make models."""
     request = store.claim_request(conn)
     if request is None:
         return None
@@ -157,7 +268,8 @@ def resolve_next(conn, storage, *, fetch_entry=uniprot.fetch_entry) -> Optional[
             # This resolver builds the same record for this gene every time,
             # so the gate's verdict on it is a refusal, not a failure to retry.
             raise Refused(str(exc)) from exc
-        store.write_resolution(conn, request["id"], resolution, record, RESOLVER_VERSION)
+        store.write_resolution(conn, request["id"], resolution, record, RESOLVER_VERSION,
+                               structures=structures)
         return {**outcome, "state": "done", "slug": resolution.target.slug}
     except Refused as exc:
         store.finish_request(conn, request["id"], "refused", reason=_said(exc),
@@ -257,20 +369,67 @@ def score_next(conn, storage, *, score: Score = score_in_process) -> Optional[di
         return {**outcome, "state": "refused", "reason": reason}
 
 
-def sweep(conn, storage, *, limit: int = 10, fetch_entry=uniprot.fetch_entry) -> dict:
+def structure_next(conn, storage, *, model: Model) -> Optional[dict]:
+    """Bake the oldest queued structure track. None when there is none."""
+    job = store.claim_bake(conn, "structure")
+    if job is None:
+        return None
+    outcome = {"id": job["id"], "slug": job["slug"]}
+    try:
+        protein = store.protein(conn, job["slug"])
+        record_row = store.ready_track(conn, job["slug"], "record")
+        if protein is None or record_row is None:
+            raise Refused("The protein has no ready record to hold a model to.")
+        record = storage.get(record_row["bucket"], record_row["object_path"])
+        if hashlib.sha256(record).hexdigest() != record_row["sha256"]:
+            raise RuntimeError("The stored record does not match the sha256 its row carries.")
+        target = target_of(protein)
+        track, structure = stage_structure(storage, target, model(target, record))
+        store.finish_structure(conn, job["id"], track, structure)
+        return {**outcome, "state": "ready"}
+    except (Refused, Unmodelled) as exc:
+        store.refuse_bake(conn, job["id"], job["slug"], "structure", _said(exc))
+        return {**outcome, "state": "refused", "reason": _said(exc)}
+    except Exception as exc:  # noqa: BLE001
+        if job["attempts"] < store.MAX_ATTEMPTS:
+            store.requeue_bake(conn, job["id"], _said(exc))
+            return {**outcome, "state": "queued", "reason": _said(exc)}
+        # The fold page shows a refused track's reason, so it is a reader's
+        # sentence; what broke stays on the job, for whoever mends it.
+        reason = (f"AlphaFold's model could not be made: the bake broke each of the "
+                  f"{store.MAX_ATTEMPTS} times it was tried.")
+        store.refuse_bake(conn, job["id"], job["slug"], "structure", reason, error=_said(exc))
+        return {**outcome, "state": "refused", "reason": reason}
+
+
+def sweep(conn, storage, *, limit: int = 10, fetch_entry=uniprot.fetch_entry,
+          structures: bool = False) -> dict:
     """Reap what dead workers held, then resolve up to `limit` requests.
 
     Returns what it did, and how many constraint bakes are waiting, so the
-    caller knows whether to start a GPU.
+    caller knows whether to start a GPU, and how many structure bakes.
+    `structures` queues one for each protein resolved (`resolve_next`).
     """
     store.reap(conn)
     resolved = []
     for _ in range(limit):
-        outcome = resolve_next(conn, storage, fetch_entry=fetch_entry)
+        outcome = resolve_next(conn, storage, fetch_entry=fetch_entry, structures=structures)
         if outcome is None:
             break
         resolved.append(outcome)
-    return {"resolved": resolved, "constraint_queued": store.queued_bakes(conn, "constraint")}
+    return {"resolved": resolved, "constraint_queued": store.queued_bakes(conn, "constraint"),
+            "structure_queued": store.queued_bakes(conn, "structure")}
+
+
+def structure_all(conn, storage, *, limit: int = 20, model: Model) -> list[dict]:
+    """Bake queued structure tracks until none are left, or `limit` are done."""
+    done = []
+    for _ in range(limit):
+        outcome = structure_next(conn, storage, model=model)
+        if outcome is None:
+            break
+        done.append(outcome)
+    return done
 
 
 def score_all(conn, storage, *, limit: int = 20, score: Score = score_in_process) -> list[dict]:
