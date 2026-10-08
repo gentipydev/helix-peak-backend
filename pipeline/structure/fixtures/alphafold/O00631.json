@@ -1,0 +1,26 @@
+[
+ {
+  "entryId": "AF-O00631-F1",
+  "uniprotAccession": "O00631",
+  "gene": "SLN",
+  "latestVersion": 6,
+  "allVersions": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6
+  ],
+  "modelCreatedDate": "2025-08-01T00:00:00Z",
+  "pdbUrl": "https://alphafold.ebi.ac.uk/files/AF-O00631-F1-model_v6.pdb",
+  "cifUrl": "https://alphafold.ebi.ac.uk/files/AF-O00631-F1-model_v6.cif",
+  "uniprotStart": 1,
+  "uniprotEnd": 31,
+  "globalMetricValue": 91.56,
+  "fractionPlddtVeryHigh": 0.774,
+  "fractionPlddtConfident": 0.161,
+  "fractionPlddtLow": 0.065,
+  "fractionPlddtVeryLow": 0.0
+ }
+]

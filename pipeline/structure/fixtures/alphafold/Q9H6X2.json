@@ -1,0 +1,68 @@
+[
+ {
+  "entryId": "AF-Q9H6X2-6-F1",
+  "uniprotAccession": "Q9H6X2-6",
+  "gene": "ANTXR1",
+  "latestVersion": 6,
+  "allVersions": [
+   3,
+   4,
+   5,
+   6
+  ],
+  "modelCreatedDate": "2025-08-01T00:00:00Z",
+  "pdbUrl": "https://alphafold.ebi.ac.uk/files/AF-Q9H6X2-6-F1-model_v6.pdb",
+  "cifUrl": "https://alphafold.ebi.ac.uk/files/AF-Q9H6X2-6-F1-model_v6.cif",
+  "uniprotStart": 1,
+  "uniprotEnd": 358,
+  "globalMetricValue": 81.62,
+  "fractionPlddtVeryHigh": 0.668,
+  "fractionPlddtConfident": 0.109,
+  "fractionPlddtLow": 0.028,
+  "fractionPlddtVeryLow": 0.196
+ },
+ {
+  "entryId": "AF-Q9H6X2-2-F1",
+  "uniprotAccession": "Q9H6X2-2",
+  "gene": "ANTXR1",
+  "latestVersion": 6,
+  "allVersions": [
+   5,
+   6
+  ],
+  "modelCreatedDate": "2025-08-01T00:00:00Z",
+  "pdbUrl": "https://alphafold.ebi.ac.uk/files/AF-Q9H6X2-2-F1-model_v6.pdb",
+  "cifUrl": "https://alphafold.ebi.ac.uk/files/AF-Q9H6X2-2-F1-model_v6.cif",
+  "uniprotStart": 1,
+  "uniprotEnd": 368,
+  "globalMetricValue": 85.12,
+  "fractionPlddtVeryHigh": 0.677,
+  "fractionPlddtConfident": 0.147,
+  "fractionPlddtLow": 0.068,
+  "fractionPlddtVeryLow": 0.109
+ },
+ {
+  "entryId": "AF-Q9H6X2-F1",
+  "uniprotAccession": "Q9H6X2",
+  "gene": "ANTXR1",
+  "latestVersion": 6,
+  "allVersions": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6
+  ],
+  "modelCreatedDate": "2025-08-01T00:00:00Z",
+  "pdbUrl": "https://alphafold.ebi.ac.uk/files/AF-Q9H6X2-F1-model_v6.pdb",
+  "cifUrl": "https://alphafold.ebi.ac.uk/files/AF-Q9H6X2-F1-model_v6.cif",
+  "uniprotStart": 1,
+  "uniprotEnd": 564,
+  "globalMetricValue": 72.44,
+  "fractionPlddtVeryHigh": 0.369,
+  "fractionPlddtConfident": 0.191,
+  "fractionPlddtLow": 0.197,
+  "fractionPlddtVeryLow": 0.243
+ }
+]
