@@ -20,3 +20,7 @@ pipeline/data/
 # The Modal client's environment, made to deploy the resolver
 # (pipeline/resolver/README.md).
 .modal-venv/
+
+# The environment the resolver's worker runs in on the dev Mac, until Modal
+# runs it (pipeline/resolver/README.md).
+.worker-venv/
