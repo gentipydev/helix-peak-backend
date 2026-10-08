@@ -11,6 +11,11 @@ Nothing here writes. It prints what it found and exits 1 if anything is wrong.
 It checks a protein whose ESM-2 track is ready. One whose scores the scorer
 refused has no track to check here; the app's test/live_resolved_check.dart
 reads it as the app does (LIVE_EXPECT=refused).
+
+Its model is checked as it stands: ready (the stored scene and the `.glb` it
+was compiled from, each to its digest, and the fold page's words and chains to
+the model), refused (the sentence why, and nothing on the row), or never asked
+for. A model still pending is not a finished build.
 """
 
 from __future__ import annotations
@@ -28,6 +33,7 @@ import psycopg  # noqa: E402
 from app.config import settings  # noqa: E402
 from pipeline import uniprot  # noqa: E402
 from pipeline.constraint.score_protein import MODEL, REVISION  # noqa: E402
+from pipeline.resolver import worker  # noqa: E402
 
 SERVICE = "https://helix-peak-backend.onrender.com"
 wrong: list[str] = []
@@ -47,6 +53,52 @@ def hold(ok: bool, what: str) -> None:
     print(("  ok    " if ok else "  WRONG ") + what)
     if not ok:
         wrong.append(what)
+
+
+def structure(row: dict, track: dict) -> None:
+    """The protein's model, as far as it has got (`pipeline/structure/alphafold.py`)."""
+    state, said = track["state"], track.get("provenance") or {}
+    if state != "ready":
+        print(f"  structure: {state}" + (f": {track['reason']}" if track.get("reason") else ""))
+        hold(state in ("refused", "absent"), f"its model is not still on its way ({state})")
+        hold(row["structure"] is None and row["chains"] == [],
+             "no model, so no words or chains for one on the row")
+        return
+
+    scene = fetch(track["url"])
+    hold(track["format"] == "fsceneb" and hashlib.sha256(scene).hexdigest() == track["sha256"]
+         and len(scene) == track["bytes"], "scene bytes match their sha256 and size")
+    # The `.glb` it was compiled from is beside it in the bucket.
+    glb = fetch(track["url"].rsplit("/structure/", 1)[0] + "/" + said["glb"]["path"])
+    hold(hashlib.sha256(glb).hexdigest() == said["glb"]["sha256"] and len(glb) == said["glb"]["bytes"],
+         "the .glb beside it matches the sha256 and size its provenance names")
+    chrome, chains = row["structure"], row["chains"]
+    print(f"  structure: {len(scene):,} bytes at {track['url'].rsplit('/', 2)[-2:]}, {said.get('entry')}"
+          f" v{said.get('model_version')}, span {said.get('span')}, mean pLDDT {said.get('mean_plddt')},"
+          f" shares {said.get('plddt_shares')}, sampling {said.get('sampling')},"
+          f" {said.get('representation')}, frame {said.get('frame')}")
+    print(f"  structure: bridges {said.get('bridges')}, dropped {said.get('bridges_dropped')},"
+          f" differences {said.get('sequence_differences')}, importer {said.get('importer')},"
+          f" PyMOL {said.get('pymol')}")
+    print(f"  fold page: {chrome}")
+    print(f"  chains: {chains}")
+    hold(said.get("source") == "AlphaFold DB" and said.get("licence") == "CC BY 4.0"
+         and said.get("entry") == f"AF-{row['uniprot']}-F1" == (chrome or {}).get("pdb"),
+         "AlphaFold DB's canonical entry for this protein, credited CC BY 4.0")
+    hold(tuple(chrome or {}) == worker._CHROME, "the fold page's seven words")
+    hold(worker.glb_nodes(glb) == [chain["node"] for chain in chains] == said.get("nodes")
+         and all(chain["tint"] in worker._TINTS for chain in chains),
+         "every node the row names is in the model, with a tint the app has")
+    kept = [(r["start"], r["end"]) for r in row["regions"] if r["kept"]]
+    span = [min(a for a, _ in kept), max(b for _, b in kept)] if kept else [1, row["facts"]["residues"]]
+    hold(said.get("span") == span and chrome["count"] == span[1] - span[0] + 1
+         and chrome["modelled"] == (None if span == [1, row["facts"]["residues"]] else span),
+         f"drawn over the mature span {span}, and counted so")
+    hold(said.get("mean_plddt", 0) >= said.get("gate", 50), "mean pLDDT over the span clears the gate")
+    hold(all(pair in row["disulfides"] for pair in said.get("bridges", []))
+         and len(said.get("bridges", [])) + len(said.get("bridges_dropped", [])) == len(row["disulfides"])
+         and (("bonds" in said.get("nodes", [])) == bool(said.get("bridges"))),
+         "its bridges are the row's, each drawn or accounted for")
 
 
 def main(gene: str, device: str | None) -> int:
@@ -76,9 +128,11 @@ def main(gene: str, device: str | None) -> int:
     states = {kind: track["state"] for kind, track in tracks.items()}
     hold(states.get("record") == "ready" and states.get("constraint") == "ready",
          f"record and constraint ready: {states}")
-    hold(all(state == "absent" for kind, state in states.items() if kind not in ("record", "constraint")),
+    hold(all(state == "absent" for kind, state in states.items()
+             if kind not in ("record", "constraint", "structure")),
          "every other track absent")
     hold(row["tracks"] == states, "the row's bare states agree with its track rows")
+    structure(row, tracks["structure"])
 
     # The stored bytes, held to the digests their rows carry.
     record_bytes = fetch(tracks["record"]["url"])
@@ -143,7 +197,10 @@ def main(gene: str, device: str | None) -> int:
                 "from resolve_request where lower(gene) = lower(%s) order by id desc limit 1", (gene,)).fetchone()
             bake = conn.execute(
                 "select state, attempts, error, finished_at - started_at from bake_job where slug = %s "
-                "order by id desc limit 1", (slug,)).fetchone()
+                "and kind = 'constraint' order by id desc limit 1", (slug,)).fetchone()
+            model = conn.execute(
+                "select state, attempts, error, finished_at - started_at from bake_job where slug = %s "
+                "and kind = 'structure' order by id desc limit 1", (slug,)).fetchone()
             where = conn.execute(
                 "select accession, slice_start, slice_end, slice_strand, transcript_id, protein_id, chain_name "
                 "from protein where slug = %s", (slug,)).fetchone()
@@ -153,6 +210,7 @@ def main(gene: str, device: str | None) -> int:
     print(f"  protein row source: {where}")
     print(f"  request: {request}")
     print(f"  bake: {bake}")
+    print(f"  structure bake: {model}")
     print(f"  aliases: {aliases}")
     hold(request is not None and request[0] == "done" and request[2] == 1, "request done by resolver version 1")
     hold(bake is not None and bake[0] == "done", "constraint bake done")
