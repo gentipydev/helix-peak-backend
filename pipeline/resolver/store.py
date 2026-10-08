@@ -121,6 +121,12 @@ def claim_request(conn) -> Optional[dict]:
     return dict(zip(("id", "gene", "uniprot", "slug", "attempts"), row))
 
 
+def queued_requests(conn) -> int:
+    return conn.execute(
+        "select count(*) from resolve_request where state = 'queued'"
+    ).fetchone()[0]
+
+
 def protein_for_gene(conn, gene: str) -> Optional[str]:
     """The slug of the protein this gene already makes, listed or resolved."""
     row = conn.execute(

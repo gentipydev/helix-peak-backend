@@ -1,16 +1,20 @@
-"""The Mac's worker, offline: its settings, its bridge to the scorer, the driver.
+"""The Mac's worker, offline: its settings, its bridge to the scorer, the driver,
+one cycle, the loop, and the process around them.
 
 Nothing here has torch, a database or the network. The scorer's environment is
 stood in for by `fake_python`: a script this interpreter runs in the place of
 `pipeline/.esm-venv/bin/python`, started with the command line the bridge gives
-the real one.
+the real one. The queue is stood in for by `Queue`, and `caffeinate` by a
+process that only waits. `test_worker_pg.py` runs a cycle on a real Postgres.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import textwrap
@@ -87,6 +91,20 @@ BREAKS = """
     def broken(target, record):
         raise RuntimeError("MPS backend out of memory")
     scoring.score_with_esm = broken
+"""
+
+# A `fake_python` body for the tests that go as far as the upload gate: what
+# the scorer writes, as far as the gate reads it.
+SCORES_A_TRACK = """
+    import json, pickle
+    target = pickle.loads(target_file.read_bytes())
+    track_file.write_text(json.dumps({
+        "gene": target.gene, "uniprot": target.uniprot,
+        "model": "facebook/esm2_t33_650M_UR50D", "revision": "test",
+        "method": "masked_marginals", "normalization": "minmax",
+        "score_units": "natural_log_ratio_to_wildtype", "entropy_vocabulary": "full",
+        "vocabulary_size": 33, "context": {"mode": "full", "residues": target.aa},
+    }) + "\\n")
 """
 
 
@@ -447,3 +465,480 @@ def test_score_with_esm_puts_the_record_where_the_scorer_reads_it(tmp_path, monk
     monkeypatch.setattr(score_protein, "score_protein", scored)
     assert scoring.score_with_esm(INS, RECORD) == b"track\n"
     assert calls == [(INS, tmp_path / "assets" / "constraint" / "ins_esm_constraint.json", 1022)]
+
+
+# ------------------------------------------------------------ one cycle
+
+
+class Connection:
+    """All the cycle asks of a connection here: to be closed when it is done."""
+
+    def __init__(self):
+        self.closed = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *raised):
+        self.closed = True
+
+
+class Queue:
+    """`store` and `worker` as the cycle calls them, over two lists.
+
+    `requests` and `bakes` are the outcomes still to hand out, oldest first.
+    One that goes back on the queue ("queued") stays at the front, as a
+    requeued row does, so a cycle that asked again at once would get it again.
+    """
+
+    def __init__(self, monkeypatch, requests=(), bakes=()):
+        self.requests, self.bakes = list(requests), list(bakes)
+        self.connections, self.sweeps, self.scorings = [], [], []
+        self.conninfo = None
+        self.during = lambda: None  # run while a protein is being worked
+        self.seen = True            # whether the first look sees what is queued
+        monkeypatch.setattr(store, "connect", self._connect)
+        monkeypatch.setattr(store, "TrackStorage", lambda url, key: ("storage", url, key))
+        monkeypatch.setattr(store, "queued_requests",
+                            lambda conn: len(self.requests) if self.seen else 0)
+        monkeypatch.setattr(store, "queued_bakes",
+                            lambda conn, kind: len(self.bakes) if self.seen else 0)
+        monkeypatch.setattr(worker, "sweep", self._sweep)
+        monkeypatch.setattr(worker, "score_all", self._score_all)
+
+    def _connect(self, conninfo):
+        self.conninfo = conninfo
+        self.connections.append(Connection())
+        return self.connections[-1]
+
+    def _take(self, waiting):
+        if not waiting:
+            return []
+        self.during()
+        if waiting[0]["state"] == "queued":
+            return [waiting[0]]
+        return [waiting.pop(0)]
+
+    def _sweep(self, conn, storage, *, limit):
+        self.sweeps.append(limit)
+        return {"resolved": self._take(self.requests), "constraint_queued": len(self.bakes)}
+
+    def _score_all(self, conn, storage, *, limit, score):
+        self.scorings.append((limit, score))
+        return self._take(self.bakes)
+
+
+class Ready:
+    """A scorer that could start, or that says why it could not."""
+
+    def __init__(self, unready=None):
+        self.why, self.asked = unready, 0
+
+    def unready(self):
+        self.asked += 1
+        return self.why
+
+
+def _request(gene="INS", state="done", **said):
+    return {"id": 1, "gene": gene, "state": state, "slug": gene.lower(), **said}
+
+
+def _bake(slug="ins", state="ready", **said):
+    return {"id": 1, "slug": slug, "state": state, **said}
+
+
+@pytest.fixture
+def caffeinate(monkeypatch, spawned):
+    """`caffeinate` as a process that only waits, and every one that was started."""
+    monkeypatch.setattr(local_worker, "CAFFEINATE",
+                        (sys.executable, "-c", "import time; time.sleep(120)"))
+    return spawned
+
+
+@pytest.fixture
+def settings(tmp_path):
+    return make_settings(tmp_path, tmp_path / "no-scorer")
+
+
+def test_an_idle_cycle_reaps_and_keeps_nothing_awake(settings, monkeypatch, caffeinate):
+    queue, scorer = Queue(monkeypatch), Ready()
+    assert local_worker.cycle(settings, scorer, threading.Event()) == \
+        {"resolved": [], "scored": [], "idle": True}
+    # The sweep runs all the same: the reaper is in it.
+    assert queue.sweeps == [1]
+    assert queue.scorings == [] and scorer.asked == 0
+    assert caffeinate == []
+    assert [connection.closed for connection in queue.connections] == [True]
+
+
+def test_a_cycle_with_work_keeps_the_mac_awake_until_it_is_done(
+        settings, monkeypatch, caffeinate, caplog):
+    from psycopg.conninfo import conninfo_to_dict
+
+    queue, scorer = Queue(monkeypatch, requests=[_request()], bakes=[_bake()]), Ready()
+    left = settings.genbank / "NG_007114.1.gb"
+    left.parent.mkdir(parents=True)
+    left.write_text("LOCUS")
+    awake = []
+    queue.during = lambda: awake.append([child.poll() for child in caffeinate])
+    with caplog.at_level(logging.INFO, logger="resolver-worker"):
+        done = local_worker.cycle(settings, scorer, threading.Event())
+
+    assert [o["state"] for o in done["resolved"]] == ["done"]
+    assert [o["state"] for o in done["scored"]] == ["ready"]
+    assert done["idle"] is False
+    # One protein a call, so a stop can land between two; then none is left.
+    assert queue.sweeps == [1, 1]
+    assert queue.scorings == [(1, scorer), (1, scorer)]
+    # One caffeinate, tied to this process, there through both and gone after.
+    assert len(caffeinate) == 1
+    assert caffeinate[0].args[-2:] == ["-w", str(os.getpid())]
+    assert awake == [[None], [None]]
+    assert caffeinate[0].poll() is not None
+    # What the bakers left is not there for the next protein to meet.
+    assert not left.exists() and settings.genbank.is_dir()
+
+    said = [record.getMessage() for record in caplog.records]
+    assert re.fullmatch(r"INS: request done as ins in \d+\.\d s", said[0])
+    assert re.fullmatch(r"ins: constraint ready in \d+\.\d s", said[1])
+
+    # The connection is the URL's, probed while a protein is scored.
+    opened = conninfo_to_dict(queue.conninfo)
+    assert (opened["host"], opened["user"], opened["password"]) == \
+        ("db.invalid", "worker", "hunter2-secret")
+    assert (opened["keepalives_idle"], opened["connect_timeout"]) == ("60", "20")
+
+
+def test_a_url_that_sets_its_own_connection_settings_keeps_them():
+    from psycopg.conninfo import conninfo_to_dict
+
+    opened = conninfo_to_dict(local_worker._conninfo(
+        "postgresql://worker:pw@db.invalid/postgres?sslmode=require&keepalives_idle=5"))
+    assert (opened["sslmode"], opened["keepalives_idle"], opened["keepalives_count"]) == \
+        ("require", "5", "10")
+
+
+def test_a_bake_with_no_request_is_work_and_so_is_one_the_reaper_puts_back(
+        settings, monkeypatch, caffeinate):
+    queue = Queue(monkeypatch, bakes=[_bake()])
+    done = local_worker.cycle(settings, Ready(), threading.Event())
+    assert [o["state"] for o in done["scored"]] == ["ready"] and queue.sweeps == [1]
+    assert len(caffeinate) == 1 and caffeinate[0].poll() is not None
+
+    # Nothing was queued at the first look; the sweep's reaper then put a dead
+    # worker's bake back. It is scored awake like any other.
+    queue = Queue(monkeypatch, bakes=[_bake()])
+    queue.seen = False
+    done = local_worker.cycle(settings, Ready(), threading.Event())
+    assert [o["state"] for o in done["scored"]] == ["ready"] and done["idle"] is False
+    assert len(caffeinate) == 2 and caffeinate[1].poll() is not None
+
+
+def test_no_bake_is_claimed_while_the_scorer_cannot_start(
+        settings, monkeypatch, caffeinate, caplog):
+    queue = Queue(monkeypatch, bakes=[_bake(), _bake("b2m")])
+    scorer = Ready("The scorer exited with status 1: No module named 'torch'")
+    done = local_worker.cycle(settings, scorer, threading.Event())
+
+    assert done == {"resolved": [], "scored": [], "idle": False}
+    assert queue.scorings == [] and len(queue.bakes) == 2
+    assert ("2 bake(s) left on the queue: no protein can be scored here now. "
+            "The scorer exited with status 1: No module named 'torch'") in caplog.text
+    assert caffeinate[0].poll() is not None
+
+
+def test_a_stop_lands_between_two_proteins(settings, monkeypatch, caffeinate):
+    stop = threading.Event()
+    queue = Queue(monkeypatch, bakes=[_bake(), _bake("b2m")])
+    queue.during = stop.set
+    done = local_worker.cycle(settings, Ready(), stop)
+    assert [o["slug"] for o in done["scored"]] == ["ins"]
+    assert len(queue.scorings) == 1 and [b["slug"] for b in queue.bakes] == ["b2m"]
+
+    # While a request is resolved: the next is left, and no scoring is started.
+    stop = threading.Event()
+    queue = Queue(monkeypatch, requests=[_request(), _request("B2M")], bakes=[_bake()])
+    queue.during = stop.set
+    scorer = Ready()
+    done = local_worker.cycle(settings, scorer, stop)
+    assert [o["gene"] for o in done["resolved"]] == ["INS"]
+    assert queue.sweeps == [1] and queue.scorings == [] and scorer.asked == 0
+
+
+def test_a_protein_put_back_on_the_queue_waits_for_the_next_cycle(
+        settings, monkeypatch, caffeinate, caplog):
+    # `sweep` and `score_all` with their own limits would claim it again at
+    # once, and a third time, and that is all the tries a protein gets.
+    queue = Queue(monkeypatch, requests=[
+        _request(state="queued", reason="rest.uniprot.org did not answer"), _request("B2M")])
+    local_worker.cycle(settings, Ready(), threading.Event())
+    assert queue.sweeps == [1] and len(queue.requests) == 2
+    assert re.search(r"INS: request back on the queue in \d+\.\d s: rest.uniprot.org did not "
+                     r"answer", caplog.text)
+
+    queue = Queue(monkeypatch, bakes=[
+        _bake(state="queued", reason=local_worker.STOPPED), _bake("b2m")])
+    local_worker.cycle(settings, Ready(), threading.Event())
+    assert len(queue.scorings) == 1 and len(queue.bakes) == 2
+
+
+def test_a_cycle_that_breaks_still_lets_the_mac_sleep(settings, monkeypatch, caffeinate):
+    queue = Queue(monkeypatch, bakes=[_bake()])
+
+    def gone():
+        raise OSError("the network went with the lid")
+
+    queue.during = gone
+    with pytest.raises(OSError, match="went with the lid"):
+        local_worker.cycle(settings, Ready(), threading.Event())
+    assert len(caffeinate) == 1 and caffeinate[0].poll() is not None
+    assert queue.connections[0].closed
+
+
+# ------------------------------------------------------------ the loop
+
+
+class Waits(local_worker.Stop):
+    """A stop that comes after so many waits, remembering how long each was."""
+
+    def __init__(self, limit):
+        super().__init__()
+        self.limit, self.asked = limit, []
+
+    def wait(self, timeout=None):
+        self.asked.append(timeout)
+        if len(self.asked) >= self.limit:
+            self.set()
+        return self.is_set()
+
+
+IDLE = {"resolved": [], "scored": [], "idle": True}
+
+
+def _cycles(monkeypatch, outcomes):
+    """`cycle` as a list of what each one does: returns it, or raises it."""
+    outcomes = list(outcomes)
+
+    def cycle(settings, scorer, stop):
+        outcome = outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    monkeypatch.setattr(local_worker, "cycle", cycle)
+
+
+def test_a_database_out_of_reach_is_waited_out_longer_each_time(settings, monkeypatch, caplog):
+    import psycopg
+
+    unreachable = psycopg.OperationalError("connection to server at db.invalid failed")
+    _cycles(monkeypatch, [unreachable] * 6 + [IDLE, IDLE])
+    stop = Waits(8)
+    with caplog.at_level(logging.INFO, logger="resolver-worker"):
+        assert local_worker.serve(settings, stop) == 0
+
+    assert stop.asked == [60, 120, 240, 480, 600, 600, 60, 60]
+    said = [record.getMessage() for record in caplog.records]
+    assert said[0] == ("the cycle stopped short: OperationalError: connection to server at "
+                       "db.invalid failed. Next try in 60 s")
+    assert said[5].endswith("Next try in 600 s") and said[6:] == ["nothing queued"] * 2
+    # The network's fault is one line. Nobody needs its traceback.
+    assert not any(record.exc_info for record in caplog.records)
+
+
+def test_an_error_nobody_expected_is_logged_whole_and_the_loop_goes_on(
+        settings, monkeypatch, caplog):
+    _cycles(monkeypatch, [KeyError("constraint_queued"), IDLE])
+    stop = Waits(2)
+    assert local_worker.serve(settings, stop) == 0
+    assert stop.asked == [60, 60]
+    assert "KeyError: 'constraint_queued'" in caplog.text and "Traceback" in caplog.text
+
+
+def test_once_is_one_cycle_and_its_status_says_whether_the_queue_was_reached(
+        settings, monkeypatch):
+    stop = Waits(1)
+    _cycles(monkeypatch, [IDLE])
+    assert local_worker.serve(settings, stop, once=True) == 0
+    _cycles(monkeypatch, [OSError("no route to host")])
+    assert local_worker.serve(settings, stop, once=True) == 1
+    assert stop.asked == []
+
+
+def test_a_stop_ends_the_loop_without_another_cycle(settings, monkeypatch):
+    stop = local_worker.Stop()
+    ran = []
+
+    def cycle(settings, scorer, stopping):
+        ran.append(True)
+        stop.set()
+        return IDLE
+
+    monkeypatch.setattr(local_worker, "cycle", cycle)
+    assert local_worker.serve(settings, stop) == 0
+    assert ran == [True]
+
+
+def test_the_wait_never_grows_past_ten_minutes_or_shrinks_below_the_poll():
+    assert [local_worker._backoff(60, n) for n in (1, 2, 3, 4, 5, 6, 5000)] == \
+        [60, 120, 240, 480, 600, 600, 600]
+    assert [local_worker._backoff(900, n) for n in (1, 2, 3)] == [900, 900, 900]
+
+
+# ------------------------------------------------------------ the process
+
+
+def test_one_worker_holds_the_lock(tmp_path):
+    path = tmp_path / "state" / "worker.lock"
+    first = local_worker.acquire(path)
+    assert first is not None and local_worker.holder(path) == os.getpid()
+    assert local_worker.acquire(path) is None
+    first.close()
+    second = local_worker.acquire(path)
+    assert second is not None
+    second.close()
+
+
+def test_the_workspace_is_emptied_and_is_only_ever_the_workers_own(
+        settings, tmp_path, monkeypatch):
+    for folder in (settings.data, settings.genbank, settings.scoring):
+        (folder / "assets").mkdir(parents=True)
+        (folder / "assets" / "left.json").write_text("{}")
+    settings.lock.write_text("1\n")
+    local_worker.clear_workspace(settings)
+    assert [list(folder.iterdir()) for folder in
+            (settings.data, settings.genbank, settings.scoring)] == [[], [], []]
+    assert settings.lock.exists()
+
+    # Never a directory of the repository's: `pipeline/data/` holds the
+    # twenty's stored tracks. A stand-in repository, so nothing real is at risk.
+    repository = tmp_path / "repository"
+    stored = repository / "pipeline" / "data" / "assets" / "insulin.json"
+    stored.parent.mkdir(parents=True)
+    stored.write_text("{}")
+    monkeypatch.setattr(local_worker, "BACKEND", repository)
+    with pytest.raises(RuntimeError, match="inside the repository"):
+        local_worker.clear_workspace(
+            dataclasses.replace(settings, state=repository / "pipeline"))
+    assert stored.exists()
+
+
+def test_the_bakers_are_held_to_the_workers_directories(settings, monkeypatch):
+    from pipeline import paths
+    from pipeline.mock import build_gene_record as builder
+
+    for key in ("NCBI_EMAIL", "HELIXPEEK_DATA", "HELIXPEEK_GB_CACHE"):
+        monkeypatch.delenv(key, raising=False)  # so each is put back afterwards
+    # Both were imported long ago, by this test run: what the check is for.
+    with pytest.raises(local_worker.Misconfigured, match="before the worker named"):
+        local_worker.take_directories(settings)
+    assert os.environ["HELIXPEEK_DATA"] == str(settings.data)
+    assert os.environ["HELIXPEEK_GB_CACHE"] == str(settings.genbank)
+
+    monkeypatch.setattr(paths, "DATA", settings.data)
+    monkeypatch.setattr(builder, "CACHE", settings.genbank)
+    local_worker.take_directories(settings)
+
+
+def test_the_secrets_are_the_key_and_the_url_and_its_password_however_written(settings):
+    assert settings.secrets == (settings.database_url, "sb_secret_not_a_real_key",
+                                "hunter2-secret")
+    for url, password in [
+        ("postgresql://postgres.ref:p%40ss%2Fword@pooler.invalid:5432/postgres", "p@ss/word"),
+        ("host=db.invalid user=worker password=hunter2-secret dbname=postgres", "hunter2-secret"),
+        ("postgres//worker:hunter2-secret@db.invalid/postgres", "hunter2-secret"),
+    ]:
+        assert password in dataclasses.replace(settings, database_url=url).secrets
+
+
+def test_no_line_of_the_log_holds_a_credential(settings):
+    handlers = local_worker.start_logging(settings)
+    try:
+        local_worker.log.info("connecting to %s", settings.database_url)
+        local_worker.log.warning("the key is %s", settings.service_key)
+        try:
+            # What libpq says of a connection string it cannot parse.
+            raise ValueError(f'missing "=" after "{settings.database_url}" in connection info')
+        except ValueError:
+            local_worker.log.error("the cycle stopped short", exc_info=True)
+    finally:
+        for handler in handlers:
+            local_worker.log.removeHandler(handler)
+            handler.close()
+
+    text = settings.log_file.read_text()
+    assert "hunter2-secret" not in text and settings.service_key not in text
+    lines = text.splitlines()
+    assert re.fullmatch(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d INFO    connecting to \[redacted\]",
+                        lines[0])
+    assert lines[1].endswith("WARNING the key is [redacted]")
+    assert lines[-1] == 'ValueError: missing "=" after "[redacted]" in connection info'
+
+
+_NOWHERE = "postgresql://worker:hunter2-secret@/postgres?host=/nonexistent-helixpeek"
+_MISTYPED = "postgres//worker:hunter2-secret@db.invalid/postgres"
+
+
+def _run(tmp_path: Path, *arguments: str, database_url: str):
+    """The worker as launchd starts it, with a home of its own and no database:
+    every key is named here, so the repository's `.env` is never what is read."""
+    home = tmp_path / "home"
+    home.mkdir(parents=True, exist_ok=True)
+    environment = {key: value for key, value in os.environ.items()
+                   if not key.startswith(("RESOLVER_", "HELIXPEEK_"))}
+    environment.update(_FOUR, DATABASE_URL=database_url, HOME=str(home),
+                       RESOLVER_ESM_PYTHON=str(tmp_path / "no-scorer"))
+    done = subprocess.run(
+        [sys.executable, "-m", "pipeline.resolver.local_worker", *arguments], cwd=BACKEND,
+        env=environment, capture_output=True, text=True, timeout=120)
+    return home, done
+
+
+def test_run_once_with_no_database_it_says_so_and_writes_only_under_its_own_home(tmp_path):
+    home, done = _run(tmp_path, "--once", database_url=_NOWHERE)
+    assert done.returncode == 1, done.stderr
+
+    state = home / "Library" / "Application Support" / "HelixPeek" / "resolver-worker"
+    lines = (home / "Library" / "Logs" / "HelixPeek" / "resolver-worker.log").read_text() \
+        .splitlines()
+    # It started, which it does only once the bakers write where it says.
+    assert "started (pid " in lines[0] and lines[0].endswith(f"state in {state}")
+    assert "the cycle stopped short: OperationalError: " in lines[1]
+    assert lines[-1].endswith("stopped") and len(lines) == 3
+    assert sorted(path.name for path in state.iterdir()) == \
+        ["data", "genbank", "scoring", "worker.lock"]
+    # Not a terminal, as under launchd: the lines are the file's alone.
+    assert "started (pid " not in done.stderr
+    assert "hunter2-secret" not in "\n".join(lines) + done.stderr + done.stdout
+
+
+def test_a_mistyped_database_url_is_not_copied_into_the_log(tmp_path):
+    home, done = _run(tmp_path, "--once", database_url=_MISTYPED)
+    assert done.returncode == 1, done.stderr
+    text = (home / "Library" / "Logs" / "HelixPeek" / "resolver-worker.log").read_text()
+    # libpq quotes the string back, and the traceback carries it.
+    assert "ProgrammingError" in text and '"[redacted]"' in text
+    assert "hunter2-secret" not in text + done.stderr + done.stdout
+
+
+def test_a_second_worker_says_it_is_not_needed_and_leaves(tmp_path):
+    home = tmp_path / "home"
+    held = local_worker.acquire(
+        home / "Library" / "Application Support" / "HelixPeek" / "resolver-worker" / "worker.lock")
+    try:
+        _, done = _run(tmp_path, "--once", database_url=_NOWHERE)
+    finally:
+        held.close()
+    assert done.returncode == 0
+    assert f"another one is running (pid {os.getpid()}); this one is not needed." in done.stderr
+    assert not (home / "Library" / "Logs").exists()
+
+
+def test_a_queue_that_cannot_be_read_is_one_line_with_no_credential(tmp_path):
+    home, done = _run(tmp_path, "--queue", database_url=_MISTYPED)
+    assert done.returncode == 1
+    assert done.stderr.startswith("resolver worker: the queue could not be read: ")
+    assert "hunter2-secret" not in done.stderr + done.stdout
+    # Reading the queue opens no log and makes no directory of the worker's.
+    assert not (home / "Library" / "Logs").exists()
+    assert not (home / "Library" / "Application Support").exists()

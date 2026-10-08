@@ -15,9 +15,13 @@ statement `store.py` runs, and the service reading the rows they write.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
+import re
 import sys
+import threading
+import time
 import uuid
 from pathlib import Path
 from urllib.error import URLError
@@ -34,7 +38,10 @@ pytestmark = pytest.mark.skipif(
 
 os.environ.setdefault("NCBI_EMAIL", "tests@example.com")
 
-from pipeline.resolver import store, worker  # noqa: E402
+from pipeline.resolver import local_worker, store, worker  # noqa: E402
+from pipeline.resolver.test_local_worker import (  # noqa: E402
+    SCORES_A_TRACK, fake_python, make_settings,
+)
 from pipeline.resolver.test_resolve import INS, _body, _mutated  # noqa: E402
 from pipeline.resolver.test_worker import _another_genes_record  # noqa: E402
 
@@ -399,3 +406,138 @@ def test_the_daily_cap_counts_the_days_requests(conn, api, monkeypatch):
     assert api.post("/proteins/resolve", json={"gene": "INS"}).status_code == 429
     conn.execute("update resolve_request set requested_at = now() - interval '2 days'")
     assert api.post("/proteins/resolve", json={"gene": "INS"}).status_code == 202
+
+
+# ------------------------------------------------- the worker on a Mac
+
+
+@pytest.fixture
+def mac(database_url, offline, tmp_path, monkeypatch):
+    """`local_worker.cycle` on this database: storage a dict, UniProt and NCBI the
+    insulin fixtures, `caffeinate` a process that only waits. Call it with a
+    name and a `fake_python` body, and it runs one cycle scored by that script."""
+    storage = Storage()
+    sweep = worker.sweep
+    monkeypatch.setattr(store, "TrackStorage", lambda url, key: storage)
+    monkeypatch.setattr(
+        worker, "sweep", lambda conn, storage, **said: sweep(
+            conn, storage, fetch_entry=lambda accession: offline(_body()), **said))
+    monkeypatch.setattr(local_worker, "CAFFEINATE",
+                        (sys.executable, "-c", "import time; time.sleep(120)"))
+    monkeypatch.setattr(local_worker, "_CHILD_POLL", 0.02)
+
+    def run(name, body, stop=None, **check):
+        folder = tmp_path / name
+        folder.mkdir()
+        settings = dataclasses.replace(
+            make_settings(tmp_path, fake_python(folder, body, **check)),
+            database_url=database_url)
+        stop = stop or threading.Event()
+        return local_worker.cycle(settings, local_worker.Scorer(settings, stop), stop)
+
+    run.storage = storage
+    return run
+
+
+def _bake_and_track(conn):
+    return (_one(conn, "select state, attempts, error, started_at from bake_job"),
+            _one(conn, "select state from protein_track where kind = 'constraint'"))
+
+
+def test_the_macs_worker_takes_a_request_to_a_scored_protein(conn, mac):
+    _ask(conn)
+    assert store.queued_requests(conn) == 1
+
+    done = mac("scores", SCORES_A_TRACK)
+    assert [(o["gene"], o["state"]) for o in done["resolved"]] == [("INS", "done")]
+    assert [(o["slug"], o["state"]) for o in done["scored"]] == [("ins", "ready")]
+    assert done["idle"] is False
+
+    assert _one(conn, "select state, slug, attempts from resolve_request") == ("done", "ins", 1)
+    assert _one(conn, "select state, attempts, error from bake_job") == ("done", 1, None)
+    state, provenance = _one(conn, "select state, provenance from protein_track "
+                                   "where kind = 'constraint'")
+    assert state == "ready" and provenance["model"] == "facebook/esm2_t33_650M_UR50D"
+    assert sorted(path.split("/")[0] for _, path in mac.storage.objects) == \
+        ["constraint", "record"]
+    assert store.queued_requests(conn) == 0
+
+    # Nothing is left: the next cycle only reaps.
+    assert mac("again", SCORES_A_TRACK) == {"resolved": [], "scored": [], "idle": True}
+
+
+def test_a_stop_while_scoring_puts_the_bake_back_once(conn, mac, tmp_path, monkeypatch):
+    # The scorer says when it has started, and the stop comes then: mid-score,
+    # however long resolving took.
+    started = tmp_path / "scoring-has-started"
+    monkeypatch.setenv("SCORING_STARTED", str(started))
+    stop = threading.Event()
+
+    def stop_once_scoring():
+        while not started.exists():
+            time.sleep(0.01)
+        stop.set()
+
+    threading.Thread(target=stop_once_scoring, daemon=True).start()
+    _ask(conn)
+    done = mac("slow", """
+        import time
+        Path(os.environ["SCORING_STARTED"]).write_text("")
+        time.sleep(120)
+    """, stop=stop)
+
+    assert [o["state"] for o in done["resolved"]] == ["done"]
+    assert [(o["state"], o["reason"]) for o in done["scored"]] == \
+        [("queued", local_worker.STOPPED)]
+    # Back on the queue at once, not left running for the reaper's 90 minutes.
+    # Claimed once: a worker that is leaving does not take it again, which
+    # would be its second and third tries, and then its refusal.
+    assert _bake_and_track(conn) == (("queued", 1, local_worker.STOPPED, None), ("pending",))
+
+    done = mac("scores", SCORES_A_TRACK)
+    assert [o["state"] for o in done["scored"]] == ["ready"]
+    assert _one(conn, "select state, attempts, error from bake_job") == ("done", 2, None)
+    assert _one(conn, "select state from protein_track where kind = 'constraint'") == ("ready",)
+
+
+def test_a_scorer_that_cannot_start_claims_no_bake(conn, mac):
+    _ask(conn)
+    done = mac("no-torch", "sys.exit(1)", check=1, check_says="No module named 'torch'\n")
+    assert [o["state"] for o in done["resolved"]] == ["done"] and done["scored"] == []
+    assert _bake_and_track(conn) == (("queued", 0, None, None), ("pending",))
+
+
+def test_a_scorer_that_breaks_is_tried_once_a_cycle(conn, mac):
+    _ask(conn)
+    states = []
+    for attempt in ("first", "second", "third"):
+        done = mac(attempt, "sys.stderr.write('RuntimeError: MPS backend out of memory')\n"
+                            "sys.exit(1)")
+        states.append([o["state"] for o in done["scored"]])
+        states.append(_one(conn, "select attempts from bake_job")[0])
+    # One try a cycle, a poll apart, not three in the second it takes to fail.
+    assert states == [["queued"], 1, ["queued"], 2, ["refused"], 3]
+    assert _one(conn, "select state, reason from protein_track where kind = 'constraint'") == (
+        "refused", "Scoring failed 3 times: The scorer exited with status 1: "
+                   "RuntimeError: MPS backend out of memory")
+
+
+def test_the_queue_is_read_as_lines(conn, mac):
+    assert local_worker.queue(conn).splitlines() == [
+        "requests  0 queued, 0 running (0 done, 0 refused, 0 failed)",
+        "bakes     0 queued, 0 running (0 done, 0 failed)",
+        "no request yet"]
+
+    _ask(conn)
+    assert local_worker.queue(conn).splitlines()[0] == \
+        "requests  1 queued, 0 running (0 done, 0 refused, 0 failed)"
+    mac("no-torch", "sys.exit(1)", check=1)
+    lines = local_worker.queue(conn).splitlines()
+    assert lines[:4] == [
+        "requests  0 queued, 0 running (1 done, 0 refused, 0 failed)",
+        "bakes     1 queued, 0 running (0 done, 0 failed)",
+        "  ins constraint: queued, claimed 0 time(s)",
+        "last requests"]
+    assert re.fullmatch(r"  \d{4}-\d\d-\d\d \d\d:\d\d  INS +done", lines[4]) and len(lines) == 5
+    # It only read: the queue is as it was.
+    assert _bake_and_track(conn) == (("queued", 0, None, None), ("pending",))

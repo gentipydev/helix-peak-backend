@@ -1,26 +1,67 @@
-"""The resolver's worker on a Mac: what it is set up with, and where it runs ESM-2.
+"""The resolver's worker on a Mac, until Modal runs it.
 
-`worker.score_all` scores with whatever it is handed (`worker.Score`). On Modal
-that is `scoring.score_with_esm` in the worker's own process, because one image
-holds torch and psycopg both. On the dev Mac no environment does: the scorer's,
-`pipeline/.esm-venv`, baked the twenty and is given nothing new. So a `Scorer`
-is handed over instead, which runs `score_local.py` there as a subprocess, one
-protein at a time, and comes back with what `score_with_esm` would have: the
-track's bytes, or the scorer's own `ValueError`.
+    cd helix-peek-backend
+    .worker-venv/bin/python -u -m pipeline.resolver.local_worker           # the loop
+    .worker-venv/bin/python -u -m pipeline.resolver.local_worker --once    # one cycle
+    .worker-venv/bin/python -u -m pipeline.resolver.local_worker --queue   # what waits; reads only
+
+`scripts/resolver_worker.sh` runs the first as a launchd agent, and the README
+beside this file is the runbook.
+
+It is `worker.sweep` and `worker.score_all` as `modal_app.py` runs them, on the
+same database and storage, with the same four credentials, read from the
+repository's `.env` where Modal reads its secret. A protein built here cannot
+be told from one built there, except by the device its track names. What
+differs is how the work is started and where ESM-2 runs:
+
+- Nothing wakes it. It asks the queue every `RESOLVER_POLL_SECONDS` (60).
+- `worker.score_all` scores with whatever it is handed (`worker.Score`). On
+  Modal that is `scoring.score_with_esm` in the worker's own process, because
+  one image holds torch and psycopg both. Here no environment does: the
+  scorer's, `pipeline/.esm-venv`, baked the twenty and is given nothing new.
+  So a `Scorer` is handed over instead, which runs `score_local.py` there as a
+  subprocess, one protein at a time, and comes back with what
+  `score_with_esm` would have: the track's bytes, or the scorer's own
+  `ValueError`.
+
+A laptop is not a container, and four things keep that out of the rows:
+
+- One protein at a time. `sweep` and `score_all` are called with `limit=1`, so
+  a stop lands between proteins, and a protein that goes back on the queue
+  ends the cycle's work on that queue. The next cycle tries it again, a poll
+  later, rather than this one at once with whatever broke it still broken:
+  three tries in one second would refuse a protein for good over a network
+  that was away for two.
+- No bake is claimed while the scorer cannot start (`Scorer.unready`).
+- The bakers' directories are the worker's own, under Application Support and
+  never `pipeline/data/`, and are emptied after each cycle that used them, as
+  a container's `/tmp` is. A GenBank reply garbled once is not read twice.
+- Nothing waits for ever on a network that went away with the lid: sockets
+  time out, and the database connection is probed while a protein is scored.
+
+It keeps the Mac awake (`caffeinate -i`) while it has work, and only then. It
+is the only worker on the machine (a lock). SIGTERM or SIGINT stops it between
+proteins, ending a scorer that is running so that its bake goes back on the
+queue at once. An error that is no protein's (the database out of reach) is
+logged and waited out, longer each time, up to ten minutes.
 
 Nothing under `pipeline` is imported when this module is. `paths.DATA` and the
 record builder's `CACHE` are fixed the first time they are imported, from the
-environment as it is then, and the worker has to name its own directories
-before that: never `pipeline/data/`, which holds the twenty's stored tracks.
+environment as it is then, and `main` names the worker's directories first.
 """
 
 from __future__ import annotations
 
+import argparse
 import logging
+import logging.handlers
 import math
 import os
 import pickle
 import re
+import shutil
+import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -29,6 +70,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Optional
+from urllib.parse import unquote
 
 BACKEND = Path(__file__).resolve().parents[2]
 if str(BACKEND) not in sys.path:
@@ -49,11 +91,35 @@ _CREDENTIALS = ("DATABASE_URL", "SUPABASE_SERVICE_KEY")
 # claimed twice, so the timeout stays under it whatever is asked for.
 SCORE_TIMEOUT_CEILING = 85 * 60
 
+# A cycle's most, the defaults `worker.sweep` and `worker.score_all` have on Modal.
+SWEEP_LIMIT = 10
+SCORE_LIMIT = 20
+
+# How long an error that is no protein's is waited out, at most.
+MAX_BACKOFF = 600
+
+# Kept from idle sleep while there is work. `-w` ends it with this process, so
+# it cannot outlive a worker that is killed.
+CAFFEINATE = ("caffeinate", "-i")
+
+# The record builder's Entrez call sets no timeout of its own. Without one, a
+# download the Mac slept through waits on a connection nobody is on.
+NETWORK_TIMEOUT = 120
+
+# What the worker's connection is opened with, where `DATABASE_URL` does not
+# say otherwise. Nothing is said on it from a bake's claim to its track, which
+# can be an hour: the probes keep a router from forgetting it, and let a
+# connection that died with the network be found dead rather than waited on.
+# They are slow on purpose, so that a minute without network costs nothing.
+_CONNECTION = {"connect_timeout": "20", "keepalives": "1", "keepalives_idle": "60",
+               "keepalives_interval": "30", "keepalives_count": "10"}
+
 _DRIVER = "pipeline.resolver.score_local"
 _CHECK_TIMEOUT = 120
 _CHILD_POLL = 0.5
 _PROGRESS_EVERY = 60
 _LAST_WORDS = 220
+_EX_CONFIG = 78
 
 STOPPED = "The worker was stopped while ESM-2 was scoring."
 
@@ -61,6 +127,9 @@ _DEVICE = re.compile(r"^Loading \S+ on (\w+) ", re.MULTILINE)
 _BEFORE = re.compile(r"over the residue before:\s+([\d.]+%)")
 _AFTER = re.compile(r"over the residue after:\s+([\d.]+%)")
 _PROGRESS = re.compile(r"^Scored \d+/\d+ .*$", re.MULTILINE)
+
+# A password, as a database URL carries it and as libpq's keywords do.
+_PASSWORDS = (re.compile(r"//[^/@\s:]*:([^@\s]+)@"), re.compile(r"password\s*=\s*'?([^'\s]+)"))
 
 
 class Misconfigured(Exception):
@@ -100,6 +169,18 @@ class Settings:
     @property
     def lock(self) -> Path:
         return self.state / "worker.lock"
+
+    @property
+    def secrets(self) -> tuple:
+        """What no line of the log may hold: the storage key, and the database's
+        URL and password. Longest first, so a whole URL goes before a part of it."""
+        found = [self.service_key, self.database_url]
+        for pattern in _PASSWORDS:
+            match = pattern.search(self.database_url)
+            if match:
+                found += [match.group(1), unquote(match.group(1))]
+        return tuple(sorted({secret for secret in found if len(secret) >= 4},
+                            key=len, reverse=True))
 
 
 def _seconds(said: Mapping[str, str], name: str, default: float) -> float:
@@ -190,7 +271,7 @@ def _facts(target, printed: str, seconds: float) -> str:
 
 
 def _end(child: subprocess.Popen) -> None:
-    """Make sure the scorer is gone: asked first, then not asked."""
+    """Make sure a child is gone: asked first, then not asked."""
     if child.poll() is not None:
         return
     child.terminate()
@@ -320,3 +401,391 @@ class Scorer:
             if code == score_local.REFUSED:
                 raise RuntimeError("The scorer exited with status 3 and gave no reason.")
             raise RuntimeError(_last_words(code, said))
+
+
+# ------------------------------------------------------------ one cycle
+
+
+class Awake:
+    """The Mac kept from idle sleep, from the first `hold()` until `release()`."""
+
+    def __init__(self):
+        self._child: Optional[subprocess.Popen] = None
+
+    def hold(self) -> None:
+        if self._child is not None:
+            return
+        try:
+            self._child = subprocess.Popen(
+                [*CAFFEINATE, "-w", str(os.getpid())], stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError as exc:
+            log.warning("caffeinate could not be started (%s); the Mac may sleep mid-build", exc)
+
+    def release(self) -> None:
+        if self._child is not None:
+            _end(self._child)
+            self._child = None
+
+
+def clear_workspace(settings: Settings) -> None:
+    """Empty the bakers' two directories and the scorer's hand-over.
+
+    On Modal they are `/tmp` and go with the container, so no protein meets
+    what another left. Here they would stay, and the record builder reads its
+    flat-file cache before it asks NCBI: a reply garbled once, which `resolve`
+    takes for a refusal, would be read again when that gene is next asked for.
+    """
+    for folder in (settings.data, settings.genbank, settings.scoring):
+        if BACKEND == folder or BACKEND in folder.parents:
+            raise RuntimeError(f"{folder} is inside the repository; the worker empties only "
+                               f"directories of its own.")
+        shutil.rmtree(folder, ignore_errors=True)
+        folder.mkdir(parents=True, exist_ok=True)
+
+
+def _conninfo(url: str) -> str:
+    """`DATABASE_URL` with the worker's connection settings under its own."""
+    from psycopg.conninfo import conninfo_to_dict, make_conninfo
+
+    return make_conninfo(**{**_CONNECTION, **conninfo_to_dict(url)})
+
+
+def _say(name: str, what: str, outcome: dict, seconds: float) -> None:
+    """One line for one protein: who, what became of it, how long, and why."""
+    state = outcome["state"]
+    told = {"done": f"done as {outcome.get('slug')}",
+            "queued": "back on the queue"}.get(state, state)
+    line = f"{name}: {what} {told} in {seconds:.1f} s"
+    if outcome.get("reason"):
+        line += f": {outcome['reason']}"
+    log.log(logging.WARNING if state in ("queued", "failed") else logging.INFO, "%s", line)
+
+
+def _resolve(conn, storage, stop: threading.Event, resolved: list) -> int:
+    """Reap, then resolve what is queued. Returns how many bakes wait."""
+    from pipeline.resolver import worker
+
+    waiting = 0
+    for _ in range(SWEEP_LIMIT):
+        started = time.monotonic()
+        summary = worker.sweep(conn, storage, limit=1)
+        waiting = summary["constraint_queued"]
+        for outcome in summary["resolved"]:
+            resolved.append(outcome)
+            _say(outcome["gene"], "request", outcome, time.monotonic() - started)
+        if (not summary["resolved"] or stop.is_set()
+                or summary["resolved"][-1]["state"] == "queued"):
+            break
+    return waiting
+
+
+def _score(conn, storage, scorer: Scorer, stop: threading.Event, scored: list) -> None:
+    from pipeline.resolver import worker
+
+    for _ in range(SCORE_LIMIT):
+        if stop.is_set():
+            break
+        started = time.monotonic()
+        done = worker.score_all(conn, storage, limit=1, score=scorer)
+        for outcome in done:
+            scored.append(outcome)
+            _say(outcome["slug"], "constraint", outcome, time.monotonic() - started)
+        if not done or done[-1]["state"] == "queued":
+            break
+
+
+def cycle(settings: Settings, scorer: Scorer, stop: threading.Event) -> dict:
+    """One pass over the queue: `modal_app`'s `sweep` and then its `score`.
+
+    Returns what was resolved and scored, and whether there was nothing to do.
+    Raises what kept it from the queue, or took the queue away part-way: that
+    is no protein's error, and the loop waits it out.
+    """
+    from pipeline.resolver import store
+
+    resolved: list = []
+    scored: list = []
+    queued = waiting = 0
+    awake = Awake()
+    conn = store.connect(_conninfo(settings.database_url))
+    try:
+        with conn:
+            storage = store.TrackStorage(settings.supabase_url, settings.service_key)
+            queued = store.queued_requests(conn) + store.queued_bakes(conn, "constraint")
+            if queued:
+                awake.hold()
+            # Every cycle, idle or not: the reaper is in the sweep.
+            waiting = _resolve(conn, storage, stop, resolved)
+            if waiting and not stop.is_set():
+                awake.hold()
+                unready = scorer.unready()
+                if unready:
+                    log.error("%d bake(s) left on the queue: no protein can be scored here "
+                              "now. %s", waiting, unready)
+                else:
+                    _score(conn, storage, scorer, stop, scored)
+    finally:
+        awake.release()
+        if queued or waiting or resolved or scored:
+            clear_workspace(settings)
+    return {"resolved": resolved, "scored": scored,
+            "idle": not (queued or waiting or resolved or scored)}
+
+
+# ------------------------------------------------------------ the loop
+
+
+class Stop(threading.Event):
+    """Set once the worker has been asked to leave. `by` is the signal that asked."""
+
+    def __init__(self):
+        super().__init__()
+        self.by: Optional[str] = None
+
+
+def _listen(stop: Stop) -> None:
+    def asked(number, frame):
+        # Only the flag: a handler that logged could find the log mid-line.
+        stop.by = signal.Signals(number).name
+        stop.set()
+
+    for number in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(number, asked)
+
+
+def _backoff(poll: float, failures: int) -> float:
+    """The poll interval, doubled for each failure after the first, to ten minutes."""
+    return min(poll * 2 ** min(failures - 1, 16), max(MAX_BACKOFF, poll))
+
+
+def _transient(error: BaseException) -> bool:
+    """Whether an error is the network's or the database's: one line's worth."""
+    import psycopg
+
+    return isinstance(error, (OSError, psycopg.OperationalError))
+
+
+def serve(settings: Settings, stop: threading.Event, once: bool = False) -> int:
+    """Cycle until stopped, or once. Returns the exit status.
+
+    Nothing a cycle raises ends the loop. The database out of reach, DNS not
+    back after a wake: each is logged and waited out, longer each time. A
+    crash is something else, and launchd restarts it.
+    """
+    scorer = Scorer(settings, stop)
+    failures = 0
+    while not stop.is_set():
+        try:
+            done = cycle(settings, scorer, stop)
+        except Exception as exc:  # noqa: BLE001 -- see the docstring
+            failures += 1
+            wait = _backoff(settings.poll, failures)
+            log.error("the cycle stopped short: %s: %s%s", type(exc).__name__,
+                      " ".join(str(exc).split()),
+                      "" if once else f". Next try in {wait:.0f} s",
+                      exc_info=not _transient(exc))
+            if once:
+                return 1
+        else:
+            failures = 0
+            wait = settings.poll
+            if done["idle"]:
+                log.info("nothing queued")
+            if once:
+                return 0
+        stop.wait(wait)
+    return 0
+
+
+# ------------------------------------------------------------ the process
+
+
+def acquire(path: Path):
+    """The lock that makes this the machine's one worker, or None where another
+    holds it. `flock`, so it goes when the process does, however that ends."""
+    import fcntl
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = open(path, "a+", encoding="utf-8")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return None
+    handle.seek(0)
+    handle.truncate()
+    handle.write(f"{os.getpid()}\n")
+    handle.flush()
+    return handle
+
+
+def holder(path: Path) -> Optional[int]:
+    """The pid the lock's holder wrote into it, where it can be read."""
+    try:
+        return int(path.read_text(encoding="utf-8").split()[0])
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+class _Formatter(logging.Formatter):
+    """One timestamped line an event, with the credentials kept out of it.
+
+    Whoever wrote the line: libpq quotes a connection string it cannot parse,
+    password and all, in the error it raises, and that error is what a failed
+    cycle logs. So this is done to the finished line, traceback included.
+    """
+
+    def __init__(self, secrets: tuple):
+        super().__init__("%(asctime)s %(levelname)-7s %(message)s", "%Y-%m-%d %H:%M:%S")
+        self._secrets = secrets
+
+    def format(self, record: logging.LogRecord) -> str:
+        return _scrub(super().format(record), self._secrets)
+
+
+def _scrub(text: str, secrets: tuple) -> str:
+    for secret in secrets:
+        text = text.replace(secret, "[redacted]")
+    return text
+
+
+def start_logging(settings: Settings) -> list:
+    """Open the log: a file the user reads, 1 MB and five older ones.
+
+    A terminal gets the lines as well. launchd's copy of stderr does not: it is
+    a file nothing rotates, kept for what Python says before this has run.
+    Returns the handlers added.
+    """
+    settings.log_file.parent.mkdir(parents=True, exist_ok=True)
+    handlers: list = [logging.handlers.RotatingFileHandler(
+        settings.log_file, maxBytes=1_000_000, backupCount=5, encoding="utf-8")]
+    if sys.stderr.isatty():
+        handlers.append(logging.StreamHandler())
+    formatter = _Formatter(settings.secrets)
+    for handler in handlers:
+        handler.setFormatter(formatter)
+        log.addHandler(handler)
+    log.setLevel(logging.INFO)
+    return handlers
+
+
+def take_directories(settings: Settings) -> None:
+    """Name the bakers' directories before any baker is imported, and hold them to it.
+
+    Named any later, a record would be scored into `pipeline/data/`, which
+    holds the twenty's stored tracks: the bytes every sha256 proof is read
+    against.
+    """
+    os.environ["NCBI_EMAIL"] = settings.ncbi_email
+    os.environ["HELIXPEEK_DATA"] = str(settings.data)
+    os.environ["HELIXPEEK_GB_CACHE"] = str(settings.genbank)
+
+    from pipeline import paths
+    from pipeline.mock import build_gene_record as builder
+
+    if paths.DATA != settings.data or builder.CACHE != settings.genbank:
+        raise Misconfigured(
+            f"The bakers were imported before the worker named its directories: they write "
+            f"to {paths.DATA} and {builder.CACHE}, not {settings.data} and {settings.genbank}.")
+
+
+def queue(conn) -> str:
+    """What waits, and what was last asked for, as lines to print. Reads only."""
+    with conn.transaction():
+        conn.execute("set transaction read only")
+        requests = dict(conn.execute(
+            "select state, count(*) from resolve_request group by state").fetchall())
+        bakes = dict(conn.execute(
+            "select state, count(*) from bake_job group by state").fetchall())
+        held = conn.execute(
+            "select slug, kind, state, attempts, error from bake_job "
+            "where state in ('queued', 'running') order by requested_at, id").fetchall()
+        last = conn.execute(
+            "select requested_at, gene, state, reason from resolve_request "
+            "order by requested_at desc, id desc limit 5").fetchall()
+
+    def counted(found: dict, finished: tuple) -> str:
+        return (f"{found.get('queued', 0)} queued, {found.get('running', 0)} running ("
+                + ", ".join(f"{found.get(state, 0)} {state}" for state in finished) + ")")
+
+    lines = ["requests  " + counted(requests, ("done", "refused", "failed")),
+             "bakes     " + counted(bakes, ("done", "failed"))]
+    for slug, kind, state, attempts, error in held:
+        lines.append(f"  {slug} {kind}: {state}, claimed {attempts} time(s)"
+                     + (f"; last: {error}" if error else ""))
+    lines.append("last requests" if last else "no request yet")
+    for requested, gene, state, reason in last:
+        lines.append(f"  {requested.astimezone():%Y-%m-%d %H:%M}  {gene:<10} {state}"
+                     + (f": {reason}" if reason else ""))
+    return "\n".join(lines)
+
+
+def _print_queue(settings: Settings) -> int:
+    try:
+        take_directories(settings)
+        from pipeline.resolver import store
+
+        with store.connect(_conninfo(settings.database_url)) as conn:
+            print(queue(conn))
+    except Exception as exc:  # noqa: BLE001 -- said in a line, for `status` to show
+        print("resolver worker: the queue could not be read: "
+              + _scrub(" ".join(f"{type(exc).__name__}: {exc}".split()), settings.secrets),
+              file=sys.stderr)
+        return 1
+    return 0
+
+
+def main(arguments: Optional[list] = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="python -m pipeline.resolver.local_worker",
+        description="The resolver's worker on a Mac: resolves queued requests and scores "
+                    "their ESM-2 tracks, until stopped.")
+    how = parser.add_mutually_exclusive_group()
+    how.add_argument("--once", action="store_true",
+                     help="one cycle, then exit: 0 if it reached the queue, 1 if not")
+    how.add_argument("--queue", action="store_true",
+                     help="print what waits and what was last asked for; reads only")
+    asked = parser.parse_args(arguments)
+
+    try:
+        settings = load_settings()
+    except Misconfigured as exc:
+        print(f"resolver worker: {exc}", file=sys.stderr)
+        return _EX_CONFIG
+    if asked.queue:
+        return _print_queue(settings)
+
+    held = acquire(settings.lock)
+    if held is None:
+        other = holder(settings.lock)
+        print("resolver worker: another one is running" + (f" (pid {other})" if other else "")
+              + "; this one is not needed.", file=sys.stderr)
+        return 0
+
+    start_logging(settings)
+    try:
+        take_directories(settings)
+    except Misconfigured as exc:
+        log.critical("%s", exc)
+        return _EX_CONFIG
+    socket.setdefaulttimeout(NETWORK_TIMEOUT)
+    stop = Stop()
+    _listen(stop)
+
+    log.info("started (pid %d): asking the queue every %g s, scoring with %s, state in %s",
+             os.getpid(), settings.poll, settings.esm_python, settings.state)
+    for note in settings.notes:
+        log.warning("%s", note)
+    try:
+        clear_workspace(settings)
+        status = serve(settings, stop, once=asked.once)
+    except BaseException:
+        log.critical("crashed", exc_info=True)
+        raise
+    log.info("stopped%s", f" ({stop.by})" if stop.by else "")
+    return status
+
+
+if __name__ == "__main__":
+    sys.exit(main())
