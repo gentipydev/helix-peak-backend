@@ -727,12 +727,18 @@ def _print_queue(settings: Settings) -> int:
         from pipeline.resolver import store
 
         with store.connect(_conninfo(settings.database_url)) as conn:
-            print(queue(conn))
+            lines = queue(conn)
     except Exception as exc:  # noqa: BLE001 -- said in a line, for `status` to show
         print("resolver worker: the queue could not be read: "
               + _scrub(" ".join(f"{type(exc).__name__}: {exc}".split()), settings.secrets),
               file=sys.stderr)
         return 1
+    try:
+        print(lines, flush=True)
+    except BrokenPipeError:
+        # `status | head`: the reader has what it wanted and has gone. Not a
+        # queue that could not be read, and not for Python to report at exit.
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
     return 0
 
 

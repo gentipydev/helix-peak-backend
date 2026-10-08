@@ -541,3 +541,40 @@ def test_the_queue_is_read_as_lines(conn, mac):
     assert re.fullmatch(r"  \d{4}-\d\d-\d\d \d\d:\d\d  INS +done", lines[4]) and len(lines) == 5
     # It only read: the queue is as it was.
     assert _bake_and_track(conn) == (("queued", 0, None, None), ("pending",))
+
+
+def test_the_queue_command_prints_the_queue_and_minds_no_reader_leaving(
+        conn, database_url, tmp_path):
+    import subprocess
+
+    _ask(conn)
+    home = tmp_path / "home"
+    home.mkdir()
+    # Every key named, so the repository's `.env` is never what is read.
+    environment = {key: value for key, value in os.environ.items()
+                   if not key.startswith(("RESOLVER_", "HELIXPEEK_"))}
+    environment.update(
+        DATABASE_URL=database_url, SUPABASE_URL="https://project.invalid",
+        SUPABASE_SERVICE_KEY="sb_secret_not_a_real_key", NCBI_EMAIL="tests@example.com",
+        HOME=str(home))
+    command = [sys.executable, "-m", "pipeline.resolver.local_worker", "--queue"]
+
+    done = subprocess.run(command, cwd=BACKEND, env=environment, capture_output=True,
+                          text=True, timeout=120)
+    assert (done.returncode, done.stderr) == (0, "")
+    lines = done.stdout.splitlines()
+    assert lines[:3] == ["requests  1 queued, 0 running (0 done, 0 refused, 0 failed)",
+                         "bakes     0 queued, 0 running (0 done, 0 failed)", "last requests"]
+    assert re.fullmatch(r"  \d{4}-\d\d-\d\d \d\d:\d\d  INS +queued", lines[3])
+    # It read, and that is all: no log, no directory, and the request untouched.
+    assert not (home / "Library" / "Logs").exists()
+    assert not (home / "Library" / "Application Support").exists()
+    assert _one(conn, "select state, attempts from resolve_request") == ("queued", 0)
+
+    # `status | head`: whoever was reading has gone before it prints.
+    piped = subprocess.Popen(command, cwd=BACKEND, env=environment, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, text=True)
+    piped.stdout.close()
+    assert piped.wait(timeout=120) == 0
+    assert piped.stderr.read() == ""
+    piped.stderr.close()
