@@ -8,6 +8,8 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 BACKEND = Path(__file__).resolve().parents[2]
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
@@ -128,9 +130,56 @@ def test_any_other_refusal_is_its_own_message_on_one_line():
     assert len(worker._said(RuntimeError("x" * 1000))) == 300
 
 
-def test_the_worker_scores_with_the_function_the_scorers_environment_imports():
+def test_the_worker_scores_with_the_function_the_scorers_environment_imports(monkeypatch):
     # One function, not a copy of it: what Modal calls in the worker's own
-    # process is what an environment holding only the scorer calls.
+    # process is what an environment holding only the scorer calls, with its
+    # printed progress passed on as it prints it.
     assert worker.score_with_esm is scoring.score_with_esm
-    assert worker.score_next.__kwdefaults__["score"] is scoring.score_with_esm
-    assert worker.score_all.__kwdefaults__["score"] is scoring.score_with_esm
+    assert worker.score_next.__kwdefaults__["score"] is worker.score_in_process
+    assert worker.score_all.__kwdefaults__["score"] is worker.score_in_process
+
+    called = []
+    monkeypatch.setattr(worker, "score_with_esm",
+                        lambda target, record: called.append((target, record)) or b"track")
+    assert worker.score_in_process("target", b"record", lambda *said: None) == b"track"
+    assert called == [("target", b"record")]
+
+
+def test_the_scorers_progress_lines_are_read_as_it_prints_them():
+    assert worker.progress_of("") is None
+    assert worker.progress_of("ins: 110 residues, one full-length pass; vocab=33.") is None
+    # The last line wins, and the seconds left are its rate over what is left:
+    # 283.3 s for 450 residues, with 388 still to score.
+    said = "Scored 25/838 (15.9s, 8.6 min left)\nScored 450/838 (283.3s, 4.1 min left)\n"
+    done, total, left = worker.progress_of(said)
+    assert (done, total) == (450, 838)
+    assert left == pytest.approx(283.3 / 450 * 388)
+    assert worker.progress_of("Scored 838/838 (533.0s, 0.0 min left)") == (838, 838, 0.0)
+    # Nonsense is not progress.
+    assert worker.progress_of("Scored 0/838 (0.0s, 0.0 min left)") is None
+    assert worker.progress_of("Scored 900/838 (1.0s, 0.0 min left)") is None
+
+
+def test_progress_printed_in_this_process_is_told_and_still_printed(monkeypatch, capsys):
+    def scorer(target, record):
+        print("oca2: 838 residues, one full-length pass; vocab=33.", flush=True)
+        print("Scored 25/838 (15.9s, 8.6 min left)", flush=True)
+        # A line written in pieces is read once it is whole.
+        sys.stdout.write("Scored 50/838 ")
+        sys.stdout.write("(31.8s, 8.4 min left)\n")
+        return b"track"
+
+    monkeypatch.setattr(worker, "score_with_esm", scorer)
+    told = []
+    assert worker.score_in_process("target", b"record", lambda *said: told.append(said)) == \
+        b"track"
+    assert [(done, total) for done, total, _ in told] == [(25, 838), (50, 838)]
+    assert "Scored 50/838 (31.8s, 8.4 min left)" in capsys.readouterr().out
+
+
+def test_progress_that_cannot_be_written_costs_the_bake_nothing():
+    class Unreachable:
+        def execute(self, *args):
+            raise OSError("server closed the connection unexpectedly")
+
+    worker._reporter(Unreachable(), 7)(450, 838, 245.0)

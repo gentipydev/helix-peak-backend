@@ -105,7 +105,7 @@ def _one(conn, sql, *params):
     return conn.execute(sql, params).fetchone()
 
 
-def _constraint(target, record: bytes) -> bytes:
+def _constraint(target, record: bytes, report=None) -> bytes:
     """What the scorer writes, as far as the upload gate reads it."""
     return (json.dumps({
         "gene": target.gene, "uniprot": target.uniprot,
@@ -194,7 +194,7 @@ def test_a_scorer_refusal_is_said_on_the_track(conn, offline):
     _ask(conn)
     worker.resolve_next(conn, storage, fetch_entry=lambda accession: offline(_body()))
 
-    def misaligned(target, record):
+    def misaligned(target, record, report):
         raise ValueError("Alignment gate FAILED: 40.0% before, 45.0% after. No JSON written.")
 
     outcome = worker.score_next(conn, storage, score=misaligned)
@@ -212,13 +212,143 @@ def test_a_scorer_that_breaks_is_tried_three_times_then_said(conn, offline):
     _ask(conn)
     worker.resolve_next(conn, storage, fetch_entry=lambda accession: offline(_body()))
 
-    def broken(target, record):
+    def broken(target, record, report):
         raise RuntimeError("CUDA out of memory")
 
     states = [worker.score_next(conn, storage, score=broken)["state"] for _ in range(3)]
     assert states == ["queued", "queued", "refused"]
     assert _one(conn, "select state, reason from protein_track where kind = 'constraint'") == \
         ("refused", "Scoring failed 3 times: CUDA out of memory")
+
+
+def _service(database_url, monkeypatch):
+    from psycopg_pool import ConnectionPool
+
+    from app import db
+
+    pool = ConnectionPool(database_url, kwargs={"autocommit": True}, open=True)
+    monkeypatch.setattr(db, "pool", pool)
+    return pool
+
+
+def test_a_reader_sees_each_step_of_a_build_as_the_worker_takes_it(
+        conn, offline, database_url, monkeypatch):
+    from app import resolves
+
+    storage = Storage()
+    with _service(database_url, monkeypatch):
+        said, queued = resolves.request("INS")
+        assert queued and said["state"] == "pending"
+        build = said["build"]
+        assert (build["step"], build["ahead"]) == ("queued", 0)
+        assert 0 <= build["elapsed"] < 60
+
+        worker.resolve_next(conn, storage, fetch_entry=lambda accession: offline(_body()))
+        build = resolves.current("INS")["build"]
+        # Its bake is queued, and nobody else's is ahead of it.
+        assert (build["step"], build["ahead"], build["transcript"]) == \
+            ("scoring", 0, "NM_000207.3")
+
+        seen = []
+
+        def scoring(target, record, report):
+            seen.append(resolves.current("INS")["build"])  # claimed, nothing scored yet
+            report(50, 110, 30.0)
+            seen.append(resolves.current("INS")["build"])
+            report(110, 110, 0.0)
+            seen.append(resolves.current("INS")["build"])
+            return _constraint(target, record)
+
+        assert worker.score_next(conn, storage, score=scoring)["state"] == "ready"
+        loading, halfway, checking = seen
+        assert (loading["step"], loading["scored"], loading["left"]) == ("scoring", None, None)
+        assert (halfway["step"], halfway["scored"], halfway["residues"]) == ("scoring", 50, 110)
+        # The scorer's estimate, aged by the moment since it was written.
+        assert 29.0 < halfway["left"] <= 30.0
+        assert (checking["step"], checking["scored"]) == ("check", 110)
+
+        said = resolves.current("INS")
+        assert said["state"] == "ready"
+        assert (said["build"]["step"], said["build"]["left"]) == ("done", None)
+        assert said["build"]["elapsed"] >= halfway["elapsed"]
+
+
+def test_progress_from_a_run_that_was_put_back_does_not_count(
+        conn, offline, database_url, monkeypatch):
+    from app import resolves
+
+    storage = Storage()
+    _ask(conn)
+    worker.resolve_next(conn, storage, fetch_entry=lambda accession: offline(_body()))
+
+    def breaks_halfway(target, record, report):
+        report(50, 110, 30.0)
+        raise RuntimeError("MPS backend out of memory")
+
+    assert worker.score_next(conn, storage, score=breaks_halfway)["state"] == "queued"
+    with _service(database_url, monkeypatch):
+        build = resolves.current("INS")["build"]
+        assert (build["step"], build["scored"], build["left"], build["ahead"]) == \
+            ("scoring", None, None, 0)
+
+        def claimed(target, record, report):
+            # Claimed again: the first run's 50 of 110 is not this run's.
+            assert resolves.current("INS")["build"]["scored"] is None
+            return _constraint(target, record)
+
+        assert worker.score_next(conn, storage, score=claimed)["state"] == "ready"
+
+
+def test_a_build_refused_at_the_gate_says_so_at_the_check(conn, offline, database_url, monkeypatch):
+    from app import resolves
+
+    storage = Storage()
+    _ask(conn)
+    worker.resolve_next(conn, storage, fetch_entry=lambda accession: offline(_body()))
+
+    def misaligned(target, record, report):
+        report(110, 110, 0.0)
+        raise ValueError("Alignment gate FAILED: 40.0% before, 45.0% after. No JSON written.")
+
+    assert worker.score_next(conn, storage, score=misaligned)["state"] == "refused"
+    with _service(database_url, monkeypatch):
+        build = resolves.current("INS")["build"]
+    assert (build["step"], build["scored"], build["residues"]) == ("check", 110, 110)
+    assert build["reason"].startswith("ESM-2 prefers the residue that is there")
+
+
+def test_proteins_ahead_are_counted_in_the_order_the_worker_takes_them(
+        conn, offline, database_url, monkeypatch):
+    from app import resolves
+
+    storage = Storage()
+    _ask(conn)
+    worker.resolve_next(conn, storage, fetch_entry=lambda accession: offline(_body()))
+    # INS waits for ESM-2; two more are asked for after it.
+    conn.execute("insert into protein_index (uniprot, gene, name, length, annotation_score, "
+                 "existence, buildable) values ('P61769', 'B2M', 'Beta-2-microglobulin', 119, "
+                 "5, 1, true), ('P06213', 'INSR', 'Insulin receptor', 1382, 5, 1, true)")
+    with _service(database_url, monkeypatch):
+        assert resolves.request("B2M")[0]["build"]["ahead"] == 1
+        assert resolves.request("INSR")[0]["build"]["ahead"] == 2
+        assert resolves.current("INS")["build"]["ahead"] == 0
+
+
+def test_suggestions_know_which_proteins_are_being_built(conn, offline):
+    from app import suggest
+
+    def building():
+        return {row[0] for row in conn.execute(
+            suggest._BUILDING, {"genes": ["ins", "b2m"]}).fetchall()}
+
+    assert building() == set()
+    _ask(conn)
+    assert building() == {"ins"}  # asked for, not resolved
+    storage = Storage()
+    worker.resolve_next(conn, storage, fetch_entry=lambda accession: offline(_body()))
+    assert building() == {"ins"}  # resolved, its ESM-2 bake to come
+    worker.score_next(conn, storage, score=_constraint)
+    assert building() == set()
 
 
 def test_a_refused_protein_writes_nothing_but_the_reason(conn, offline):
@@ -366,7 +496,12 @@ def test_two_readers_asking_make_one_request_and_one_wake(conn, api):
     first = api.post("/proteins/resolve", json={"gene": "INS"})
     second = api.post("/proteins/resolve", json={"gene": "ins"})
     assert (first.status_code, second.status_code) == (202, 202)
-    assert first.json() == second.json() == {"slug": "ins", "state": "pending", "reason": None}
+    # The build's seconds go on between the two; everything else is one answer.
+    said = [{**answer.json(), "build": {**answer.json()["build"], "elapsed": None}}
+            for answer in (first, second)]
+    assert said[0] == said[1]
+    assert (said[0]["slug"], said[0]["state"], said[0]["reason"]) == ("ins", "pending", None)
+    assert (said[0]["build"]["step"], said[0]["build"]["ahead"]) == ("queued", 0)
     assert _one(conn, "select count(*), min(gene), min(uniprot) from resolve_request") == \
         (1, "INS", "P01308")
     assert api.woken == [True]
@@ -378,8 +513,10 @@ def test_ask_resolve_and_read_ready(conn, api, offline):
     assert api.get("/proteins/resolve/INS").json()["state"] == "pending"
 
     worker.resolve_next(conn, Storage(), fetch_entry=lambda accession: offline(_body()))
-    assert api.get("/proteins/resolve/INS").json() == \
-        {"slug": "ins", "state": "ready", "reason": None}
+    said = api.get("/proteins/resolve/INS").json()
+    assert (said["slug"], said["state"], said["reason"]) == ("ins", "ready", None)
+    # Ready to open its row, and its ESM-2 track still to come.
+    assert said["build"]["step"] == "scoring"
     assert api.post("/proteins/resolve", json={"gene": "INS"}).status_code == 200
 
 

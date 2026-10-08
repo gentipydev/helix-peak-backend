@@ -229,6 +229,10 @@ class Suggestion(BaseModel):
     ``buildable`` or ``unavailable``; ``reason`` says why for the last. ``slug``
     is where a listed or ready protein opens, and the slug a build would give a
     buildable one.
+
+    ``building`` is true while a build of it is under way: asked for and not
+    yet resolved (``buildable``), or resolved with its ESM-2 track still being
+    scored (``ready``, and not to be opened yet).
     """
 
     uniprot: str
@@ -240,6 +244,7 @@ class Suggestion(BaseModel):
     slug: Optional[str] = None
     status: str
     reason: Optional[str] = None
+    building: bool = False
 
 
 class SuggestResponse(BaseModel):
@@ -257,6 +262,35 @@ class ResolveRequest(BaseModel):
     taxon: int = 9606
 
 
+class BuildReport(BaseModel):
+    """How far a protein built on demand has got, for a reader waiting on it.
+
+    ``step`` is the step it is at, or ended at: ``queued`` (asked for, and no
+    worker has taken it), ``record`` (its row and gene record are being made),
+    ``scoring`` (its ESM-2 track: waiting for the scorer, the model loading,
+    or residues being scored), ``check`` (every residue scored, the alignment
+    gate and the upload left) or ``done``. A step that ended without its
+    result has ``reason``; a request the resolver declined says so in the
+    response's own ``state`` and ``reason`` instead.
+
+    Every number is the database's, so a phone's clock never enters it.
+    """
+
+    step: str
+    # Proteins the worker takes first, while this one waits its turn.
+    ahead: Optional[int] = None
+    # Residues scored, and of how many, from the scorer's last line.
+    scored: Optional[int] = None
+    residues: Optional[int] = None
+    # Seconds the scorer estimates are left, as of now.
+    left: Optional[float] = None
+    # Seconds since it was asked for, to now, or to when it ended.
+    elapsed: float
+    # The MANE Select transcript its gene record was built from.
+    transcript: Optional[str] = None
+    reason: Optional[str] = None
+
+
 class ResolveResponse(BaseModel):
     """What a gene's protein is now: ``ready``, ``pending``, ``refused``,
     ``failed``, ``unavailable`` or (read only) ``buildable``.
@@ -264,8 +298,12 @@ class ResolveResponse(BaseModel):
     ``slug`` is where a ready protein opens, and the slug a pending or
     buildable one will take; ``reason`` says why for refused, failed and
     unavailable. `app/resolves.py` has what each means.
+
+    ``build`` is how far a build has got, for a protein asked for on demand;
+    null for one of the twenty, and for one nobody has asked for.
     """
 
     slug: Optional[str] = None
     state: str
     reason: Optional[str] = None
+    build: Optional[BuildReport] = None

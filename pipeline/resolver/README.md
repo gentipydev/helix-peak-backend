@@ -14,7 +14,7 @@ app (search field) ──POST /proteins/resolve──▶ service ──row──
                                                                │  → constraint track (pending) + bake_job
                                                                └──spawn──▶ Modal: score (one L4)
                                                                              ESM-2 650M → constraint track (ready)
-app ──GET /proteins/resolve/{gene}──▶ ready ──▶ /gene/<slug>, the walk, as for the twenty
+app ──GET /proteins/resolve/{gene}──▶ state + build ──▶ /gene/<slug>, the walk, as for the twenty
 ```
 
 The service never imports this directory and holds no storage key: it writes
@@ -69,14 +69,38 @@ On insulin, which is one of the twenty, the automatic row reproduces the
 hand-written one: the same cut, short names, cleavage sites, numbering and
 disulfides (`test_resolve.py`).
 
+## What a reader waiting sees
+
+ESM-2 takes minutes (838 residues, 9 on the dev Mac), so `GET
+/proteins/resolve/{gene}` says how far a build has got as well as what it is
+(`build`, `BuildReport` in `app/schemas.py`): the step (`queued`, `record`,
+`scoring`, `check`, `done`), the proteins the worker takes first, the residues
+scored and of how many, the seconds the scorer estimates are left, the seconds
+since it was asked for, and the transcript the record was built from. A step
+that ended without its result carries the track's reason.
+
+The scorer prints a line every 25 residues ("Scored 450/838 (283.3s, 4.1 min
+left)"). `worker.score_next` hands the scorer a `Report`, and the line reaches
+it either way: on the Mac `local_worker.Scorer` reads the scorer's output every
+5 s, and on Modal `worker.score_in_process` reads what it prints in-process.
+`store.note_progress` writes it on the bake (`progress_*`, `0010`), where it
+counts only for the run that wrote it. A write that fails costs the bake
+nothing. The scorer itself is unchanged.
+
+`/proteins/suggest` marks a protein `building` while a request is queued or
+running or its constraint bake is not over. It is `ready` from the moment its
+row is written, and a walk opened before ESM-2 is done would keep the pending
+track until the app restarts, so the app watches it instead.
+
 ## Deploying, once
 
 From the repository root, in order.
 
-1. **The table.** Apply the migration, as every other:
+1. **The tables.** Apply the migrations, as every other:
 
    ```sh
    .venv/bin/python scripts/apply_migration.py migrations/0009_resolve_request.sql
+   .venv/bin/python scripts/apply_migration.py migrations/0010_bake_progress.sql
    ```
 
 2. **The secret.** In the Modal workspace (modal.com → Secrets → Custom), create
@@ -208,9 +232,9 @@ an operator sees of it:
 
 Measured on the dev Mac (M5, 24 GB), start of the scorer's process to its
 track: sarcolipin, 31 residues, 5 s; beta-2-microglobulin, 119, 12 s; ANTXR1,
-564, 203 s, the first protein the agent built unattended (2026-10-08). Scored
-again through the worker, B2M's stored record gives its stored track byte for
-byte.
+564, 203 s, the first protein the agent built unattended (2026-10-08); OCA2,
+838, 534 s, asked for from the app the same day. Scored again through the
+worker, B2M's stored record gives its stored track byte for byte.
 
 Those three grow with the square of the length. Carried on, which is an
 estimate and not a measurement, 1,000 residues is about 11 minutes, each
@@ -252,8 +276,9 @@ Back again: `.modal-venv/bin/modal app stop helix-peak-resolver`, then
 select gene, state, reason, attempts, requested_at from resolve_request
 order by requested_at desc limit 20;
 
--- the constraint bakes
-select slug, state, attempts, error from bake_job order by requested_at desc limit 20;
+-- the constraint bakes, and how far a running one has got
+select slug, state, attempts, error, progress_done, progress_total, progress_at
+from bake_job order by requested_at desc limit 20;
 
 -- let a newer resolver try a refused gene again
 delete from resolve_request where lower(gene) = lower('TTN') and state = 'refused';

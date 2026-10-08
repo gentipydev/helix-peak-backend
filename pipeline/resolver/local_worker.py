@@ -118,6 +118,8 @@ _DRIVER = "pipeline.resolver.score_local"
 _CHECK_TIMEOUT = 120
 _CHILD_POLL = 0.5
 _PROGRESS_EVERY = 60
+# How often a reader watching the protein is told how far ESM-2 has got.
+_REPORT_EVERY = 5
 _LAST_WORDS = 220
 _EX_CONFIG = 78
 
@@ -332,10 +334,20 @@ class Scorer:
         return None if done.returncode == 0 else _last_words(done.returncode, done.stderr)
 
     def _wait(self, child: subprocess.Popen, slug: str, printed: Path,
-              started: float) -> Optional[str]:
-        """Why the scorer was cut short, or None once it has ended by itself."""
+              started: float, report=None) -> Optional[str]:
+        """Why the scorer was cut short, or None once it has ended by itself.
+
+        The scorer's last progress line goes to the log every
+        `_PROGRESS_EVERY` seconds, and to `report` (`worker.Report`), where
+        there is one, every `_REPORT_EVERY`: a reader watching the protein
+        build is told sooner than the log needs to be.
+        """
+        from pipeline.resolver.worker import progress_of
+
         report_at = started + _PROGRESS_EVERY
         reported = None
+        tell_at = started + _REPORT_EVERY
+        told = None
         while True:
             try:
                 child.wait(timeout=_CHILD_POLL)
@@ -348,6 +360,12 @@ class Scorer:
             if now - started > self.settings.score_timeout:
                 return (f"ESM-2 was still scoring after {self.settings.score_timeout / 60:.0f} "
                         f"minutes and was stopped.")
+            if report is not None and now >= tell_at:
+                tell_at = now + _REPORT_EVERY
+                found = progress_of(_read(printed))
+                if found is not None and found[:2] != told:
+                    told = found[:2]
+                    report(*found)
             if now >= report_at:
                 report_at = now + _PROGRESS_EVERY
                 progress = _PROGRESS.findall(_read(printed))
@@ -355,7 +373,7 @@ class Scorer:
                     reported = progress[-1]
                     log.info("%s: %s", slug, reported)
 
-    def __call__(self, target, record: bytes) -> bytes:
+    def __call__(self, target, record: bytes, report=None) -> bytes:
         from pipeline.resolver import score_local
 
         settings = self.settings
@@ -378,7 +396,7 @@ class Scorer:
                     cwd=str(BACKEND), env=self._environment(), stdin=subprocess.DEVNULL,
                     stdout=printed, stderr=errors)
                 try:
-                    cut = self._wait(child, target.slug, printed_file, started)
+                    cut = self._wait(child, target.slug, printed_file, started, report)
                 finally:
                     _end(child)
             seconds = time.monotonic() - started

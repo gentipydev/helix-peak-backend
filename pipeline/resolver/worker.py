@@ -20,9 +20,12 @@ What ends a request or a bake, and how the reader hears of it:
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import io
 import re
-from typing import Callable, Optional
+import sys
+from typing import Callable, Optional, Tuple
 
 from pipeline import uniprot, upload_tracks
 from pipeline.resolver import store
@@ -30,7 +33,60 @@ from pipeline.resolver.resolve import RESOLVER_VERSION, Refused, resolve, target
 from pipeline.resolver.scoring import score_with_esm
 from pipeline.targets import Target
 
-Score = Callable[[Target, bytes], bytes]
+# How far a scoring has got: residues scored, of how many, and the seconds left.
+Report = Callable[[int, int, float], None]
+
+# The constraint track's bytes, from a target and its record. It tells `Report`
+# how far it has got as it goes, for a reader watching the protein build.
+Score = Callable[[Target, bytes, Report], bytes]
+
+# What the scorer prints every 25 residues (`score_protein.py`).
+_SCORED = re.compile(r"Scored (\d+)/(\d+) \(([\d.]+)s, [\d.]+ min left\)")
+
+
+def progress_of(text: str) -> Optional[Tuple[int, int, float]]:
+    """The last progress line the scorer printed in `text`, as `Report` takes it.
+
+    The seconds left are the scorer's own rate over what is still to score,
+    worked from its elapsed seconds rather than read from its minutes, which
+    it rounds to a tenth.
+    """
+    found = _SCORED.findall(text)
+    if not found:
+        return None
+    done, total, elapsed = int(found[-1][0]), int(found[-1][1]), float(found[-1][2])
+    if done <= 0 or total <= 0 or done > total:
+        return None
+    return done, total, elapsed / done * (total - done)
+
+
+class _ProgressTee(io.TextIOBase):
+    """Standard output as it was, with each progress line also told to `report`."""
+
+    def __init__(self, out, report: Report):
+        self._out = out
+        self._report = report
+        self._line = ""
+
+    def write(self, text: str) -> int:
+        self._out.write(text)
+        self._line += text
+        *whole, self._line = self._line.split("\n")
+        for line in whole:
+            found = progress_of(line)
+            if found is not None:
+                self._report(*found)
+        return len(text)
+
+    def flush(self) -> None:
+        self._out.flush()
+
+
+def score_in_process(target: Target, record: bytes, report: Report) -> bytes:
+    """`scoring.score_with_esm` in this process, as Modal runs it, with the
+    progress the scorer prints passed to `report` as it prints it."""
+    with contextlib.redirect_stdout(_ProgressTee(sys.stdout, report)):
+        return score_with_esm(target, record)
 
 
 class Declined(ValueError):
@@ -124,7 +180,19 @@ def _refusal(error: ValueError) -> str:
     return _said(error)
 
 
-def score_next(conn, storage, *, score: Score = score_with_esm) -> Optional[dict]:
+def _reporter(conn, job_id: int) -> Report:
+    """`Report` for one job: its progress written where a reader asking after
+    the protein reads it. A write that fails costs the bake nothing; the next
+    line tries again, and the track is what the bake is for."""
+    def report(done: int, total: int, left: float) -> None:
+        try:
+            store.note_progress(conn, job_id, done, total, left)
+        except Exception:  # noqa: BLE001 -- see the docstring
+            pass
+    return report
+
+
+def score_next(conn, storage, *, score: Score = score_in_process) -> Optional[dict]:
     """Bake the oldest queued constraint track. None when there is none."""
     job = store.claim_bake(conn, "constraint")
     if job is None:
@@ -139,7 +207,8 @@ def score_next(conn, storage, *, score: Score = score_with_esm) -> Optional[dict
         if hashlib.sha256(record).hexdigest() != record_row["sha256"]:
             raise RuntimeError("The stored record does not match the sha256 its row carries.")
         target = target_of(protein)
-        track = stage(storage, "constraint", target, score(target, record))
+        report = _reporter(conn, job["id"])
+        track = stage(storage, "constraint", target, score(target, record, report))
         store.finish_bake(conn, job["id"], track)
         return {**outcome, "state": "ready"}
     except (Refused, ValueError) as exc:
@@ -171,7 +240,7 @@ def sweep(conn, storage, *, limit: int = 10, fetch_entry=uniprot.fetch_entry) ->
     return {"resolved": resolved, "constraint_queued": store.queued_bakes(conn, "constraint")}
 
 
-def score_all(conn, storage, *, limit: int = 20, score: Score = score_with_esm) -> list[dict]:
+def score_all(conn, storage, *, limit: int = 20, score: Score = score_in_process) -> list[dict]:
     """Bake queued constraint tracks until none are left, or `limit` are done."""
     done = []
     for _ in range(limit):

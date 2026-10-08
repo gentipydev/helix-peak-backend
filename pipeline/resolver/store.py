@@ -245,6 +245,20 @@ def queued_bakes(conn, kind: str) -> int:
     ).fetchone()[0]
 
 
+def note_progress(conn, job_id: int, done: int, total: int, left: float) -> None:
+    """How far a running bake has got: `done` of `total`, and the seconds its
+    baker estimates are left. Read by `GET /proteins/resolve/{gene}`, never by
+    the worker; a job no longer running is left as it ended."""
+    conn.execute(
+        """
+        update bake_job
+        set progress_done = %s, progress_total = %s, progress_left = %s, progress_at = now()
+        where id = %s and state = 'running'
+        """,
+        (done, total, left, job_id),
+    )
+
+
 def protein(conn, slug: str) -> Optional[dict]:
     columns = seed_catalog._PROTEIN_COLUMNS
     row = conn.execute(

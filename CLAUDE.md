@@ -65,9 +65,12 @@ differs from storage. A mismatch means the refactor changed data. Stop; never up
   tetramer). Its own tables (`0006`), which no catalog query reads, so `/catalog` stays twenty.
 - `impact_explanations.py`: AVI explanations. Storage redirect first, then the local directory.
 - `protein_index.py`: pure. `normalize()`, UniProt/MANE parsing, index rows and terms. Shared with `scripts/load_protein_index.py`.
-- `suggest.py`: `/proteins/suggest`. Ranked prefix tiers over `protein_index_term`, near misses last.
+- `suggest.py`: `/proteins/suggest`. Ranked prefix tiers over `protein_index_term`, near misses last;
+  `building` marks a protein whose build is under way, which the app watches rather than opens.
 - `resolves.py`: `/proteins/resolve`. What an ask means (ready, pending, refused, failed, unavailable,
-  buildable), the `resolve_request` row, the daily cap and the best-effort wake.
+  buildable), the `resolve_request` row, the daily cap and the best-effort wake, and how far a
+  build has got (`build`: step, residues scored, seconds left), read from the request and the
+  constraint bake's progress (`0010`), which the worker writes as the scorer prints it.
 - `schemas.py`: pydantic response models that mirror the Dart entities field for field.
 - `router.py`: every non-health endpoint, with the NCBI 404/502 and catalog 503 mappings.
 

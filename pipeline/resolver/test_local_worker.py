@@ -321,6 +321,28 @@ def test_a_long_scoring_says_how_far_it_is(tmp_path, monkeypatch, caplog):
     assert said.count("ins: Scored 25/110 (1.0s, 0.1 min left)") == 1
 
 
+def test_a_reader_is_told_how_far_esm2_has_got_sooner_than_the_log(tmp_path, monkeypatch, caplog):
+    monkeypatch.setattr(local_worker, "_CHILD_POLL", 0.02)
+    monkeypatch.setattr(local_worker, "_REPORT_EVERY", 0.05)
+    python = fake_python(tmp_path, """
+        import time
+        print("Scored 25/110 (1.0s, 0.1 min left)", flush=True)
+        time.sleep(0.4)
+        print("Scored 50/110 (2.0s, 0.0 min left)", flush=True)
+        time.sleep(0.4)
+        track_file.write_bytes(b"{}")
+    """)
+    told = []
+    with caplog.at_level(logging.INFO, logger="resolver-worker"):
+        local_worker.Scorer(make_settings(tmp_path, python), threading.Event())(
+            INS, RECORD, lambda *said: told.append(said))
+    # Each line once, however often the file was read.
+    assert [(done, total) for done, total, _ in told] == [(25, 110), (50, 110)]
+    assert told[0][2] == pytest.approx(1.0 / 25 * 85)
+    # The log keeps its own minute.
+    assert not [r for r in caplog.records if "Scored" in r.getMessage()]
+
+
 @pytest.mark.parametrize("body, said", [
     ("sys.exit(0)", "The scorer exited with status 0 and wrote no track."),
     ("sys.exit(3)", "The scorer exited with status 3 and gave no reason."),

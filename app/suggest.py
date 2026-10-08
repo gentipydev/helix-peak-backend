@@ -8,6 +8,11 @@ type instead. A suggestion says what the app can do with the protein today:
 - ``buildable``: not built yet, and the pipeline can start from its row;
 - ``unavailable``: not buildable, and ``reason`` says why.
 
+``building`` is true while a build is under way: a request queued or running,
+or a constraint bake not yet over. A protein is ``ready`` once its row is
+written, minutes before ESM-2 has scored it, and a walk opened then keeps the
+track it read as pending; so the app watches the build instead of opening it.
+
 Ranking is in tiers. An exact match of a whole term comes first -- an
 accession, a symbol, a synonym or a name, never one word of a name -- then a
 prefix of the symbol, of a synonym, of the protein's name, of another of its
@@ -93,8 +98,20 @@ limit %(limit)s
 
 _RELEASE = "select uniprot, mane from protein_index_release"
 
+# Which of these genes have a build under way: a request not yet resolved, or a
+# protein resolved on demand whose ESM-2 bake is not over.
+_BUILDING = """
+select lower(gene) from resolve_request
+where state in ('queued', 'running') and lower(gene) = any(%(genes)s)
+union
+select lower(p.gene) from protein p
+join bake_job j on j.slug = p.slug and j.kind = 'constraint'
+where j.state in ('queued', 'running') and p.catalog_order is null
+  and lower(p.gene) = any(%(genes)s)
+"""
 
-def _suggestion(row) -> dict:
+
+def _suggestion(row, building: bool = False) -> dict:
     (uniprot, gene, name, length, buildable, reason,
      slug, display, catalog_order) = row[:9]
     if catalog_order is not None:
@@ -116,6 +133,7 @@ def _suggestion(row) -> dict:
         "slug": slug,
         "status": status,
         "reason": reason,
+        "building": building,
     }
 
 
@@ -143,6 +161,11 @@ def suggest(query: str, limit: int = 12) -> Dict:
             if not rows and len(needle) >= _FUZZY_NEEDLE:
                 rows = conn.execute(_FUZZY, params).fetchall()
             release = conn.execute(_RELEASE).fetchone()
+            genes = sorted({row[1].lower() for row in rows if row[1]})
+            building = set()
+            if genes:
+                building = {found[0] for found in
+                            conn.execute(_BUILDING, {"genes": genes}).fetchall()}
     except Exception as exc:
         logger.exception("Protein index search failed for %r", query)
         raise CatalogUnavailable("The protein index could not be searched.") from exc
@@ -150,5 +173,7 @@ def suggest(query: str, limit: int = 12) -> Dict:
     label: Optional[str] = None
     if release is not None:
         label = "UniProt {} · MANE {}".format(release[0], release[1])
-    suggestions: List[dict] = [_suggestion(row) for row in rows]
+    suggestions: List[dict] = [
+        _suggestion(row, bool(row[1]) and row[1].lower() in building) for row in rows
+    ]
     return {"q": query, "release": label, "suggestions": suggestions}

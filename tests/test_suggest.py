@@ -45,11 +45,14 @@ class FakeCursor:
 
 
 class FakePool:
-    def __init__(self, ranked=(), near=(), release=("2026_03", "v1.5"), failing=False):
+    def __init__(self, ranked=(), near=(), release=("2026_03", "v1.5"), failing=False,
+                 building=()):
         self.ranked = list(ranked)
         self.near = list(near)
         self.release = release
         self.failing = failing
+        # Genes, lower-cased, with a build under way.
+        self.building = list(building)
         self.statements = []
 
     def connection(self):
@@ -72,6 +75,8 @@ class FakePool:
             return FakeCursor(self.near)
         if "from protein_index_release" in flat:
             return FakeCursor([self.release] if self.release else [])
+        if flat.startswith("select lower(gene) from resolve_request"):
+            return FakeCursor([(gene,) for gene in self.building if gene in params["genes"]])
         return FakeCursor([])
 
 
@@ -126,6 +131,29 @@ def test_each_status_says_what_the_app_can_do(client, fake_pool):
     assert unavailable["status"] == "unavailable"
     assert unavailable["slug"] is None
     assert "Q13625-3" in unavailable["reason"]
+
+
+def test_a_protein_being_built_says_so_whatever_its_status(client, fake_pool):
+    # B2M's row is written and its ESM-2 track is being scored; INSR is asked
+    # for and not yet resolved. Neither is to be opened, or asked for again.
+    pool = fake_pool(ranked=[LISTED, READY, BUILDABLE, UNAVAILABLE], building=["b2m", "insr"])
+    body = client.get("/proteins/suggest?q=ins").json()
+    assert [(s["gene"], s["status"], s["building"]) for s in body["suggestions"]] == [
+        ("INS", "listed", False), ("B2M", "ready", True),
+        ("INSR", "buildable", True), ("TP53BP2", "unavailable", False),
+    ]
+    (asked,) = [params for flat, params in pool.statements
+                if flat.startswith("select lower(gene) from resolve_request")]
+    assert asked == {"genes": ["b2m", "ins", "insr", "tp53bp2"]}
+
+
+def test_no_gene_no_question_about_builds(client, fake_pool):
+    pool = fake_pool(ranked=[_row(uniprot="Q8N8Q1", gene="", name="Uncharacterized protein",
+                                  buildable=False, reason="UniProt names no gene.", slug=None,
+                                  display=None, catalog_order=None, tier=3)])
+    (only,) = client.get("/proteins/suggest?q=unchar").json()["suggestions"]
+    assert only["building"] is False
+    assert not [flat for flat, _ in pool.statements if "resolve_request" in flat]
 
 
 def test_a_protein_with_no_gene_says_so_with_null(client, fake_pool):

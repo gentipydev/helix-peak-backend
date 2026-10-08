@@ -32,14 +32,18 @@ class FakeCursor:
 
 class FakePool:
     def __init__(self, protein=None, index=None, latest=None, today=0, queued=True,
-                 failing=False):
+                 failing=False, request_build=None, bake_build=None):
         self.protein = protein
         self.index = index
         self.latest = latest
         self.today = today
         self.queued = queued
         self.failing = failing
+        # `_REQUEST_BUILD`'s row and `_BAKE_BUILD`'s, where there is one.
+        self.request_build = request_build
+        self.bake_build = bake_build
         self.inserted = []
+        self.built = []
 
     def connection(self):
         return self
@@ -65,6 +69,12 @@ class FakePool:
         if flat.startswith("insert into resolve_request"):
             self.inserted.append(params)
             return FakeCursor([(1,)] if self.queued else [])
+        if flat.startswith("select r.state, extract(epoch"):
+            self.built.append(("request", params))
+            return FakeCursor([self.request_build] if self.request_build else [])
+        if flat.startswith("select j.state, case when j.progress_at"):
+            self.built.append(("bake", params))
+            return FakeCursor([self.bake_build] if self.bake_build else [])
         raise AssertionError(f"unexpected statement: {flat}")
 
 
@@ -95,7 +105,7 @@ def test_a_gene_the_catalog_lists_is_ready_where_it_shipped(client, pool, woken)
     fake = pool(protein="insulin", index=("P01308", "INS", True, None))
     response = _ask(client, "INS")
     assert response.status_code == 200
-    assert response.json() == {"slug": "insulin", "state": "ready", "reason": None}
+    assert response.json() == {"slug": "insulin", "state": "ready", "reason": None, "build": None}
     assert fake.inserted == [] and woken == []
 
 
@@ -103,7 +113,7 @@ def test_a_new_ask_is_queued_and_wakes_the_resolver(client, pool, woken):
     fake = pool(index=BRCA1)
     response = _ask(client, "brca1")
     assert response.status_code == 202
-    assert response.json() == {"slug": "brca1", "state": "pending", "reason": None}
+    assert response.json() == {"slug": "brca1", "state": "pending", "reason": None, "build": None}
     assert fake.inserted == [("BRCA1", "P38398", "brca1")]
     assert woken == [True]
 
@@ -129,7 +139,8 @@ def test_a_refusal_stands(client, pool, woken):
     response = _ask(client)
     assert response.status_code == 200
     assert response.json() == {"slug": None, "state": "refused",
-                               "reason": "Exons alone are 81,000 bp, over the budget."}
+                               "reason": "Exons alone are 81,000 bp, over the budget.",
+                               "build": None}
     assert fake.inserted == [] and woken == []
 
 
@@ -145,7 +156,8 @@ def test_an_unbuildable_protein_says_why(client, pool, woken):
     fake = pool(index=UNBUILDABLE)
     response = _ask(client, "TP53BP2")
     assert response.status_code == 200
-    assert response.json() == {"slug": None, "state": "unavailable", "reason": UNBUILDABLE[3]}
+    assert response.json() == {"slug": None, "state": "unavailable", "reason": UNBUILDABLE[3],
+                               "build": None}
     assert fake.inserted == []
 
 
@@ -203,16 +215,17 @@ def test_a_read_never_writes(client, pool, woken):
     fake = pool(index=BRCA1)
     response = client.get("/proteins/resolve/BRCA1")
     assert response.status_code == 200
-    assert response.json() == {"slug": "brca1", "state": "buildable", "reason": None}
+    assert response.json() == {"slug": "brca1", "state": "buildable", "reason": None, "build": None}
     assert fake.inserted == [] and woken == []
 
 
 @pytest.mark.parametrize("latest, said", [
-    (("queued", None), {"slug": "brca1", "state": "pending", "reason": None}),
-    (("running", None), {"slug": "brca1", "state": "pending", "reason": None}),
+    (("queued", None), {"slug": "brca1", "state": "pending", "reason": None, "build": None}),
+    (("running", None), {"slug": "brca1", "state": "pending", "reason": None, "build": None}),
     (("failed", "UniProt did not answer"),
-     {"slug": "brca1", "state": "failed", "reason": "UniProt did not answer"}),
-    (("refused", "Too long."), {"slug": None, "state": "refused", "reason": "Too long."}),
+     {"slug": "brca1", "state": "failed", "reason": "UniProt did not answer", "build": None}),
+    (("refused", "Too long."),
+     {"slug": None, "state": "refused", "reason": "Too long.", "build": None}),
 ])
 def test_a_read_says_where_a_request_is(client, pool, latest, said):
     pool(index=BRCA1, latest=latest)
@@ -222,7 +235,93 @@ def test_a_read_says_where_a_request_is(client, pool, latest, said):
 def test_a_read_of_a_resolved_protein_is_ready(client, pool):
     pool(protein="brca1", index=BRCA1, latest=("done", None))
     assert client.get("/proteins/resolve/BRCA1").json() == \
-        {"slug": "brca1", "state": "ready", "reason": None}
+        {"slug": "brca1", "state": "ready", "reason": None, "build": None}
+
+
+# ------------------------------------------------------------------ build
+
+
+def _report(step, elapsed, **said):
+    return {"step": step, "ahead": None, "scored": None, "residues": None, "left": None,
+            "elapsed": elapsed, "transcript": None, "reason": None, **said}
+
+
+def test_a_new_ask_says_how_many_proteins_are_ahead_of_it(client, pool, woken):
+    fake = pool(index=BRCA1, request_build=("queued", 0.2, 2))
+    response = _ask(client)
+    assert response.status_code == 202
+    assert response.json()["build"] == _report("queued", 0.2, ahead=2)
+    # Read after the row is written, so the ask counts itself in.
+    assert fake.inserted and fake.built == [("request", ("BRCA1",))]
+
+
+def test_a_request_a_worker_holds_is_making_its_record(client, pool):
+    pool(index=BRCA1, latest=("running", None), request_build=("running", 3.5, 0))
+    assert client.get("/proteins/resolve/BRCA1").json()["build"] == _report("record", 3.5)
+
+
+def test_a_refused_request_ends_at_its_record_and_says_why_once(client, pool):
+    pool(index=BRCA1, latest=("refused", "Too long."), request_build=("refused", 4.0, 0))
+    said = client.get("/proteins/resolve/BRCA1").json()
+    assert said["reason"] == "Too long."
+    assert said["build"] == _report("record", 4.0)
+
+
+def _bake(job="running", done=None, total=None, left=None, ahead=None, elapsed=60.0,
+          track="pending", reason=None):
+    return (job, done, total, left, ahead, elapsed, "NM_007294.4", track, reason)
+
+
+@pytest.mark.parametrize("bake, report", [
+    (_bake(job="queued", ahead=1),
+     _report("scoring", 60.0, ahead=1, transcript="NM_007294.4")),
+    # Claimed, and the model still loading: no line from the scorer yet.
+    (_bake(),
+     _report("scoring", 60.0, transcript="NM_007294.4")),
+    (_bake(done=450, total=1863, left=612.5, elapsed=331.0),
+     _report("scoring", 331.0, scored=450, residues=1863, left=612.5,
+             transcript="NM_007294.4")),
+    (_bake(done=1863, total=1863, left=0.0, elapsed=900.0),
+     _report("check", 900.0, scored=1863, residues=1863, left=0.0,
+             transcript="NM_007294.4")),
+    (_bake(job="done", done=1863, total=1863, elapsed=905.0, track="ready"),
+     _report("done", 905.0, scored=1863, residues=1863, transcript="NM_007294.4")),
+])
+def test_a_resolved_protein_says_how_far_esm2_has_got(client, pool, bake, report):
+    fake = pool(protein="brca1", index=BRCA1, latest=("done", None), bake_build=bake)
+    said = client.get("/proteins/resolve/BRCA1").json()
+    assert (said["state"], said["slug"]) == ("ready", "brca1")
+    assert said["build"] == report
+    assert fake.built == [("bake", ("brca1",))]
+
+
+def test_a_track_the_gate_refused_ends_at_the_check_with_its_reason(client, pool):
+    reason = "ESM-2 prefers the residue that is there ... The scores are not drawn."
+    pool(protein="sln", index=BRCA1, bake_build=_bake(
+        job="failed", done=31, total=31, elapsed=20.0, track="refused", reason=reason))
+    assert client.get("/proteins/resolve/SLN").json()["build"] == _report(
+        "check", 20.0, scored=31, residues=31, transcript="NM_007294.4", reason=reason)
+
+
+def test_a_scorer_that_never_got_going_ends_at_the_scoring(client, pool):
+    reason = "Scoring failed 3 times: The scorer exited with status 1."
+    pool(protein="brca1", index=BRCA1, bake_build=_bake(
+        job="failed", elapsed=30.0, track="refused", reason=reason))
+    assert client.get("/proteins/resolve/BRCA1").json()["build"] == _report(
+        "scoring", 30.0, transcript="NM_007294.4", reason=reason)
+
+
+def test_one_of_the_twenty_has_no_build(client, pool):
+    # `_BAKE_BUILD` reads only proteins with no reading order, so it finds no row.
+    fake = pool(protein="insulin", index=("P01308", "INS", True, None))
+    assert client.get("/proteins/resolve/INS").json()["build"] is None
+    assert fake.built == [("bake", ("insulin",))]
+
+
+def test_a_protein_nobody_asked_for_has_no_build_and_reads_nothing_more(client, pool):
+    fake = pool(index=BRCA1)
+    assert client.get("/proteins/resolve/BRCA1").json()["build"] is None
+    assert fake.built == []
 
 
 def test_a_read_of_an_unknown_gene_is_not_found(client, pool):
