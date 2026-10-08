@@ -51,6 +51,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -117,6 +118,9 @@ FRAME_NEAR = 3.0
 _FRAME_SLACK = 0.01
 
 _TIMEOUT = 60
+# Seconds waited before each try of a request: a blip of the API's is waited
+# out here, rather than spending one of a bake's three tries on it.
+_TRIES = (0, 2, 6)
 _PYMOL_TIMEOUT = 600
 _IMPORT_TIMEOUT = 300
 
@@ -187,9 +191,22 @@ class Built:
 
 
 def _get(url: str) -> bytes:
+    """One address's bytes. An answer that is the server's own trouble (5xx,
+    429) or the network's is asked for again, twice; any other answer, a 404
+    among them, is the answer."""
     request = urllib.request.Request(url, headers={"User-Agent": "helix-peek-pipeline"})
-    with urllib.request.urlopen(request, timeout=_TIMEOUT) as response:
-        return response.read()
+    for wait in _TRIES:
+        time.sleep(wait)
+        try:
+            with urllib.request.urlopen(request, timeout=_TIMEOUT) as response:
+                return response.read()
+        except urllib.error.HTTPError as exc:
+            if exc.code < 500 and exc.code != 429:
+                raise
+            last = exc
+        except OSError as exc:      # URLError, a timeout, a reset connection
+            last = exc
+    raise last
 
 
 def no_model(accession: str, length: int) -> Refused:

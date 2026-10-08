@@ -104,6 +104,47 @@ def test_an_api_that_is_down_is_not_a_refusal():
         alphafold.fetch_entry("O00631", 31, _serving({url: down}))
 
 
+def test_the_apis_own_trouble_is_asked_again_and_a_plain_no_is_not(monkeypatch):
+    asked = []
+    answers = []
+
+    class Answer:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *said):
+            return False
+
+        def read(self):
+            return b"[]"
+
+    def urlopen(request, timeout):
+        asked.append(request.full_url)
+        answer = answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return Answer()
+
+    monkeypatch.setattr(alphafold.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(alphafold, "_TRIES", (0, 0, 0))
+    url = alphafold.API.format(accession="O00631")
+    busy = urllib.error.HTTPError(url, 503, "Service Unavailable", None, None)
+
+    answers[:] = [busy, TimeoutError("timed out"), None]
+    assert alphafold._get(url) == b"[]" and len(asked) == 3
+    asked.clear()
+    answers[:] = [busy, busy, busy]
+    with pytest.raises(urllib.error.HTTPError):
+        alphafold._get(url)
+    assert len(asked) == 3
+    # No such entry is an answer, and is asked for once.
+    asked.clear()
+    answers[:] = [_not_found(url)]
+    with pytest.raises(urllib.error.HTTPError):
+        alphafold._get(url)
+    assert len(asked) == 1
+
+
 def test_the_model_is_read_residue_by_residue():
     model = alphafold.read_model(SLN_MODEL.read_text())
     assert model.letters == SLN
