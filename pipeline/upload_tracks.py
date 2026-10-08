@@ -48,9 +48,12 @@ from pipeline.paths import DATA  # noqa: E402
 from pipeline.targets import TARGETS  # noqa: E402
 
 # Where flutter_scene's build hook wrote the compiled scenes while the app still
-# compiled its own folds. Nothing writes it now: `--kind structure` refuses every
-# target until Phase 9 of HANDOFF-ONDEMAND.md compiles `.fsceneb` in a worker.
+# compiled its own folds. Nothing writes it now, so `--kind structure` refuses
+# every target by hand. A model made on demand is compiled by the resolver's
+# worker (`structure/alphafold.py`) and stored through `structure_row`.
 SCENES = DATA / "flutter_scene_generated"
+
+MODELS_BUCKET = "models"
 
 # A year, and immutable: the digest is in the path, so these bytes never change.
 CACHE_CONTROL = "public, max-age=31536000, immutable"
@@ -254,6 +257,35 @@ def validate(kind: str, target, payload: bytes) -> dict:
     raise SystemExit(f"unknown kind {kind!r}")
 
 
+def structure_row(slug: str, glb: bytes, compiled: bytes, provenance: dict) -> tuple[dict, list]:
+    """A structure track's row and its two objects, from a model and the scene
+    compiled from it.
+
+    The row points at what the phone loads. `.fsceneb` is a versioned
+    container tied to the flutter_scene version, so the `.glb` it was compiled
+    from goes up beside it and is named in the provenance: an upgrade that
+    invalidates every scene can then re-compile from storage rather than
+    needing the repo and another PyMOL run. Returns the row, and the objects
+    as (path, bytes, content type), the `.glb` first.
+    """
+    digest = hashlib.sha256(glb).hexdigest()
+    scene_digest = hashlib.sha256(compiled).hexdigest()
+    glb_path = f"structure/{slug}.{digest[:12]}.glb"
+    scene_path = f"structure/{slug}.{scene_digest[:12]}.fsceneb"
+    row = {
+        "slug": slug, "kind": "structure", "bucket": MODELS_BUCKET,
+        "object_path": scene_path,
+        "bytes": len(compiled), "sha256": scene_digest, "format": "fsceneb",
+        "provenance": {**provenance, "glb": {
+            "path": glb_path,
+            "sha256": digest,
+            "bytes": len(glb),
+        }},
+    }
+    return row, [(glb_path, glb, "model/gltf-binary"),
+                 (scene_path, compiled, "application/octet-stream")]
+
+
 class Storage:
     def __init__(self, url: str, key: str):
         self.base = url.rstrip("/") + "/storage/v1"
@@ -308,8 +340,8 @@ def main() -> int:
     kind = arguments.kind
     wanted = set(arguments.target) if arguments.target else None
     bucket, suffix, content_type = {
-        "structure": ("models", "glb", "model/gltf-binary"),
-        "structure_ar": ("models", "usdz", "model/vnd.usdz+zip"),
+        "structure": (MODELS_BUCKET, "glb", "model/gltf-binary"),
+        "structure_ar": (MODELS_BUCKET, "usdz", "model/vnd.usdz+zip"),
         "audio": ("tracks", "m4a", "audio/mp4"),
     }.get(kind, ("tracks", "json", "application/json"))
 
@@ -341,26 +373,7 @@ def main() -> int:
                 print(f"  {target.slug}: REFUSED -- no compiled scene; "
                       f"run the build hook first", file=sys.stderr)
                 continue
-            compiled = scene.read_bytes()
-            scene_digest = hashlib.sha256(compiled).hexdigest()
-            # The row points at what the phone loads. `.fsceneb` is a versioned
-            # container tied to the flutter_scene version, so the `.glb` it was
-            # compiled from goes up beside it and is named here: an upgrade that
-            # invalidates every scene can then re-compile from storage rather
-            # than needing the repo and another PyMOL run.
-            scene_path = f"{kind}/{target.slug}.{scene_digest[:12]}.fsceneb"
-            uploads.append((scene_path, compiled, "application/octet-stream"))
-            row.update({
-                "object_path": scene_path,
-                "bytes": len(compiled),
-                "sha256": scene_digest,
-                "format": "fsceneb",
-                "provenance": {**provenance, "glb": {
-                    "path": uploads[0][0],
-                    "sha256": digest,
-                    "bytes": len(payload),
-                }},
-            })
+            row, uploads = structure_row(target.slug, payload, scene.read_bytes(), provenance)
         if kind == "structure_ar":
             room = DATA / f"assets/models_ar/{target.slug}.glb"
             companion = room.read_bytes()
