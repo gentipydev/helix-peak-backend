@@ -377,3 +377,315 @@ def test_a_protein_with_no_record_has_no_model_to_be_held_to(monkeypatch):
     assert outcome == {"id": 4, "slug": "ins", "state": "refused",
                        "reason": "The protein has no ready record to hold a model to."}
     assert did == [("refuse_bake", (4, "ins", "structure", outcome["reason"]), {})]
+
+
+# ------------------------------------------------------------ the evidence
+
+
+class Stored(Storage):
+    """Storage that serves what was put, as the public read every client makes."""
+
+    def get(self, bucket, path):
+        return next(payload for (stored, named, _), payload in self.objects.items()
+                    if (stored, named) == (bucket, path))
+
+
+def _row(storage, kind, payload):
+    """A ready track's row, its bytes stored where the row names them."""
+    digest = hashlib.sha256(payload).hexdigest()
+    path = f"{kind}/ins.{digest[:12]}.json"
+    storage.put("tracks", path, payload, "application/json")
+    return {"bucket": "tracks", "object_path": path, "sha256": digest}
+
+
+def an_avi(target, record: bytes, **changes) -> bytes:
+    """An AVI track the upload gate takes for this record
+    (`check_assets.check_impact`): its letters, one run over every drawn base,
+    three scores a base, and exons above their introns' edges, which are above
+    the introns' interiors."""
+    from pipeline.check_assets import bases
+
+    mock = json.loads(record)
+    start, end = mock["location"]["start"], mock["location"]["end"]
+    exons = sorted((exon["start"], exon["end"]) for exon in mock["exons"])
+    exonic = {local for low, high in exons for local in range(low, high + 1)}
+    edges = set()
+    for (_, before), (after, _) in zip(exons, exons[1:]):
+        low, high = before + 1, after - 1
+        edge = min(8, (high - low + 1) // 2)
+        edges |= set(range(low, low + edge)) | set(range(high - edge + 1, high + 1))
+    asset = {
+        "gene": target.gene, "uniprot": target.uniprot, "accession": target.source.accession,
+        "assembly": "GRCh38", "annotation": "GENCODE v46", "chromosome": "chr11",
+        "transcript": "ENST00000381330.5", "orientation": -1, "complemented": True,
+        "scorer": "AVI_SCORE", "score_units": "phred", "alt_order": "ACGT minus wildtype",
+        "high_phred": 20.0, "middle_phred": 10.0, "start": start,
+        "sequence": bases(mock, list(range(start, end + 1))),
+        "generation": {"drawn_bases": end - start + 1},
+        "runs": [{"local": start, "genomic": 2_161_209, "step": -1, "length": end - start + 1}],
+        "positions": {str(local): [20.0 if local in exonic else 12.0 if local in edges else 2.0] * 3
+                      for local in range(start, end + 1)},
+    }
+    asset.update(changes)
+    return json.dumps(asset, separators=(",", ":")).encode()
+
+
+def a_clinvar(target, record: bytes, avi: bytes, **changes) -> bytes:
+    """A ClinVar track the upload gate takes, placed by this AVI track's map:
+    two records searched, neither a single-base substitution."""
+    from pipeline.clinvar.bake_clinvar import SCOPE
+
+    mock, impact = json.loads(record), json.loads(avi)
+    asset = {
+        "schema_version": 1, "source": "NCBI ClinVar", "gene": target.gene,
+        "accession": target.source.accession, "assembly": "GRCh38",
+        "chromosome": impact["chromosome"], "scope": SCOPE, "start": impact["start"],
+        "sequence": impact["sequence"], "protein_sequence": mock["protein"]["translation"],
+        "complemented": impact["complemented"], "runs": impact["runs"],
+        "retrieved_at": "2026-10-09T12:00:00+00:00", "query": f"{target.gene}[gene]",
+        "searched_records": 2, "excluded": {"not_a_single_base_substitution": 2},
+        "source_batches": [{"file": "batch-0.xml", "sha256": "0" * 64}],
+        "traits": {}, "variants": [],
+    }
+    asset.update(changes)
+    return (json.dumps(asset, indent=2) + "\n").encode()
+
+
+@pytest.fixture
+def data(monkeypatch, tmp_path):
+    """`paths.DATA` as the worker's own directory, wherever a module took it."""
+    from pipeline import check_assets, paths
+
+    folder = tmp_path / "data"
+    for module in (paths, upload_tracks, check_assets):
+        monkeypatch.setattr(module, "DATA", folder)
+    return folder
+
+
+def _evidence(monkeypatch, resolution, kind, storage, impact=None, attempts=1,
+              impact_track=("absent", None)):
+    """`store`'s side of `impact_next` and `clinvar_next` with no database: one
+    bake of `kind` for INS, its record stored ready (and its AVI track, where
+    one is given), and what the worker did with it."""
+    did = []
+    rows = {"record": _row(storage, "record", resolution.record)}
+    if impact is not None:
+        rows["impact"] = _row(storage, "impact", impact)
+    monkeypatch.setattr(store, "claim_bake", lambda conn, wanted: {
+        "id": 5, "slug": "ins", "kind": wanted, "attempts": attempts} if wanted == kind else None)
+    monkeypatch.setattr(store, "protein", lambda conn, slug: {"slug": slug})
+    monkeypatch.setattr(worker, "target_of", lambda protein: resolution.target)
+    monkeypatch.setattr(store, "ready_track", lambda conn, slug, wanted: rows.get(wanted))
+    monkeypatch.setattr(store, "track_state", lambda conn, slug, wanted: impact_track)
+    for name in ("finish_bake", "refuse_bake", "requeue_bake"):
+        monkeypatch.setattr(store, name, lambda conn, *said, _name=name, **more:
+                            did.append((_name, said, more)))
+    return did
+
+
+def _raising(error):
+    def bake(*said):
+        raise error
+    return bake
+
+
+def test_an_avi_track_is_stored_ready_as_the_uploader_would_store_it(offline, monkeypatch, data):
+    resolution = resolve(INS, offline(_body()))
+    storage = Stored()
+    did = _evidence(monkeypatch, resolution, "impact", storage)
+    payload = an_avi(resolution.target, resolution.record)
+    handed = []
+    outcome = worker.impact_next(
+        None, storage, avi=lambda target, record: handed.append((target, record)) or payload)
+
+    assert outcome == {"id": 5, "slug": "ins", "state": "ready"}
+    assert handed == [(resolution.target, resolution.record)]
+    [(name, (job, track), more)] = did
+    digest = hashlib.sha256(payload).hexdigest()
+    assert (name, job, more) == ("finish_bake", 5, {})
+    assert (track["kind"], track["bucket"], track["object_path"], track["sha256"]) == \
+        ("impact", "tracks", f"impact/ins.{digest[:12]}.json", digest)
+    assert (track["provenance"]["scorer"], track["provenance"]["chromosome"]) == \
+        ("AVI_SCORE", "chr11")
+    assert storage.get("tracks", track["object_path"]) == payload
+    # The gate held it to the record, laid out in the worker's own directory.
+    assert (data / resolution.target.mock_asset).read_bytes() == resolution.record
+
+
+def test_an_avi_gate_is_a_readers_sentence_on_the_track_and_its_words_on_the_job(
+        offline, monkeypatch, data):
+    resolution = resolve(INS, offline(_body()))
+    storage = Stored()
+    did = _evidence(monkeypatch, resolution, "impact", storage)
+    gate = ("INS: the coordinate map is wrong — 1,071 of 1,431 bases (74.8%) disagree with the "
+            "reference:\n      local 4986 -> 2161209: draws G, reference A")
+    outcome = worker.impact_next(None, storage, avi=_raising(worker.Unplaced(gate)))
+
+    said = ("AlphaGenome's scores were not placed on INS's bases: the coordinate map is wrong — "
+            "1,071 of 1,431 bases (74.8%) disagree with the reference.")
+    assert outcome == {"id": 5, "slug": "ins", "state": "refused", "reason": said}
+    assert did == [("refuse_bake", (5, "ins", "impact", said), {"error": worker._said(gate)})]
+    assert [path for (_, path, _) in storage.objects if path.startswith("impact/")] == []
+
+
+@pytest.mark.parametrize("changes, why", [
+    ({"sequence": "A" * 1431}, "the impact track's sequence is not the record's drawn letters"),
+    ({"positions": {}}, "only 0 of 1,431 drawn bases are scored"),
+    ({"uniprot": "P99999"}, "impact track says uniprot='P99999', expected 'P01308'"),
+])
+def test_an_avi_track_the_gate_declines_is_refused_and_never_stored(
+        offline, monkeypatch, data, changes, why):
+    resolution = resolve(INS, offline(_body()))
+    storage = Stored()
+    did = _evidence(monkeypatch, resolution, "impact", storage)
+    payload = an_avi(resolution.target, resolution.record, **changes)
+    outcome = worker.impact_next(None, storage, avi=lambda target, record: payload)
+
+    assert outcome["state"] == "refused"
+    assert outcome["reason"] == f"AlphaGenome's scores were not placed on INS's bases: {why}."
+    [(name, said, more)] = did
+    assert name == "refuse_bake" and why in more["error"]
+    assert [path for (_, path, _) in storage.objects if path.startswith("impact/")] == []
+
+
+def test_an_atlas_that_does_not_answer_is_tried_again_and_a_reader_is_not_told_how(
+        offline, monkeypatch, data):
+    resolution = resolve(INS, offline(_body()))
+    broke = RuntimeError("The AVI bake exited with status 1: chr11:2159779-2161209 failed "
+                         "after 7 attempts: RESOURCE_EXHAUSTED")
+    storage = Stored()
+    did = _evidence(monkeypatch, resolution, "impact", storage, attempts=1)
+    outcome = worker.impact_next(None, storage, avi=_raising(broke))
+    assert (outcome["state"], did) == ("queued", [("requeue_bake", (5, worker._said(broke)), {})])
+
+    storage = Stored()
+    did = _evidence(monkeypatch, resolution, "impact", storage, attempts=store.MAX_ATTEMPTS)
+    outcome = worker.impact_next(None, storage, avi=_raising(broke))
+    said = ("AlphaGenome's scores could not be fetched: the bake broke each of the 3 times it "
+            "was tried.")
+    assert outcome == {"id": 5, "slug": "ins", "state": "refused", "reason": said}
+    assert did == [("refuse_bake", (5, "ins", "impact", said), {"error": worker._said(broke)})]
+
+
+def test_a_protein_with_no_record_has_no_bases_for_either(monkeypatch):
+    did = _one_bake(monkeypatch)
+    assert worker.impact_next(None, Stored(), avi=_raising(AssertionError()))["reason"] == \
+        "The protein has no ready record to place AlphaGenome's scores on."
+    assert worker.clinvar_next(None, Stored(), clinvar=_raising(AssertionError()))["reason"] == \
+        "The protein has no ready record to place ClinVar's records on."
+    assert [(name, said[2]) for name, said, _ in did] == \
+        [("refuse_bake", "impact"), ("refuse_bake", "clinvar")]
+
+
+def test_clinvar_is_placed_by_the_avi_tracks_map(offline, monkeypatch, data):
+    resolution = resolve(INS, offline(_body()))
+    avi = an_avi(resolution.target, resolution.record)
+    storage = Stored()
+    did = _evidence(monkeypatch, resolution, "clinvar", storage, impact=avi)
+
+    def clinvar(target):
+        # The two it reads, where the baker reads them.
+        assert (data / target.mock_asset).read_bytes() == resolution.record
+        assert (data / target.impact_asset).read_bytes() == avi
+        return a_clinvar(target, resolution.record, avi)
+
+    assert worker.clinvar_next(None, storage, clinvar=clinvar) == \
+        {"id": 5, "slug": "ins", "state": "ready"}
+    [(name, (job, track), _)] = did
+    assert (name, job, track["kind"]) == ("finish_bake", 5, "clinvar")
+    assert track["object_path"].startswith("clinvar/ins.")
+    assert (track["provenance"]["source"], track["provenance"]["searched_records"]) == \
+        ("NCBI ClinVar", 2)
+
+
+def test_clinvar_is_refused_where_avi_was_and_says_why_in_avis_words(offline, monkeypatch, data):
+    resolution = resolve(INS, offline(_body()))
+    unplaced = "AlphaGenome's scores were not placed on INS's bases: record has 3 exons, MANE " \
+               "Select has 4."
+    did = _evidence(monkeypatch, resolution, "clinvar", Stored(),
+                    impact_track=("refused", unplaced))
+    outcome = worker.clinvar_next(None, Stored(), clinvar=_raising(AssertionError(
+        "ClinVar was fetched with no map to place it by")))
+    said = ("ClinVar's records are placed by AlphaGenome's coordinate map, which INS has none "
+            "of. " + unplaced)
+    assert outcome == {"id": 5, "slug": "ins", "state": "refused", "reason": said}
+    assert did == [("refuse_bake", (5, "ins", "clinvar", said), {})]
+
+    # With no AVI track at all, there is nothing more to say.
+    did = _evidence(monkeypatch, resolution, "clinvar", Stored())
+    assert worker.clinvar_next(None, Stored(), clinvar=_raising(AssertionError()))["reason"] == \
+        "ClinVar's records are placed by AlphaGenome's coordinate map, which INS has none of."
+
+
+def test_clinvars_verdict_is_a_refusal_and_ncbi_not_answering_is_tried_again(
+        offline, monkeypatch, data):
+    resolution = resolve(INS, offline(_body()))
+    avi = an_avi(resolution.target, resolution.record)
+
+    storage = Stored()
+    did = _evidence(monkeypatch, resolution, "clinvar", storage, impact=avi)
+    outcome = worker.clinvar_next(None, storage, clinvar=_raising(ValueError(
+        "Unaccounted records")))
+    said = "ClinVar's records were not placed on INS's bases: Unaccounted records."
+    assert (outcome["state"], outcome["reason"]) == ("refused", said)
+    assert did == [("refuse_bake", (5, "ins", "clinvar", said), {"error": "Unaccounted records"})]
+
+    storage = Stored()
+    did = _evidence(monkeypatch, resolution, "clinvar", storage, impact=avi)
+    wrong = a_clinvar(resolution.target, resolution.record, avi, runs=[])
+    outcome = worker.clinvar_next(None, storage, clinvar=lambda target: wrong)
+    assert outcome["reason"] == ("ClinVar's records were not placed on INS's bases: mapping "
+                                 "differs from the gene/AVI track.")
+    assert [path for (_, path, _) in storage.objects if path.startswith("clinvar/")] == []
+
+    missed = worker.Unfetched("ClinVar did not answer in full: Batch returned 99 of the 100 "
+                              "records asked for")
+    storage = Stored()
+    did = _evidence(monkeypatch, resolution, "clinvar", storage, impact=avi)
+    outcome = worker.clinvar_next(None, storage, clinvar=_raising(missed))
+    assert (outcome["state"], did) == ("queued", [("requeue_bake", (5, worker._said(missed)), {})])
+
+
+def test_clinvar_is_fetched_beside_the_worker_and_its_raw_responses_go_with_the_bake(
+        offline, monkeypatch, data, tmp_path, capsys):
+    from pipeline.clinvar import bake_clinvar
+
+    target = resolve(INS, offline(_body())).target
+    seen = {}
+
+    def fetch(gene, cache, replay):
+        # The baker's own, as it runs: its cache, and its batches.
+        seen.update(cache=cache, replay=replay)
+        cache.mkdir(parents=True)
+        (cache / "batch-0.xml").write_text("<ClinVarResult-Set/>")
+        seen["batch"] = bake_clinvar.fetch_batch("efetch", ["1"])
+        return "root", {"batches": []}
+
+    def bake(target, replay):
+        bake_clinvar.fetch(target.gene, Path(bake_clinvar.__file__).parent / "cache" / target.gene,
+                           replay)
+        print("INS: 0 mapped SNVs")
+        path = data / f"assets/clinvar/{target.slug}_clinvar.json"
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b"the track\n")
+
+    monkeypatch.setattr(bake_clinvar, "fetch", fetch)
+    monkeypatch.setattr(bake_clinvar, "fetch_batch", lambda efetch, ids: b"<batch/>")
+    monkeypatch.setattr(bake_clinvar, "bake", bake)
+    cache = tmp_path / "fetching" / "clinvar"
+    assert worker.clinvar_in_process(target, cache) == b"the track\n"
+
+    # Never beside the twenty's raw responses, and gone once the bake is over.
+    assert (seen["cache"], seen["replay"], seen["batch"]) == (cache / "INS", False, b"<batch/>")
+    assert not (cache / "INS").exists()
+    assert bake_clinvar.fetch is fetch
+    assert capsys.readouterr() == ("", "")
+
+    # A stop is heard before the next batch, and NCBI's own failure is no verdict.
+    with pytest.raises(worker.Unfetched, match="stopped while ClinVar"):
+        worker.clinvar_in_process(target, cache, stopped=lambda: True)
+    monkeypatch.setattr(bake_clinvar, "fetch", _raising(ValueError(
+        "Search changed during pagination; retry")))
+    with pytest.raises(worker.Unfetched, match="did not answer in full: Search changed"):
+        worker.clinvar_in_process(target, cache)
+    assert not isinstance(worker.Unfetched("x"), ValueError)

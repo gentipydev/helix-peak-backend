@@ -30,6 +30,14 @@ work is started and where ESM-2 runs:
   in the structure bake's own environment (`pipeline/structure/venv`), the
   same way. A model takes seconds, so it is made before the scoring: a
   protein's fold page is ready long before its ESM-2 track is.
+- The variant evidence comes next, and before the scoring too
+  (`worker.impact_all`, then `worker.clinvar_all`): minutes, where ESM-2 can
+  take an hour, so an Atlas quota spent shows early. AVI wants the AlphaGenome
+  client and its skill's GENCODE lookup, which runs under `uv`, and an
+  `Evidencer` runs `impact_local.py` in the AVI bake's own environment
+  (`pipeline/impact/venv`), with `ALPHAGENOME_API_KEY` from `.env` and nothing
+  else secret. ClinVar wants Biopython only, and is fetched in this process
+  (`ClinVarBaker`). `RESOLVER_EVIDENCE=0` in `.env` turns both off.
 
 A laptop is not a container, and four things keep that out of the rows:
 
@@ -39,8 +47,9 @@ A laptop is not a container, and four things keep that out of the rows:
   later, rather than this one at once with whatever broke it still broken:
   three tries in one second would refuse a protein for good over a network
   that was away for two.
-- No bake is claimed while the scorer cannot start (`Scorer.unready`), and no
-  model while the modeller cannot (`Modeller.unready`).
+- No bake is claimed while the scorer cannot start (`Scorer.unready`), no
+  model while the modeller cannot (`Modeller.unready`), and no AVI bake while
+  the Atlas cannot be asked (`Evidencer.unready`).
 - The bakers' directories are the worker's own, under Application Support and
   never `pipeline/data/`, and are emptied after each cycle that used them, as
   a container's `/tmp` is. A GenBank reply garbled once is not read twice.
@@ -92,8 +101,9 @@ log = logging.getLogger("resolver-worker")
 KEYS = ("DATABASE_URL", "SUPABASE_URL", "SUPABASE_SERVICE_KEY", "NCBI_EMAIL")
 
 # What the scorer is started without. It reads a record and writes a track,
-# both as files; it has no use for the database or the storage key.
-_CREDENTIALS = ("DATABASE_URL", "SUPABASE_SERVICE_KEY")
+# both as files; it has no use for the database, the storage key or the
+# Atlas's, which only the AVI bake is given (`Evidencer`).
+_CREDENTIALS = ("DATABASE_URL", "SUPABASE_SERVICE_KEY", "ALPHAGENOME_API_KEY")
 
 # `store.STALE_BAKE` is 90 minutes: a sweep takes a bake that has run that long
 # for a dead worker's and queues it again. A scoring let run past it could be
@@ -125,9 +135,14 @@ _CONNECTION = {"connect_timeout": "20", "keepalives": "1", "keepalives_idle": "6
 
 _DRIVER = "pipeline.resolver.score_local"
 _MODEL_DRIVER = "pipeline.resolver.model_local"
+_IMPACT_DRIVER = "pipeline.resolver.impact_local"
 # A model is baked in seconds. One still baking after this has hung, and is
 # ended well inside `store.STALE_STRUCTURE`, as a scoring is inside the bake's.
 MODEL_TIMEOUT = 15 * 60
+# An AVI bake takes seconds to minutes, waiting on the Atlas's quota at worst.
+# One still going after this is ended inside `store.STALE_EVIDENCE`, and its
+# checkpoints carry what it pulled into the next try.
+EVIDENCE_TIMEOUT = 50 * 60
 _CHECK_TIMEOUT = 120
 _CHILD_POLL = 0.5
 _PROGRESS_EVERY = 60
@@ -138,6 +153,7 @@ _EX_CONFIG = 78
 
 STOPPED = "The worker was stopped while ESM-2 was scoring."
 STOPPED_MODELLING = "The worker was stopped while a model was being made."
+STOPPED_PLACING = "The worker was stopped while AlphaGenome's scores were being fetched."
 
 _DEVICE = re.compile(r"^Loading \S+ on (\w+) ", re.MULTILINE)
 _BEFORE = re.compile(r"over the residue before:\s+([\d.]+%)")
@@ -173,6 +189,14 @@ class Settings:
     # Whether this worker makes models at all. Off, no structure bake is
     # queued and none is claimed: the worker is the one Modal runs.
     structures: bool = False
+    # Whether it makes AVI and ClinVar tracks, the same way, and what with:
+    # the AVI bake's interpreter, the `uv` its GENCODE lookup runs under
+    # (launchd's PATH does not name the folder it is in), and the Atlas's key,
+    # handed to that bake alone.
+    evidence: bool = False
+    impact_python: Path = BACKEND / "pipeline" / "impact" / "venv" / "bin" / "python"
+    uv: Path = Path("uv")
+    alphagenome_key: Optional[str] = None
     # What `load_settings` changed from what was asked, said once the log is open.
     notes: tuple = ()
 
@@ -196,14 +220,29 @@ class Settings:
         return self.state / "modelling"
 
     @property
+    def fetching(self) -> Path:
+        """Where AVI and ClinVar are fetched into: the AVI bake's hand-over,
+        and ClinVar's raw responses while its bake runs."""
+        return self.state / "fetching"
+
+    @property
+    def impact_state(self) -> Path:
+        """What an AVI bake keeps between tries, and so is never emptied:
+        GENCODE's answers, and the checkpoints of a pull cut short."""
+        return self.state / "impact"
+
+    @property
     def lock(self) -> Path:
         return self.state / "worker.lock"
 
     @property
     def secrets(self) -> tuple:
-        """What no line of the log may hold: the storage key, and the database's
-        URL and password. Longest first, so a whole URL goes before a part of it."""
+        """What no line of the log may hold: the storage key, the Atlas's, and
+        the database's URL and password. Longest first, so a whole URL goes
+        before a part of it."""
         found = [self.service_key, self.database_url]
+        if self.alphagenome_key:
+            found.append(self.alphagenome_key)
         for pattern in _PASSWORDS:
             match = pattern.search(self.database_url)
             if match:
@@ -236,6 +275,13 @@ def default_dart(home: Path) -> Path:
     """
     sdk = home / "flutter" / "bin" / "cache" / "dart-sdk" / "bin" / "dart"
     return sdk if sdk.exists() else Path(shutil.which("dart") or "dart")
+
+
+def default_uv(home: Path) -> Path:
+    """`uv` where its installer puts it in the home directory, and otherwise
+    whichever is on the path. Under launchd the path names neither."""
+    installed = home / ".local" / "bin" / "uv"
+    return installed if installed.exists() else Path(shutil.which("uv") or "uv")
 
 
 def load_settings(environ: Optional[Mapping[str, str]] = None, env_file: Optional[Path] = None,
@@ -284,6 +330,12 @@ def load_settings(environ: Optional[Mapping[str, str]] = None, env_file: Optiona
         app=Path(said.get("RESOLVER_APP_DIR") or BACKEND.parent / "helix-peek"),
         structures=said.get("RESOLVER_STRUCTURES", "1").strip().lower()
         not in ("0", "false", "no", "off"),
+        evidence=said.get("RESOLVER_EVIDENCE", "1").strip().lower()
+        not in ("0", "false", "no", "off"),
+        impact_python=Path(said.get("RESOLVER_IMPACT_PYTHON")
+                           or BACKEND / "pipeline" / "impact" / "venv" / "bin" / "python"),
+        uv=Path(said.get("RESOLVER_UV") or default_uv(home)),
+        alphagenome_key=said.get("ALPHAGENOME_API_KEY"),
         notes=tuple(notes),
     )
 
@@ -616,6 +668,164 @@ def _model_facts(built, seconds: float) -> str:
             f"scene {len(built.scene):,} B, {seconds:.1f} s")
 
 
+# ------------------------------------------------------------ the evidence
+
+_WINDOWS = re.compile(r"^\s*(\d+) window\(s\), ([\d,]+) bp", re.MULTILINE)
+_GATE = re.compile(r"sequence gate: ([\d,]+ of [\d,]+) bases agree")
+
+
+class Evidencer:
+    """`worker.Avi`, run where the AVI bake's packages are: `impact_local.py`,
+    one protein a process.
+
+    It raises what `worker.impact_next` reads: `worker.Unplaced` where one of
+    the bake's own gates said no, which is a refusal, and a `RuntimeError` for
+    everything else (the Atlas or GENCODE's lookup not answering, the bake
+    running past its time, or being stopped with the worker), which puts the
+    bake back on the queue, up to `store.MAX_ATTEMPTS` times.
+    """
+
+    def __init__(self, settings: Settings, stop: threading.Event):
+        self.settings = settings
+        self.stop = stop
+
+    def _command(self, *arguments: str) -> list:
+        return [str(self.settings.impact_python), "-u", "-m", _IMPACT_DRIVER, *arguments]
+
+    def _environment(self) -> dict:
+        # Public data in, a file out, and the Atlas's key, which nothing else
+        # the worker starts is given. Not the database or the storage key.
+        settings = self.settings
+        environment = {key: value for key, value in os.environ.items()
+                       if key not in _CREDENTIALS}
+        if settings.uv.is_absolute():
+            environment["PATH"] = os.pathsep.join(
+                [str(settings.uv.parent), environment.get("PATH", os.defpath)])
+        if settings.alphagenome_key:
+            environment["ALPHAGENOME_API_KEY"] = settings.alphagenome_key
+        environment.update(PYTHONUNBUFFERED="1")
+        return environment
+
+    def unready(self) -> Optional[str]:
+        """Why no AVI track could be made here now. None when one could.
+
+        Asked before a bake is claimed, as the scorer is, and at the cost of
+        one request to the Atlas: a key revoked, or a skill gone, would break
+        every protein alike, three times each, and leave each one's AVI and
+        ClinVar refused.
+        """
+        try:
+            done = subprocess.run(
+                self._command("--check"), cwd=str(BACKEND), env=self._environment(),
+                stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                timeout=_CHECK_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            return f"The AVI bake's check had not finished after {_CHECK_TIMEOUT} s."
+        except OSError as exc:
+            return f"The AVI bake could not be started: {exc}"
+        return None if done.returncode == 0 else _last_words(
+            done.returncode, done.stderr, "The AVI bake")
+
+    def _wait(self, child: subprocess.Popen, started: float) -> Optional[str]:
+        """Why the bake was cut short, or None once it has ended by itself."""
+        while True:
+            try:
+                child.wait(timeout=_CHILD_POLL)
+                return None
+            except subprocess.TimeoutExpired:
+                pass
+            if self.stop.is_set():
+                return STOPPED_PLACING
+            if time.monotonic() - started > EVIDENCE_TIMEOUT:
+                return (f"AlphaGenome's scores were still being fetched after "
+                        f"{EVIDENCE_TIMEOUT / 60:.0f} minutes, and the bake was stopped.")
+
+    def __call__(self, target, record: bytes) -> bytes:
+        from pipeline.resolver import impact_local, worker
+
+        settings = self.settings
+        if self.stop.is_set():
+            raise RuntimeError(STOPPED_PLACING)
+        settings.fetching.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=settings.fetching,
+                                         prefix=f"{target.slug}-") as folder:
+            work = Path(folder)
+            target_file, record_file, out = work / "target.pkl", work / "record.json", work / "out"
+            printed_file, errors_file = work / "stdout.txt", work / "stderr.txt"
+            target_file.write_bytes(pickle.dumps(target))
+            record_file.write_bytes(record)
+
+            started = time.monotonic()
+            with open(printed_file, "wb") as printed, open(errors_file, "wb") as errors:
+                # Its own session: the GENCODE lookup is its child, under `uv`.
+                child = subprocess.Popen(
+                    self._command(str(target_file), str(record_file), str(out),
+                                  "--state", str(settings.impact_state)),
+                    cwd=str(BACKEND), env=self._environment(), stdin=subprocess.DEVNULL,
+                    stdout=printed, stderr=errors, start_new_session=True)
+                try:
+                    cut = self._wait(child, started)
+                finally:
+                    _end_all(child)
+            seconds = time.monotonic() - started
+            if cut:
+                raise RuntimeError(cut)
+
+            code = child.returncode
+            refusal, track = out / "refusal.txt", out / "impact.json"
+            if code == impact_local.REFUSED and refusal.exists():
+                raise worker.Unplaced(refusal.read_text(encoding="utf-8"))
+            if code == 0 and track.exists():
+                log.info("%s: %s", target.slug, _avi_facts(_read(printed_file), track, seconds))
+                return track.read_bytes()
+
+            said = _read(errors_file)
+            if said.strip():
+                log.error("%s: the AVI bake's last words:\n%s", target.slug,
+                          said[-2000:].rstrip())
+            if code == 0:
+                raise RuntimeError("The AVI bake exited with status 0 and wrote no track.")
+            if code == impact_local.REFUSED:
+                raise RuntimeError("The AVI bake exited with status 3 and gave no reason.")
+            raise RuntimeError(_last_words(code, said, "The AVI bake"))
+
+
+def _avi_facts(printed: str, track: Path, seconds: float) -> str:
+    """What the AVI bake did, on one line: how much it asked the Atlas for,
+    how the record's bases agreed with GRCh38's, how large, how long."""
+    windows, gate = _WINDOWS.findall(printed), _GATE.search(printed)
+    asked = sum(int(count) for count, _ in windows)
+    line = f"AVI, {asked} Atlas window(s)" if windows else "AVI"
+    if gate:
+        line += f", sequence gate {gate.group(1)}"
+    return line + f", {track.stat().st_size:,} B, {seconds:.1f} s"
+
+
+class ClinVarBaker:
+    """`worker.ClinVar` on the Mac: the twenty's baker in this process
+    (`worker.clinvar_in_process`), its raw responses in the worker's own
+    folder only while it runs, a stop heard between two of its batches, and
+    what it found said in the log."""
+
+    def __init__(self, settings: Settings, stop: threading.Event):
+        self.settings = settings
+        self.stop = stop
+
+    def __call__(self, target) -> bytes:
+        from pipeline.resolver import worker
+
+        if self.stop.is_set():
+            raise worker.Unfetched(worker.STOPPED_FETCHING)
+        started = time.monotonic()
+        payload = worker.clinvar_in_process(target, self.settings.fetching / "clinvar",
+                                            stopped=self.stop.is_set)
+        said = json.loads(payload)
+        log.info("%s: ClinVar, %s of %s record(s) mapped, %d batch(es), %s B, %.1f s",
+                 target.slug, f"{len(said['variants']):,}", f"{said['searched_records']:,}",
+                 len(said["source_batches"]), f"{len(payload):,}", time.monotonic() - started)
+        return payload
+
+
 # ------------------------------------------------------------ one cycle
 
 
@@ -642,14 +852,17 @@ class Awake:
 
 
 def clear_workspace(settings: Settings) -> None:
-    """Empty the bakers' two directories and the scorer's hand-over.
+    """Empty the bakers' two directories and the hand-overs: the scorer's, the
+    modeller's, and the AVI and ClinVar bakes'.
 
     On Modal they are `/tmp` and go with the container, so no protein meets
     what another left. Here they would stay, and the record builder reads its
     flat-file cache before it asks NCBI: a reply garbled once, which `resolve`
     takes for a refusal, would be read again when that gene is next asked for.
+    What an AVI bake keeps between tries (`impact_state`) is not emptied.
     """
-    for folder in (settings.data, settings.genbank, settings.scoring, settings.modelling):
+    for folder in (settings.data, settings.genbank, settings.scoring, settings.modelling,
+                   settings.fetching):
         if BACKEND == folder or BACKEND in folder.parents:
             raise RuntimeError(f"{folder} is inside the repository; the worker empties only "
                                f"directories of its own.")
@@ -676,14 +889,19 @@ def _say(name: str, what: str, outcome: dict, seconds: float) -> None:
 
 
 def _resolve(conn, storage, stop: threading.Event, resolved: list,
-             structures: bool = False) -> int:
+             structures: bool = False, evidence: bool = False) -> int:
     """Reap, then resolve what is queued. Returns how many bakes wait.
 
-    `structures` has each protein resolved queue its model too
-    (`worker.sweep`): said only by a cycle that has a modeller."""
+    `structures` has each protein resolved queue its model too, and
+    `evidence` its AVI and ClinVar bakes (`worker.sweep`): each said only by a
+    cycle that can make them."""
     from pipeline.resolver import worker
 
-    asked = {"structures": True} if structures else {}
+    asked = {}
+    if structures:
+        asked["structures"] = True
+    if evidence:
+        asked["evidence"] = True
     waiting = 0
     for _ in range(SWEEP_LIMIT):
         started = time.monotonic()
@@ -728,8 +946,39 @@ def _model(conn, storage, modeller: Modeller, stop: threading.Event, modelled: l
             break
 
 
+def _place(conn, storage, evidencer: Evidencer, stop: threading.Event, placed: list) -> None:
+    from pipeline.resolver import worker
+
+    for _ in range(SCORE_LIMIT):
+        if stop.is_set():
+            break
+        started = time.monotonic()
+        done = worker.impact_all(conn, storage, limit=1, avi=evidencer)
+        for outcome in done:
+            placed.append(outcome)
+            _say(outcome["slug"], "impact", outcome, time.monotonic() - started)
+        if not done or done[-1]["state"] == "queued":
+            break
+
+
+def _fetch(conn, storage, clinvar: ClinVarBaker, stop: threading.Event, fetched: list) -> None:
+    from pipeline.resolver import worker
+
+    for _ in range(SCORE_LIMIT):
+        if stop.is_set():
+            break
+        started = time.monotonic()
+        done = worker.clinvar_all(conn, storage, limit=1, clinvar=clinvar)
+        for outcome in done:
+            fetched.append(outcome)
+            _say(outcome["slug"], "clinvar", outcome, time.monotonic() - started)
+        if not done or done[-1]["state"] == "queued":
+            break
+
+
 def cycle(settings: Settings, scorer: Scorer, stop: threading.Event,
-          modeller: Optional[Modeller] = None) -> dict:
+          modeller: Optional[Modeller] = None, evidencer: Optional[Evidencer] = None,
+          clinvar: Optional[ClinVarBaker] = None) -> dict:
     """One pass over the queue: `modal_app`'s `sweep` and then its `score`.
 
     Where the settings say this worker makes models (`structures`, which the
@@ -739,19 +988,32 @@ def cycle(settings: Settings, scorer: Scorer, stop: threading.Event,
     is what makes them, a `Modeller` unless one is handed in. Otherwise no
     model is queued and none is made.
 
+    Where they say it makes the variant evidence (`evidence`, unless `.env`
+    says `RESOLVER_EVIDENCE=0`), each protein resolved also has its AVI and
+    ClinVar bakes queued, and they are made after the models and before the
+    scoring, which waits for them (`store.WAITS_FOR`): AVI by `evidencer`,
+    ClinVar by `clinvar`, an `Evidencer` and a `ClinVarBaker` unless handed in.
+
     Returns what was resolved and scored (and `modelled`, where models are
-    made), and whether there was nothing to do. Raises what kept it from the
-    queue, or took the queue away part-way: that is no protein's error, and
-    the loop waits it out.
+    made, and `impact` and `clinvar`, where the evidence is), and whether there
+    was nothing to do. Raises what kept it from the queue, or took the queue
+    away part-way: that is no protein's error, and the loop waits it out.
     """
     from pipeline.resolver import store
 
     if modeller is None and settings.structures:
         modeller = Modeller(settings, stop)
+    if evidencer is None and settings.evidence:
+        evidencer = Evidencer(settings, stop)
+    if clinvar is None and settings.evidence:
+        clinvar = ClinVarBaker(settings, stop)
+    making_evidence = evidencer is not None and clinvar is not None
     resolved: list = []
     scored: list = []
     modelled: list = []
-    queued = waiting = models = 0
+    placed: list = []
+    fetched: list = []
+    queued = waiting = models = evidence = 0
     awake = Awake()
     conn = store.connect(_conninfo(settings.database_url))
     try:
@@ -760,10 +1022,13 @@ def cycle(settings: Settings, scorer: Scorer, stop: threading.Event,
             queued = store.queued_requests(conn) + store.queued_bakes(conn, "constraint")
             if modeller is not None:
                 queued += store.queued_bakes(conn, "structure")
+            if making_evidence:
+                queued += sum(store.queued_bakes(conn, kind) for kind in store.EVIDENCE)
             if queued:
                 awake.hold()
             # Every cycle, idle or not: the reaper is in the sweep.
-            waiting = _resolve(conn, storage, stop, resolved, structures=modeller is not None)
+            waiting = _resolve(conn, storage, stop, resolved, structures=modeller is not None,
+                               evidence=making_evidence)
             if modeller is not None and not stop.is_set():
                 models = store.queued_bakes(conn, "structure")
                 if models:
@@ -774,6 +1039,23 @@ def cycle(settings: Settings, scorer: Scorer, stop: threading.Event,
                                   "now. %s", models, unready)
                     else:
                         _model(conn, storage, modeller, stop, modelled)
+            if making_evidence and not stop.is_set():
+                placing = store.queued_bakes(conn, "impact")
+                evidence = placing + store.queued_bakes(conn, "clinvar")
+                if evidence:
+                    awake.hold()
+                if placing:
+                    unready = evidencer.unready()
+                    if unready:
+                        log.error("%d AVI bake(s) left on the queue, and their ClinVar bakes "
+                                  "behind them: no AVI track can be made here now. %s",
+                                  placing, unready)
+                    else:
+                        _place(conn, storage, evidencer, stop, placed)
+                # ClinVar needs NCBI alone; it is claimed only once its AVI
+                # bake is over (`store.WAITS_FOR`).
+                if evidence and not stop.is_set():
+                    _fetch(conn, storage, clinvar, stop, fetched)
             if waiting and not stop.is_set():
                 awake.hold()
                 unready = scorer.unready()
@@ -784,12 +1066,16 @@ def cycle(settings: Settings, scorer: Scorer, stop: threading.Event,
                     _score(conn, storage, scorer, stop, scored)
     finally:
         awake.release()
-        if queued or waiting or models or resolved or scored or modelled:
+        worked = (queued or waiting or models or evidence or resolved or scored or modelled
+                  or placed or fetched)
+        if worked:
             clear_workspace(settings)
-    done = {"resolved": resolved, "scored": scored,
-            "idle": not (queued or waiting or models or resolved or scored or modelled)}
+    done = {"resolved": resolved, "scored": scored, "idle": not worked}
     if modeller is not None:
         done["modelled"] = modelled
+    if making_evidence:
+        done["impact"] = placed
+        done["clinvar"] = fetched
     return done
 
 
@@ -1006,7 +1292,8 @@ def main(arguments: Optional[list] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m pipeline.resolver.local_worker",
         description="The resolver's worker on a Mac: resolves queued requests, makes "
-                    "their models and scores their ESM-2 tracks, until stopped.")
+                    "their models, fetches their AVI and ClinVar tracks and scores their "
+                    "ESM-2 tracks, until stopped.")
     how = parser.add_mutually_exclusive_group()
     how.add_argument("--once", action="store_true",
                      help="one cycle, then exit: 0 if it reached the queue, 1 if not")
@@ -1039,10 +1326,13 @@ def main(arguments: Optional[list] = None) -> int:
     stop = Stop()
     _listen(stop)
 
-    log.info("started (pid %d): asking the queue every %g s, scoring with %s, %s, state in %s",
+    log.info("started (pid %d): asking the queue every %g s, scoring with %s, %s, %s, "
+             "state in %s",
              os.getpid(), settings.poll, settings.esm_python,
              f"making models with {settings.structure_python}" if settings.structures
-             else "making no models", settings.state)
+             else "making no models",
+             f"fetching AVI with {settings.impact_python} and ClinVar here" if settings.evidence
+             else "fetching no AVI or ClinVar", settings.state)
     for note in settings.notes:
         log.warning("%s", note)
     try:

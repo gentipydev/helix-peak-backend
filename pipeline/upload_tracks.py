@@ -103,6 +103,20 @@ def asset_of(kind: str, target) -> Path | None:
     raise SystemExit(f"unknown kind {kind!r}")
 
 
+def _checked(check, target, data: dict) -> None:
+    """One of `check_assets`' checks on a payload, against the record it is
+    filed under; a ValueError naming every problem it found."""
+    record = json.loads((DATA / target.mock_asset).read_text())
+    before = len(check_assets.problems)
+    try:
+        check(target, record, data)
+    except (KeyError, TypeError, IndexError, AttributeError) as exc:
+        raise ValueError(f"the payload is not shaped as the checks read it: {exc!r}") from exc
+    found = check_assets.problems[before:]
+    if found:
+        raise ValueError("; ".join(found))
+
+
 def validate(kind: str, target, payload: bytes) -> dict:
     """Check the payload and return what its provenance should say.
 
@@ -158,6 +172,12 @@ def validate(kind: str, target, payload: bytes) -> dict:
     if kind == "impact":
         if data.get("gene") != target.gene:
             raise ValueError(f"gene is {data.get('gene')!r}, expected {target.gene!r}")
+        # The offline checker's own gate, held to the record the track is filed
+        # under (`DATA / target.mock_asset`), as the record's is: its letters
+        # and coordinates, a map covering every drawn base, three scores a
+        # base, and the biology the sheet claims. A bake the worker made with
+        # nobody watching meets it before it becomes a row that says ready.
+        _checked(check_assets.check_impact, target, data)
         return {key: data.get(key) for key in
                 ("scorer", "score_units", "assembly", "annotation", "chromosome",
                  "transcript", "orientation", "complemented")}
@@ -165,6 +185,10 @@ def validate(kind: str, target, payload: bytes) -> dict:
     if kind == "clinvar":
         if data.get("gene") != target.gene:
             raise ValueError(f"gene is {data.get('gene')!r}, expected {target.gene!r}")
+        # The same, for the AVI map its records were placed by
+        # (`DATA / target.impact_asset`): each allele, strand and codon
+        # derived again from the record.
+        _checked(check_assets.check_clinvar, target, data)
         return {key: data.get(key) for key in
                 ("source", "schema_version", "assembly", "scope", "retrieved_at",
                  "searched_records", "excluded")}

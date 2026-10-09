@@ -590,9 +590,11 @@ class Queue:
     requeued row does, so a cycle that asked again at once would get it again.
     """
 
-    def __init__(self, monkeypatch, requests=(), bakes=()):
+    def __init__(self, monkeypatch, requests=(), bakes=(), impacts=(), clinvars=()):
         self.requests, self.bakes = list(requests), list(bakes)
+        self.impacts, self.clinvars = list(impacts), list(clinvars)
         self.connections, self.sweeps, self.scorings = [], [], []
+        self.order = []             # what was worked, in the order it was
         self.conninfo = None
         self.during = lambda: None  # run while a protein is being worked
         self.seen = True            # whether the first look sees what is queued
@@ -601,9 +603,14 @@ class Queue:
         monkeypatch.setattr(store, "queued_requests",
                             lambda conn: len(self.requests) if self.seen else 0)
         monkeypatch.setattr(store, "queued_bakes",
-                            lambda conn, kind: len(self.bakes) if self.seen else 0)
+                            lambda conn, kind: len(self._waiting(kind)) if self.seen else 0)
         monkeypatch.setattr(worker, "sweep", self._sweep)
         monkeypatch.setattr(worker, "score_all", self._score_all)
+        monkeypatch.setattr(worker, "impact_all", self._impact_all)
+        monkeypatch.setattr(worker, "clinvar_all", self._clinvar_all)
+
+    def _waiting(self, kind):
+        return {"impact": self.impacts, "clinvar": self.clinvars}.get(kind, self.bakes)
 
     def _connect(self, conninfo):
         self.conninfo = conninfo
@@ -618,13 +625,23 @@ class Queue:
             return [waiting[0]]
         return [waiting.pop(0)]
 
-    def _sweep(self, conn, storage, *, limit):
+    def _sweep(self, conn, storage, *, limit, **asked):
         self.sweeps.append(limit)
+        self.order.append(("sweep", asked))
         return {"resolved": self._take(self.requests), "constraint_queued": len(self.bakes)}
 
     def _score_all(self, conn, storage, *, limit, score):
         self.scorings.append((limit, score))
+        self.order.append(("constraint", limit))
         return self._take(self.bakes)
+
+    def _impact_all(self, conn, storage, *, limit, avi):
+        self.order.append(("impact", avi))
+        return self._take(self.impacts)
+
+    def _clinvar_all(self, conn, storage, *, limit, clinvar):
+        self.order.append(("clinvar", clinvar))
+        return self._take(self.clinvars)
 
 
 class Ready:
@@ -1005,7 +1022,7 @@ def test_run_once_with_no_database_it_says_so_and_writes_only_under_its_own_home
     assert "the cycle stopped short: OperationalError: " in lines[1]
     assert lines[-1].endswith("stopped") and len(lines) == 3
     assert sorted(path.name for path in state.iterdir()) == \
-        ["data", "genbank", "modelling", "scoring", "worker.lock"]
+        ["data", "fetching", "genbank", "modelling", "scoring", "worker.lock"]
     # Not a terminal, as under launchd: the lines are the file's alone.
     assert "started (pid " not in done.stderr
     assert "hunter2-secret" not in "\n".join(lines) + done.stderr + done.stdout
@@ -1317,3 +1334,335 @@ def test_a_model_can_be_made_here_or_the_check_says_why_not(tmp_path):
     assert model_local.check(CLIENT, str(dart)) == 0
     # A checkout that is not the app's is said, before anything is run.
     assert model_local.check(tmp_path, str(dart)) == 1
+
+
+# ------------------------------------------------------------ the evidence
+
+ATLAS_KEY = "AIzaSy-not-a-real-atlas-key"
+
+
+def fake_impact_python(folder: Path, body: str, check: int = 0, check_says: str = "") -> Path:
+    """A stand-in for the AVI bake's interpreter: this one, running `body`.
+
+    The evidencer starts it as it starts the real one: `-u -m <driver>` and
+    then `--check`, or the target's file, the record's, the folder the track
+    goes into and `--state <folder>`. `body` runs where the driver would, with
+    those as `target_file`, `record_file`, `out` and `state`, and the
+    repository importable. `--check` exits `check`, having said `check_says`.
+    """
+    script = folder / "fake-impact-python"
+    script.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, sys\n"
+        "from pathlib import Path\n"
+        "sys.path.insert(0, os.getcwd())\n"
+        "if sys.argv[-1] == '--check':\n"
+        f"    sys.stderr.write({check_says!r})\n"
+        f"    sys.exit({check})\n"
+        "target_file, record_file, out = (Path(p) for p in sys.argv[-5:-2])\n"
+        "state = Path(sys.argv[-1])\n"
+        + textwrap.dedent(body), encoding="utf-8")
+    script.chmod(0o755)
+    return script
+
+
+# What `impact_local.py` prints and leaves, as far as the worker reads them.
+PLACES_A_TRACK = """
+    print("    chr11 - ENST00000381330.5 (3 exons)")
+    print("    1 window(s), 1,559 bp")
+    print("    sequence gate: 1,431 of 1,431 bases agree")
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "impact.json").write_text('{"gene": "INS"}')
+"""
+
+
+def _evidencer(tmp_path, body, stop=None, **check):
+    folder = tmp_path / "impact"
+    folder.mkdir(exist_ok=True)
+    settings = make_settings(
+        tmp_path, tmp_path / "no-esm-python", evidence=True,
+        impact_python=fake_impact_python(folder, body, **check),
+        uv=Path("/opt/uv/bin/uv"), alphagenome_key=ATLAS_KEY)
+    return local_worker.Evidencer(settings, stop or threading.Event())
+
+
+def test_this_worker_fetches_evidence_unless_its_env_says_not(tmp_path):
+    (tmp_path / ".env").write_text(f"ALPHAGENOME_API_KEY={ATLAS_KEY}\n")
+    settings = local_worker.load_settings(_FOUR, tmp_path / ".env", tmp_path)
+    assert settings.evidence is True and settings.alphagenome_key == ATLAS_KEY
+    assert settings.impact_python == BACKEND / "pipeline" / "impact" / "venv" / "bin" / "python"
+    assert (settings.fetching, settings.impact_state) == \
+        (settings.state / "fetching", settings.state / "impact")
+    assert BACKEND not in settings.fetching.parents and BACKEND not in settings.impact_state.parents
+
+    for word in ("0", "false", "No", "off"):
+        said = local_worker.load_settings(
+            {**_FOUR, "RESOLVER_EVIDENCE": word}, tmp_path / "no.env", tmp_path)
+        assert said.evidence is False and said.alphagenome_key is None
+    told = local_worker.load_settings(
+        {**_FOUR, "RESOLVER_IMPACT_PYTHON": "/opt/avi/python", "RESOLVER_UV": "/opt/uv"},
+        tmp_path / "no.env", tmp_path)
+    assert (told.impact_python, told.uv) == (Path("/opt/avi/python"), Path("/opt/uv"))
+    # A worker built by hand, as every test before these builds it, fetches none.
+    assert make_settings(tmp_path, tmp_path / "python").evidence is False
+
+
+def test_uv_is_where_its_installer_puts_it_or_on_the_path(tmp_path, monkeypatch):
+    installed = tmp_path / ".local" / "bin" / "uv"
+    installed.parent.mkdir(parents=True)
+    installed.write_text("")
+    assert local_worker.default_uv(tmp_path) == installed
+    monkeypatch.setattr(local_worker.shutil, "which", lambda name: "/opt/homebrew/bin/uv")
+    assert local_worker.default_uv(tmp_path / "elsewhere") == Path("/opt/homebrew/bin/uv")
+    monkeypatch.setattr(local_worker.shutil, "which", lambda name: None)
+    assert local_worker.default_uv(tmp_path / "elsewhere") == Path("uv")
+
+
+def test_an_avi_bakes_time_is_inside_the_reapers_patience_for_one():
+    minutes, unit = store.STALE_EVIDENCE.split()
+    assert unit == "minutes" and local_worker.EVIDENCE_TIMEOUT < int(minutes) * 60
+
+
+def test_the_atlas_key_is_a_secret_the_log_never_holds(settings):
+    told = dataclasses.replace(settings, alphagenome_key=ATLAS_KEY)
+    assert ATLAS_KEY in told.secrets
+    handlers = local_worker.start_logging(told)
+    try:
+        local_worker.log.error("The AVI bake exited with status 1: key %s rejected", ATLAS_KEY)
+    finally:
+        for handler in handlers:
+            local_worker.log.removeHandler(handler)
+            handler.close()
+    text = told.log_file.read_text()
+    assert ATLAS_KEY not in text and "key [redacted] rejected" in text
+
+
+def test_the_evidencer_hands_over_the_protein_and_returns_the_track(
+        tmp_path, monkeypatch, caplog):
+    monkeypatch.setenv("DATABASE_URL", _FOUR["DATABASE_URL"])
+    monkeypatch.setenv("SUPABASE_SERVICE_KEY", _FOUR["SUPABASE_SERVICE_KEY"])
+    monkeypatch.setenv("ALPHAGENOME_API_KEY", "a-key-from-elsewhere")
+    monkeypatch.setenv("SEEN", str(tmp_path / "seen.json"))
+    evidencer = _evidencer(tmp_path, PLACES_A_TRACK + """
+    import pickle
+    Path(os.environ["SEEN"]).write_text(json.dumps({
+        "started_with": sys.argv[1:4], "cwd": os.getcwd(), "state": str(state),
+        "target": pickle.loads(target_file.read_bytes()).slug,
+        "record": record_file.read_text(),
+        "path": os.environ["PATH"].split(os.pathsep)[0],
+        "environment": {key: os.environ.get(key) for key in (
+            "DATABASE_URL", "SUPABASE_SERVICE_KEY", "ALPHAGENOME_API_KEY", "PYTHONUNBUFFERED")}}))
+""")
+    with caplog.at_level(logging.INFO, logger="resolver-worker"):
+        assert evidencer(INS, RECORD) == b'{"gene": "INS"}'
+
+    seen = json.loads((tmp_path / "seen.json").read_text())
+    assert seen["started_with"] == ["-u", "-m", "pipeline.resolver.impact_local"]
+    assert Path(seen["cwd"]) == BACKEND
+    assert (seen["target"], seen["record"]) == ("ins", RECORD.decode())
+    # What a bake keeps between tries is the worker's, and is kept.
+    assert seen["state"] == str(evidencer.settings.impact_state)
+    # uv's folder first, where launchd's PATH names none of it.
+    assert seen["path"] == "/opt/uv/bin"
+    # The Atlas's key from the worker's settings, and neither database credential.
+    assert seen["environment"] == {"DATABASE_URL": None, "SUPABASE_SERVICE_KEY": None,
+                                   "ALPHAGENOME_API_KEY": ATLAS_KEY, "PYTHONUNBUFFERED": "1"}
+    said = [record.getMessage() for record in caplog.records]
+    assert len(said) == 1 and re.fullmatch(
+        r"ins: AVI, 1 Atlas window\(s\), sequence gate 1,431 of 1,431, 15 B, \d+\.\d s", said[0])
+    assert list(evidencer.settings.fetching.iterdir()) == []
+
+
+def test_a_gate_is_told_as_a_verdict_in_its_own_words(tmp_path):
+    evidencer = _evidencer(tmp_path, """
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "refusal.txt").write_text("INS: record has 3 exons, MANE Select has 4")
+        sys.exit(3)
+    """)
+    with pytest.raises(worker.Unplaced) as unplaced:
+        evidencer(INS, RECORD)
+    assert str(unplaced.value) == "INS: record has 3 exons, MANE Select has 4"
+
+
+@pytest.mark.parametrize("body, said", [
+    ("sys.exit(0)", "The AVI bake exited with status 0 and wrote no track."),
+    ("sys.exit(3)", "The AVI bake exited with status 3 and gave no reason."),
+    ("sys.stderr.write('Unreachable: chr11:1-2 failed after 7 attempts:\\nUNAVAILABLE'); "
+     "sys.exit(1)",
+     "The AVI bake exited with status 1: Unreachable: chr11:1-2 failed after 7 attempts: "
+     "UNAVAILABLE"),
+    ("os.kill(os.getpid(), 9)", "The AVI bake was ended by signal 9 and said nothing."),
+])
+def test_an_avi_bake_that_ends_any_other_way_broke(tmp_path, body, said, spawned):
+    evidencer = _evidencer(tmp_path, body)
+    with pytest.raises(RuntimeError) as broke:
+        evidencer(INS, RECORD)
+    assert not isinstance(broke.value, worker.Unplaced) and str(broke.value) == said
+
+
+def test_a_stop_ends_the_avi_bake_and_what_it_started(tmp_path, spawned):
+    # GENCODE's lookup runs under uv, the bake's own child.
+    stop = threading.Event()
+    grandchild = tmp_path / "grandchild.pid"
+    evidencer = _evidencer(tmp_path, """
+        import subprocess, time
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
+        Path(os.environ["GRANDCHILD"]).write_text(str(child.pid))
+        time.sleep(120)
+    """, stop=stop)
+    os.environ["GRANDCHILD"] = str(grandchild)
+
+    def stop_once_started():
+        import time
+        while not grandchild.exists() or not grandchild.read_text():
+            time.sleep(0.01)
+        stop.set()
+
+    try:
+        threading.Thread(target=stop_once_started, daemon=True).start()
+        with pytest.raises(RuntimeError) as cut:
+            evidencer(INS, RECORD)
+    finally:
+        del os.environ["GRANDCHILD"]
+    assert str(cut.value) == local_worker.STOPPED_PLACING
+
+    import time
+    pid = int(grandchild.read_text())
+    for _ in range(100):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.05)
+    else:
+        os.kill(pid, 9)
+        raise AssertionError("what the AVI bake started outlived it")
+    with pytest.raises(RuntimeError, match="AlphaGenome's scores were being fetched"):
+        evidencer(INS, RECORD)                       # and none is started once stopping
+
+
+def test_an_avi_bake_running_past_its_time_is_ended(tmp_path, monkeypatch, spawned):
+    monkeypatch.setattr(local_worker, "EVIDENCE_TIMEOUT", 0.2)
+    evidencer = _evidencer(tmp_path, "import time; time.sleep(120)")
+    with pytest.raises(RuntimeError, match="still being fetched after 0 minutes"):
+        evidencer(INS, RECORD)
+    assert spawned[-1].poll() is not None
+
+
+def test_an_evidencer_that_can_ask_the_atlas_is_ready_and_one_that_cannot_says_why(tmp_path):
+    assert _evidencer(tmp_path, "pass").unready() is None
+    said = "The Atlas did not answer: API key not valid. Please pass a valid API key."
+    assert _evidencer(tmp_path, "pass", check=1, check_says=said + "\n").unready() == \
+        "The AVI bake exited with status 1: " + said
+    settings = make_settings(tmp_path, tmp_path / "python", evidence=True,
+                             impact_python=tmp_path / "no-such-venv" / "python")
+    assert local_worker.Evidencer(settings, threading.Event()).unready().startswith(
+        "The AVI bake could not be started: ")
+
+
+def test_clinvar_is_fetched_here_into_the_workers_own_folder(settings, monkeypatch, caplog):
+    asked = []
+    track = json.dumps({"variants": [{}, {}], "searched_records": 503,
+                        "source_batches": [{}] * 6}).encode()
+
+    def fetched(target, cache, stopped):
+        asked.append((target, cache, stopped()))
+        return track
+
+    monkeypatch.setattr(worker, "clinvar_in_process", fetched)
+    stop = threading.Event()
+    baker = local_worker.ClinVarBaker(settings, stop)
+    with caplog.at_level(logging.INFO, logger="resolver-worker"):
+        assert baker(INS) == track
+    assert asked == [(INS, settings.fetching / "clinvar", False)]
+    assert re.fullmatch(r"ins: ClinVar, 2 of 503 record\(s\) mapped, 6 batch\(es\), \d+ B, "
+                        r"\d+\.\d s", caplog.records[-1].getMessage())
+    stop.set()
+    with pytest.raises(worker.Unfetched, match="stopped while ClinVar"):
+        baker(INS)
+
+
+class Fake:
+    """An evidencer or a ClinVar baker the cycle only hands on, and may ask
+    whether it is ready."""
+
+    def __init__(self, unready=None):
+        self.why, self.asked = unready, 0
+
+    def unready(self):
+        self.asked += 1
+        return self.why
+
+
+def test_the_evidence_is_fetched_after_the_resolving_and_before_the_scoring(
+        settings, monkeypatch, caffeinate, caplog):
+    queue = Queue(monkeypatch, requests=[_request()], bakes=[_bake()],
+                  impacts=[_bake()], clinvars=[_bake()])
+    evidencer, clinvar = Fake(), Fake()
+    with caplog.at_level(logging.INFO, logger="resolver-worker"):
+        done = local_worker.cycle(settings, Ready(), threading.Event(), evidencer=evidencer,
+                                  clinvar=clinvar)
+
+    assert [kind for kind, _ in queue.order] == \
+        ["sweep", "sweep", "impact", "impact", "clinvar", "clinvar", "constraint", "constraint"]
+    # The protein resolved has its evidence queued; the bakers are the ones handed in.
+    assert queue.order[0] == ("sweep", {"evidence": True})
+    assert (queue.order[2][1], queue.order[4][1]) == (evidencer, clinvar)
+    assert [o["state"] for o in done["impact"]] == ["ready"]
+    assert [o["state"] for o in done["clinvar"]] == ["ready"]
+    assert done["idle"] is False and evidencer.asked == 1
+    said = [record.getMessage() for record in caplog.records]
+    assert re.fullmatch(r"ins: impact ready in \d+\.\d s", said[1])
+    assert re.fullmatch(r"ins: clinvar ready in \d+\.\d s", said[2])
+    assert len(caffeinate) == 1 and caffeinate[0].poll() is not None
+
+    # A worker that fetches none says nothing of evidence to the sweep.
+    queue = Queue(monkeypatch, requests=[_request()])
+    assert "impact" not in local_worker.cycle(settings, Ready(), threading.Event())
+    assert queue.order[0] == ("sweep", {})
+
+
+def test_no_avi_bake_is_claimed_while_the_atlas_cannot_be_asked(
+        settings, monkeypatch, caffeinate, caplog):
+    queue = Queue(monkeypatch, bakes=[_bake()], impacts=[_bake(), _bake("b2m")])
+    evidencer = Fake("The AVI bake exited with status 1: ALPHAGENOME_API_KEY is not set in "
+                     "the worker's .env.")
+    done = local_worker.cycle(settings, Ready(), threading.Event(), evidencer=evidencer,
+                              clinvar=Fake())
+    assert done["impact"] == [] and len(queue.impacts) == 2
+    assert ("2 AVI bake(s) left on the queue, and their ClinVar bakes behind them: no AVI "
+            "track can be made here now. The AVI bake exited with status 1: "
+            "ALPHAGENOME_API_KEY is not set in the worker's .env.") in caplog.text
+    # ClinVar needs only NCBI, and the scoring goes on for whatever the claim
+    # lets through: here all of it, where the real claim holds back a protein
+    # whose evidence waits (`store.WAITS_FOR`, held on Postgres).
+    assert [kind for kind, _ in queue.order] == ["sweep", "clinvar", "constraint", "constraint"]
+
+
+def test_a_protein_whose_avi_goes_back_on_the_queue_waits_for_the_next_cycle(
+        settings, monkeypatch, caffeinate):
+    queue = Queue(monkeypatch, impacts=[
+        _bake(state="queued", reason="RESOURCE_EXHAUSTED"), _bake("b2m")])
+    local_worker.cycle(settings, Ready(), threading.Event(), evidencer=Fake(), clinvar=Fake())
+    assert [kind for kind, _ in queue.order] == ["sweep", "impact", "clinvar"]
+    assert len(queue.impacts) == 2
+
+
+def test_the_avi_hand_over_is_emptied_and_what_a_bake_keeps_is_not(settings):
+    for folder in (settings.fetching, settings.impact_state / "checkpoints"):
+        folder.mkdir(parents=True)
+        (folder / "left.json").write_text("{}")
+    local_worker.clear_workspace(settings)
+    assert list(settings.fetching.iterdir()) == []
+    assert (settings.impact_state / "checkpoints" / "left.json").exists()
+
+
+def test_no_child_but_the_avi_bake_is_given_the_atlas_key(settings, monkeypatch):
+    # Started by hand from a shell that read ~/.env, the worker's own
+    # environment may hold it: the scorer and the modeller are never handed it.
+    monkeypatch.setenv("ALPHAGENOME_API_KEY", ATLAS_KEY)
+    told = dataclasses.replace(settings, alphagenome_key=ATLAS_KEY)
+    stop = threading.Event()
+    for child in (local_worker.Scorer(told, stop), local_worker.Modeller(told, stop)):
+        assert "ALPHAGENOME_API_KEY" not in child._environment()
+    assert local_worker.Evidencer(told, stop)._environment()["ALPHAGENOME_API_KEY"] == ATLAS_KEY

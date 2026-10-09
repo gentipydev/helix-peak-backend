@@ -44,7 +44,9 @@ from pipeline.resolver.test_local_worker import (  # noqa: E402
     MAKES_A_MODEL, SCORES_A_TRACK, fake_model_python, fake_python, make_settings,
 )
 from pipeline.resolver.test_resolve import INS, _body, _mutated  # noqa: E402
-from pipeline.resolver.test_worker import _another_genes_record, a_model  # noqa: E402
+from pipeline.resolver.test_worker import (  # noqa: E402
+    _another_genes_record, a_clinvar, a_model, an_avi,
+)
 
 MIGRATIONS = sorted((BACKEND / "migrations").glob("0*.sql"))
 
@@ -1134,4 +1136,275 @@ def test_a_protein_alphafold_has_no_model_of_is_refused_by_the_macs_worker(
     assert [(o["state"], o["reason"]) for o in done["modelled"]] == \
         [("refused", "AlphaFold DB holds no model of UniProt P01308.")]
     assert _structure(conn)[1] == ("refused", "AlphaFold DB holds no model of UniProt P01308.")
+    assert [o["state"] for o in done["scored"]] == ["ready"]
+
+
+# ------------------------------------------------- the variant evidence
+
+
+@pytest.fixture
+def data(monkeypatch, tmp_path):
+    """`paths.DATA` as a worker's own directory, wherever a module took it:
+    never `pipeline/data/`, where the twenty's stored tracks are."""
+    from pipeline import check_assets, paths
+    from pipeline.clinvar import bake_clinvar
+
+    folder = tmp_path / "data"
+    for module in (paths, upload_tracks, check_assets, bake_clinvar):
+        monkeypatch.setattr(module, "DATA", folder)
+    return folder
+
+
+def _resolved_with_evidence_queued(conn, offline, storage, asker=None):
+    conn.execute("insert into resolve_request (gene, uniprot, slug, asker) "
+                 "values ('INS', 'P01308', 'ins', %s)", (asker,))
+    return worker.resolve_next(conn, storage, fetch_entry=lambda accession: offline(_body()),
+                               evidence=True)
+
+
+def _jobs(conn):
+    return conn.execute("select kind, state from bake_job order by kind").fetchall()
+
+
+def _tracks(conn, *kinds):
+    return conn.execute("select kind, state, reason from protein_track where kind = any(%s) "
+                        "order by kind", (list(kinds),)).fetchall()
+
+
+def _fetched(target):
+    """INS's ClinVar track, from what the worker laid out for the baker."""
+    from pipeline import paths
+
+    record = (paths.DATA / target.mock_asset).read_bytes()
+    return a_clinvar(target, record, (paths.DATA / target.impact_asset).read_bytes())
+
+
+def test_by_default_no_evidence_is_queued(conn, offline):
+    _ask(conn)
+    worker.sweep(conn, Storage(), fetch_entry=lambda accession: offline(_body()))
+    assert _jobs(conn) == [("constraint", "queued")]
+    assert _tracks(conn, "impact", "clinvar") == []
+    assert worker.impact_next(conn, Storage(), avi=lambda target, record: b"") is None
+
+
+def test_a_worker_that_fetches_evidence_queues_avi_and_clinvar_beside_the_scoring(conn, offline):
+    assert _resolved_with_evidence_queued(conn, offline, Storage(), "install-a")["state"] == "done"
+    assert conn.execute("select kind, state, asker from bake_job order by kind").fetchall() == [
+        ("clinvar", "queued", "install-a"), ("constraint", "queued", "install-a"),
+        ("impact", "queued", "install-a")]
+    assert conn.execute("select kind, state, format from protein_track "
+                        "where kind in ('impact', 'clinvar') order by kind").fetchall() == \
+        [("clinvar", "pending", "json"), ("impact", "pending", "json")]
+
+
+def test_clinvar_waits_for_avi_and_the_scoring_waits_for_both(conn, offline):
+    _resolved_with_evidence_queued(conn, offline, Storage())
+    # Nothing but AVI can be taken while AVI is queued.
+    assert store.claim_bake(conn, "constraint") is None
+    assert store.claim_bake(conn, "clinvar") is None
+    impact = store.claim_bake(conn, "impact")
+    assert impact["kind"] == "impact"
+    # Running holds them as queued did.
+    assert store.claim_bake(conn, "clinvar") is None
+    conn.execute("update bake_job set state = 'done' where id = %s", (impact["id"],))
+    assert store.claim_bake(conn, "constraint") is None
+    clinvar = store.claim_bake(conn, "clinvar")
+    assert clinvar["kind"] == "clinvar"
+    assert store.claim_bake(conn, "constraint") is None
+    # A refusal ends the wait as a finish does.
+    conn.execute("update bake_job set state = 'failed' where id = %s", (clinvar["id"],))
+    assert store.claim_bake(conn, "constraint")["kind"] == "constraint"
+
+
+def test_the_evidence_lands_ready_and_the_scoring_after_it(conn, offline, data):
+    storage = Storage()
+    _resolved_with_evidence_queued(conn, offline, storage)
+    assert worker.score_next(conn, storage, score=_constraint) is None
+
+    assert worker.impact_next(conn, storage, avi=lambda target, record: an_avi(target, record))[
+        "state"] == "ready"
+    assert worker.clinvar_next(conn, storage, clinvar=_fetched)["state"] == "ready"
+    assert worker.score_next(conn, storage, score=_constraint)["state"] == "ready"
+
+    assert _jobs(conn) == [("clinvar", "done"), ("constraint", "done"), ("impact", "done")]
+    rows = conn.execute("select kind, bucket, object_path, sha256, provenance from protein_track "
+                        "where kind in ('impact', 'clinvar') and state = 'ready' "
+                        "order by kind").fetchall()
+    assert [(kind, bucket, path.split("/")[0]) for kind, bucket, path, _, _ in rows] == \
+        [("clinvar", "tracks", "clinvar"), ("impact", "tracks", "impact")]
+    for kind, bucket, path, sha, provenance in rows:
+        assert path == f"{kind}/ins.{sha[:12]}.json"
+        assert json.loads(storage.get(bucket, path))["gene"] == "INS"
+    assert rows[1][4]["scorer"] == "AVI_SCORE" and rows[0][4]["source"] == "NCBI ClinVar"
+
+
+def test_avi_refused_refuses_clinvar_with_its_reason_and_the_scoring_goes_on(
+        conn, offline, data):
+    storage = Storage()
+    _resolved_with_evidence_queued(conn, offline, storage)
+
+    def unplaced(target, record):
+        raise worker.Unplaced("INS: record has 3 exons, MANE Select has 4")
+
+    assert worker.impact_next(conn, storage, avi=unplaced)["state"] == "refused"
+    outcome = worker.clinvar_next(conn, storage, clinvar=lambda target: pytest.fail(
+        "ClinVar was fetched with no map to place it by"))
+    avi = ("AlphaGenome's scores were not placed on INS's bases: record has 3 exons, MANE "
+           "Select has 4.")
+    said = ("ClinVar's records are placed by AlphaGenome's coordinate map, which INS has none "
+            "of. " + avi)
+    assert (outcome["state"], outcome["reason"]) == ("refused", said)
+    assert _tracks(conn, "impact", "clinvar") == [("clinvar", "refused", said),
+                                                  ("impact", "refused", avi)]
+    assert _one(conn, "select error from bake_job where kind = 'impact'") == \
+        ("INS: record has 3 exons, MANE Select has 4",)
+    assert worker.score_next(conn, storage, score=_constraint)["state"] == "ready"
+
+
+def test_evidence_is_never_queued_or_claimed_for_a_curated_row(conn):
+    conn.execute(
+        """
+        insert into protein (slug, gene, uniprot, accession, display, summary, residues, exons,
+            chains, bridges, regions, disulfides, provenance, resolver_version, catalog_order)
+        values ('insulin', 'INS', 'P01308', 'NG_007114', 'Insulin', 'Curated.', 110, 3, 3, 3,
+                '[]', '[]', '{}', 0, 0)
+        """)
+    with pytest.raises(RuntimeError, match="baked by hand"):
+        store.queue_evidence(conn, "insulin")
+    assert _jobs(conn) == [] and _tracks(conn, "impact", "clinvar") == []
+    conn.execute("insert into bake_job (slug, kind) values ('insulin', 'impact')")
+    assert worker.impact_next(conn, Storage(), avi=lambda target, record: b"") is None
+    assert _jobs(conn) == [("impact", "queued")]
+
+
+def test_evidence_queued_again_queues_nothing_twice_and_keeps_what_is_ready(
+        conn, offline, data):
+    storage = Storage()
+    _resolved_with_evidence_queued(conn, offline, storage)
+    assert store.queue_evidence(conn, "ins") == ["impact", "clinvar"]
+    assert _one(conn, "select count(*) from bake_job where kind in ('impact', 'clinvar')") == (2,)
+
+    worker.impact_next(conn, storage, avi=lambda target, record: an_avi(target, record))
+    worker.clinvar_next(conn, storage, clinvar=lambda target: (_ for _ in ()).throw(
+        ValueError("Unaccounted records")))
+    # A backfill after a refusal: ClinVar again, and AVI left ready.
+    assert store.queue_evidence(conn, "ins", "install-b") == ["clinvar"]
+    assert _tracks(conn, "impact", "clinvar") == [("clinvar", "pending", None),
+                                                  ("impact", "ready", None)]
+    assert conn.execute("select kind, state, asker from bake_job where kind <> 'constraint' "
+                        "order by id").fetchall() == [
+        ("impact", "done", None), ("clinvar", "failed", None), ("clinvar", "queued", "install-b")]
+    assert worker.clinvar_next(conn, storage, clinvar=_fetched)["state"] == "ready"
+
+
+def test_a_dead_evidence_bakes_claim_goes_back_after_an_hour_in_its_own_words(conn, offline):
+    _resolved_with_evidence_queued(conn, offline, Storage())
+    store.claim_bake(conn, "impact")
+    # Half an hour: within its patience.
+    conn.execute("update bake_job set started_at = now() - interval '30 minutes' "
+                 "where state = 'running'")
+    store.reap(conn)
+    assert _one(conn, "select state from bake_job where kind = 'impact'") == ("running",)
+    conn.execute("update bake_job set started_at = now() - interval '61 minutes' "
+                 "where state = 'running'")
+    store.reap(conn)
+    assert _one(conn, "select state from bake_job where kind = 'impact'") == ("queued",)
+
+    # Dead on its last try, each says so as the bake it was.
+    conn.execute("update bake_job set state = 'running', attempts = 3, "
+                 "started_at = now() - interval '61 minutes' where kind in ('impact', 'clinvar')")
+    store.reap(conn)
+    assert _tracks(conn, "impact", "clinvar") == [
+        ("clinvar", "refused", "ClinVar's bake stopped before it finished, every time it was "
+                               "tried."),
+        ("impact", "refused", "AlphaGenome's bake stopped before it finished, every time it was "
+                              "tried.")]
+    assert _one(conn, "select state from protein_track where kind = 'constraint'") == ("pending",)
+
+
+PLACES_INS = """
+    import pickle
+    from pipeline.resolver.test_worker import an_avi
+    target = pickle.loads(target_file.read_bytes())
+    out.mkdir(parents=True, exist_ok=True)
+    print("    1 window(s), 1,559 bp")
+    (out / "impact.json").write_bytes(an_avi(target, record_file.read_bytes()))
+"""
+
+
+@pytest.fixture
+def mac_with_evidence(database_url, offline, tmp_path, monkeypatch, data):
+    """`mac`, for a worker that fetches evidence: one cycle scored by one script,
+    its AVI made by another, and ClinVar by `_fetched` in this process."""
+    from pipeline.resolver.test_local_worker import fake_impact_python
+
+    storage = Storage()
+    sweep = worker.sweep
+    monkeypatch.setattr(store, "TrackStorage", lambda url, key: storage)
+    monkeypatch.setattr(
+        worker, "sweep", lambda conn, storage, **said: sweep(
+            conn, storage, fetch_entry=lambda accession: offline(_body()), **said))
+    monkeypatch.setattr(worker, "clinvar_in_process",
+                        lambda target, cache, stopped: _fetched(target))
+    monkeypatch.setattr(local_worker, "CAFFEINATE",
+                        (sys.executable, "-c", "import time; time.sleep(120)"))
+    monkeypatch.setattr(local_worker, "_CHILD_POLL", 0.02)
+
+    def run(name, scores, places, **check):
+        folder = tmp_path / name
+        (folder / "scorer").mkdir(parents=True)
+        (folder / "impact").mkdir()
+        settings = dataclasses.replace(
+            make_settings(tmp_path, fake_python(folder / "scorer", scores)),
+            database_url=database_url, evidence=True, alphagenome_key="not-a-real-key",
+            impact_python=fake_impact_python(folder / "impact", places, **check))
+        stop = threading.Event()
+        return local_worker.cycle(settings, local_worker.Scorer(settings, stop), stop)
+
+    run.storage = storage
+    return run
+
+
+def test_the_macs_worker_fetches_the_evidence_before_it_scores(conn, mac_with_evidence):
+    _ask(conn)
+    done = mac_with_evidence("first", SCORES_A_TRACK, PLACES_INS)
+
+    assert [(o["gene"], o["state"]) for o in done["resolved"]] == [("INS", "done")]
+    assert [(o["slug"], o["state"]) for o in done["impact"]] == [("ins", "ready")]
+    assert [(o["slug"], o["state"]) for o in done["clinvar"]] == [("ins", "ready")]
+    assert [(o["slug"], o["state"]) for o in done["scored"]] == [("ins", "ready")]
+    # Each bake was taken once its wait was over, in the order a build reads.
+    finished = conn.execute("select kind from bake_job order by finished_at").fetchall()
+    assert finished == [("impact",), ("clinvar",), ("constraint",)]
+    assert sorted(path.split("/")[0] for _, path in mac_with_evidence.storage.objects) == \
+        ["clinvar", "constraint", "impact", "record"]
+    assert mac_with_evidence("again", SCORES_A_TRACK, PLACES_INS) == {
+        "resolved": [], "scored": [], "idle": True, "impact": [], "clinvar": []}
+
+
+def test_an_avi_bake_that_cannot_start_holds_its_protein_and_claims_nothing(
+        conn, mac_with_evidence):
+    _ask(conn)
+    done = mac_with_evidence("no-key", SCORES_A_TRACK, "sys.exit(1)", check=1,
+                             check_says="ALPHAGENOME_API_KEY is not set in the worker's .env.\n")
+    assert (done["impact"], done["clinvar"], done["scored"]) == ([], [], [])
+    # Left as queued, with none of their three tries used, and the scoring
+    # waiting behind them.
+    assert conn.execute("select kind, state, attempts from bake_job order by kind").fetchall() == \
+        [("clinvar", "queued", 0), ("constraint", "queued", 0), ("impact", "queued", 0)]
+
+
+def test_a_gene_the_avi_bake_cannot_place_is_refused_by_the_macs_worker(
+        conn, mac_with_evidence):
+    _ask(conn)
+    done = mac_with_evidence("unplaced", SCORES_A_TRACK, """
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "refusal.txt").write_text("INS: exon 2 (204 bases) matches nothing within 64 "
+                                         "bases of 2160970")
+        sys.exit(3)
+    """)
+    avi = ("AlphaGenome's scores were not placed on INS's bases: exon 2 (204 bases) matches "
+           "nothing within 64 bases of 2160970.")
+    assert [(o["state"], o["reason"]) for o in done["impact"]] == [("refused", avi)]
+    assert [o["state"] for o in done["clinvar"]] == ["refused"]
     assert [o["state"] for o in done["scored"]] == ["ready"]

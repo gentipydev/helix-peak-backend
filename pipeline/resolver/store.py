@@ -29,11 +29,32 @@ STALE_BAKE = "90 minutes"
 # A model is baked in seconds and its baker is stopped at fifteen minutes, so
 # one that has run this long is a dead worker's too.
 STALE_STRUCTURE = "20 minutes"
+# AlphaGenome's scores and ClinVar's records are fetched in minutes, and an AVI
+# bake is stopped at fifty (`local_worker.EVIDENCE_TIMEOUT`).
+STALE_EVIDENCE = "60 minutes"
 MAX_ATTEMPTS = 3
 
 # What a track that was never finished says, by what was baking it.
 _NEVER_SCORED = "The scorer stopped before it finished, every time it was tried."
 _NEVER_MODELLED = "The model's bake stopped before it finished, every time it was tried."
+_NEVER_PLACED = "AlphaGenome's bake stopped before it finished, every time it was tried."
+_NEVER_FETCHED = "ClinVar's bake stopped before it finished, every time it was tried."
+
+# How long a claim on each kind is held before it is a dead worker's, and what
+# its track then says. Any other kind is held as long as a scoring is.
+_STALE = {"structure": (STALE_STRUCTURE, _NEVER_MODELLED),
+          "impact": (STALE_EVIDENCE, _NEVER_PLACED),
+          "clinvar": (STALE_EVIDENCE, _NEVER_FETCHED)}
+
+# The variant evidence a protein built on demand is given beside its scores:
+# AlphaGenome's per-base scores, and ClinVar's records, which are placed on the
+# protein's bases by the coordinate map the first carries.
+EVIDENCE = ("impact", "clinvar")
+
+# What a bake waits for, protein by protein: none of these kinds queued or
+# running for it. ClinVar needs AVI's map, and ESM-2, the long step, goes last,
+# so a build that opens once its scores are in has its evidence too.
+WAITS_FOR = {"clinvar": ("impact",), "constraint": EVIDENCE}
 
 # `seed_catalog`'s upsert, which ends by setting `resolved_at`, made unable to
 # touch a curated row: those have a reading order, and nothing resolved does.
@@ -86,9 +107,13 @@ def reap(conn) -> None:
         """,
         {"max": MAX_ATTEMPTS, "stale": STALE_RESOLVE},
     )
+    # Each kind with a patience of its own, then every other at a scoring's.
+    groups = [("kind = %(kind)s", {"kind": kind}, stale, never)
+              for kind, (stale, never) in _STALE.items()]
+    groups.append(("kind <> all(%(kinds)s::text[])", {"kinds": list(_STALE)},
+                   STALE_BAKE, _NEVER_SCORED))
     with conn.transaction():
-        for which, stale, never in (("kind = 'structure'", STALE_STRUCTURE, _NEVER_MODELLED),
-                                    ("kind <> 'structure'", STALE_BAKE, _NEVER_SCORED)):
+        for which, said, stale, never in groups:
             dead = conn.execute(
                 f"""
                 update bake_job
@@ -98,7 +123,7 @@ def reap(conn) -> None:
                   and started_at < now() - %(stale)s::interval
                 returning slug, kind
                 """,
-                {"max": MAX_ATTEMPTS, "stale": stale},
+                {"max": MAX_ATTEMPTS, "stale": stale, **said},
             ).fetchall()
             for slug, kind in dead:
                 refuse_track(conn, slug, kind, never)
@@ -108,7 +133,7 @@ def reap(conn) -> None:
                 where state = 'running' and {which}
                   and started_at < now() - %(stale)s::interval
                 """,
-                {"stale": stale},
+                {"stale": stale, **said},
             )
 
 
@@ -163,14 +188,16 @@ def mane_release(conn) -> Optional[str]:
 
 
 def write_resolution(conn, request_id: int, resolution: Resolution, record: dict,
-                     resolver_version: int, structures: bool = False) -> None:
+                     resolver_version: int, structures: bool = False,
+                     evidence: bool = False) -> None:
     """Everything a resolved protein is, in one transaction: its row and aliases,
     its record track ready, its constraint track pending behind a queued bake,
     and the request done.
 
     With `structures`, its structure track is pending behind a bake of its own
-    as well. Only a worker that can make a model asks for that (the Mac's):
-    a track is never left pending where nothing will bake it."""
+    as well, and with `evidence` its AVI and ClinVar tracks are
+    (`queue_evidence`). Only a worker that can make them asks for either (the
+    Mac's): a track is never left pending where nothing will bake it."""
     slug = resolution.target.slug
     protein = {key: (jsonb(value) if key in _JSONB_COLUMNS else value)
                for key, value in resolution.protein.items()}
@@ -220,7 +247,56 @@ def write_resolution(conn, request_id: int, resolution: Resolution, record: dict
                 """,
                 (slug, request_id),
             )
+        if evidence:
+            asker = conn.execute(
+                "select asker from resolve_request where id = %s", (request_id,)).fetchone()
+            queue_evidence(conn, slug, asker[0] if asker else None)
         finish_request(conn, request_id, "done", slug=slug, resolver_version=resolver_version)
+
+
+def queue_evidence(conn, slug: str, asker: Optional[str] = None) -> list:
+    """A protein's AVI and ClinVar tracks pending, each behind a queued bake.
+    Returns the kinds left pending: every one not ready already.
+
+    A kind whose track is ready is left as it is, and one with a bake queued
+    or running keeps that bake: asking twice queues nothing twice. Only a protein
+    resolved on demand is ever queued; one of the twenty is baked by hand.
+    Called inside `write_resolution`'s transaction, or in one of its own for a
+    protein built before its evidence was (a backfill).
+    """
+    with conn.transaction():
+        found = conn.execute(
+            "select 1 from protein where slug = %s and catalog_order is null "
+            "and resolver_version > 0", (slug,)).fetchone()
+        if found is None:
+            raise RuntimeError(f"{slug} is not a protein resolved on demand; its evidence "
+                               f"is baked by hand.")
+        ready = {kind for (kind,) in conn.execute(
+            "select kind from protein_track where slug = %s and kind = any(%s) "
+            "and state = 'ready'", (slug, list(EVIDENCE))).fetchall()}
+        queued = []
+        for kind in EVIDENCE:
+            if kind in ready:
+                continue
+            conn.execute(
+                """
+                insert into protein_track (slug, kind, state, reason, format, provenance)
+                values (%s, %s, 'pending', null, 'json', '{}'::jsonb)
+                on conflict (slug, kind) do update
+                set state = 'pending', reason = null, updated_at = now()
+                where protein_track.state <> 'ready'
+                """,
+                (slug, kind),
+            )
+            conn.execute(
+                """
+                insert into bake_job (slug, kind, asker) values (%s, %s, %s)
+                on conflict (slug, kind) where state in ('queued', 'running') do nothing
+                """,
+                (slug, kind, asker),
+            )
+            queued.append(kind)
+        return queued
 
 
 def finish_request(conn, request_id: int, state: str, *, slug: Optional[str] = None,
@@ -248,7 +324,9 @@ def requeue_request(conn, request_id: int) -> None:
 
 
 def claim_bake(conn, kind: str) -> Optional[dict]:
-    """The oldest queued bake of this kind for a protein resolved on demand.
+    """The oldest queued bake of this kind for a protein resolved on demand,
+    once nothing it waits for (`WAITS_FOR`) is queued or running for that
+    protein.
 
     The twenty are baked by hand, and their rows carry no table to rebuild a
     `Target` from, so a job for one of them is left where it is.
@@ -260,14 +338,18 @@ def claim_bake(conn, kind: str) -> Optional[dict]:
         where id = (
             select j.id from bake_job j
             join protein p on p.slug = j.slug
-            where j.state = 'queued' and j.kind = %s and p.resolver_version > 0
+            where j.state = 'queued' and j.kind = %(kind)s and p.resolver_version > 0
+              and not exists (
+                  select 1 from bake_job w
+                  where w.slug = j.slug and w.kind = any(%(waits)s::text[])
+                    and w.state in ('queued', 'running'))
             order by j.requested_at
             for update of j skip locked
             limit 1
         )
         returning id, slug, kind, attempts
         """,
-        (kind,),
+        {"kind": kind, "waits": list(WAITS_FOR.get(kind, ()))},
     ).fetchone()
     if row is None:
         return None
@@ -311,6 +393,15 @@ def protein(conn, slug: str) -> Optional[dict]:
         f"select {', '.join(columns)} from protein where slug = %s", (slug,)
     ).fetchone()
     return dict(zip(columns, row)) if row else None
+
+
+def track_state(conn, slug: str, kind: str) -> tuple:
+    """A track's state and the sentence it carries: ('absent', None) where the
+    protein has no row of that kind."""
+    row = conn.execute(
+        "select state, reason from protein_track where slug = %s and kind = %s", (slug, kind),
+    ).fetchone()
+    return (row[0], row[1]) if row else ("absent", None)
 
 
 def ready_track(conn, slug: str, kind: str) -> Optional[dict]:

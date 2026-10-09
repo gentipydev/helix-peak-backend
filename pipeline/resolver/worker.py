@@ -12,6 +12,15 @@ queued structure bake and makes the fold page's model from AlphaFold DB's
 (`structure/alphafold.py`). That wants PyMOL and the app's scene importer,
 which the Mac's worker has and Modal's image does not, so only the Mac asks.
 
+And the variant evidence, where a worker asks for it (`evidence`), with the
+bakers that made the twenty's, unchanged: `impact_next` takes one queued AVI
+bake (`impact/bake_impact.py`, AlphaGenome's scores and the map from the
+record's bases to GRCh38), and `clinvar_next` one ClinVar bake
+(`clinvar/bake_clinvar.py`), whose records are placed by that map, so it waits
+for it (`store.WAITS_FOR`). The first wants the AlphaGenome client and its
+skill's GENCODE lookup, which only the Mac has. ESM-2 waits for both, so a
+build that opens once its scores are in has its evidence too.
+
 What ends a request or a bake, and how the reader hears of it:
 
 - A refusal -- the resolver's `Refused`, the uploader's gate declining the
@@ -26,6 +35,11 @@ What ends a request or a bake, and how the reader hears of it:
   made in seconds, as a record is, and like a record is not stopped.
 - A protein AlphaFold DB has no model of, or none sure enough to draw
   (`Unmodelled`), has its structure track `refused`, with the sentence why.
+- One of the AVI bake's own gates saying no (`Unplaced`: the exons do not
+  pair, or the record's bases are not GRCh38's where GENCODE puts the gene)
+  refuses its AVI track, and the ClinVar track with it: there is no map to
+  place ClinVar's records by. NCBI or the Atlas not answering (`Unfetched`,
+  or any other error) is tried again.
 """
 
 from __future__ import annotations
@@ -35,11 +49,13 @@ import hashlib
 import io
 import json
 import re
+import shutil
 import struct
 import sys
+from pathlib import Path
 from typing import Callable, NamedTuple, Optional, Tuple
 
-from pipeline import uniprot, upload_tracks
+from pipeline import paths, uniprot, upload_tracks
 from pipeline.resolver import store
 from pipeline.resolver.resolve import (
     RESOLVER_VERSION, VARIANT_FLOOR, VARIANT_SHARE, Refused, resolve, target_of)
@@ -69,6 +85,15 @@ class Modelled(NamedTuple):
 
 # The model of a protein, from its target and its record.
 Model = Callable[[Target, bytes], Modelled]
+
+# The AVI track's bytes, from a target and its record (`bake_impact.bake`).
+Avi = Callable[[Target, bytes], bytes]
+
+# The ClinVar track's bytes, for a target whose record and AVI track are laid
+# out where its baker reads them (`lay_out`).
+ClinVar = Callable[[Target], bytes]
+
+STOPPED_FETCHING = "The worker was stopped while ClinVar's records were being fetched."
 
 # The fold page's words as every row carries them (`StructureChrome` in the
 # app), and the tints a model made on demand may name: pLDDT's four bands
@@ -138,6 +163,17 @@ class Unmodelled(Exception):
     """No model is drawn for this protein (`alphafold.Refused`): AlphaFold DB
     has none, or none of this sequence, or none sure enough. The message is
     the sentence the fold page shows."""
+
+
+class Unplaced(Exception):
+    """AlphaGenome's scores cannot be placed on this protein's gene: one of the
+    AVI bake's own gates said no (`bake_impact.BakeError`). The message is the
+    gate's own words, which the job keeps; the track is told `_unplaced`."""
+
+
+class Unfetched(RuntimeError):
+    """ClinVar did not answer in full: its search, or a batch of its records,
+    or the worker was stopped between two. Never a verdict on the protein."""
 
 
 class Declined(ValueError):
@@ -242,11 +278,12 @@ def stage_structure(storage, target: Target, built: Modelled) -> Tuple[dict, dic
 
 
 def resolve_next(conn, storage, *, fetch_entry=uniprot.fetch_entry,
-                 structures: bool = False) -> Optional[dict]:
+                 structures: bool = False, evidence: bool = False) -> Optional[dict]:
     """Resolve the oldest queued request. None when there is none.
 
-    `structures` also queues the protein's structure bake
-    (`store.write_resolution`): for a worker that goes on to make models."""
+    `structures` also queues the protein's structure bake, and `evidence` its
+    AVI and ClinVar bakes (`store.write_resolution`): for a worker that goes
+    on to make them."""
     request = store.claim_request(conn)
     if request is None:
         return None
@@ -269,7 +306,7 @@ def resolve_next(conn, storage, *, fetch_entry=uniprot.fetch_entry,
             # so the gate's verdict on it is a refusal, not a failure to retry.
             raise Refused(str(exc)) from exc
         store.write_resolution(conn, request["id"], resolution, record, RESOLVER_VERSION,
-                               structures=structures)
+                               structures=structures, evidence=evidence)
         return {**outcome, "state": "done", "slug": resolution.target.slug}
     except Refused as exc:
         store.finish_request(conn, request["id"], "refused", reason=_said(exc),
@@ -402,18 +439,236 @@ def structure_next(conn, storage, *, model: Model) -> Optional[dict]:
         return {**outcome, "state": "refused", "reason": reason}
 
 
+# ------------------------------------------------------------ the evidence
+
+
+def _stored(storage, row: dict, what: str) -> bytes:
+    """A ready track's bytes, held to the digest its row carries."""
+    payload = storage.get(row["bucket"], row["object_path"])
+    if hashlib.sha256(payload).hexdigest() != row["sha256"]:
+        raise RuntimeError(f"The stored {what} does not match the sha256 its row carries.")
+    return payload
+
+
+def lay_out(target: Target, record: bytes, impact: Optional[bytes] = None) -> None:
+    """Put a protein's record, and its AVI track where one is given, where the
+    bakers and the upload gate read them: `paths.DATA`, under the names the
+    twenty's have there. That is the worker's own directory, never
+    `pipeline/data/`."""
+    for name, payload in ((target.mock_asset, record), (target.impact_asset, impact)):
+        if payload is None:
+            continue
+        path = paths.DATA / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payload)
+
+
+def _told(what: str, target: Target, error: BaseException) -> str:
+    """A bake's verdict as a reader is told it: what was not done, and why in
+    the gate's own words, without the name it starts with or the examples the
+    job keeps for an operator."""
+    lines = str(error).strip().splitlines()
+    said = lines[0].strip() if lines else ""
+    for name in (f"{target.slug} ClinVar", target.gene, target.slug):
+        if said.startswith(f"{name}: "):
+            said = said[len(name) + 2:]
+            break
+    said = said.rstrip(" :.")
+    return _said(f"{what}: {said}." if said else f"{what}.")
+
+
+def _unmapped(gene: str, why: Optional[str]) -> str:
+    """Why ClinVar is refused where AVI was: its records are placed by AVI's
+    map. AVI's own reason follows, where it gave one."""
+    said = (f"ClinVar's records are placed by AlphaGenome's coordinate map, which "
+            f"{gene} has none of.")
+    return _said(f"{said} {why}" if why else said)
+
+
+def impact_next(conn, storage, *, avi: Avi) -> Optional[dict]:
+    """Bake the oldest queued AVI track. None when there is none."""
+    job = store.claim_bake(conn, "impact")
+    if job is None:
+        return None
+    outcome = {"id": job["id"], "slug": job["slug"]}
+    try:
+        protein = store.protein(conn, job["slug"])
+        record_row = store.ready_track(conn, job["slug"], "record")
+        if protein is None or record_row is None:
+            raise Refused("The protein has no ready record to place AlphaGenome's scores on.")
+        record = _stored(storage, record_row, "record")
+        target = target_of(protein)
+        # A verdict is the bake's own gate (`Unplaced`) or the uploader's
+        # (`Declined`); the Atlas or storage failing is tried again.
+        verdict = None
+        try:
+            payload = avi(target, record)
+        except Unplaced as exc:
+            verdict = exc
+        else:
+            # The gate holds the track to the record it is filed under.
+            lay_out(target, record)
+            try:
+                track = stage(storage, "impact", target, payload)
+            except Declined as exc:
+                verdict = exc
+        if verdict is not None:
+            # The track carries a reader's sentence, the job the gate's words.
+            reason = _told(f"AlphaGenome's scores were not placed on {target.gene}'s bases",
+                           target, verdict)
+            store.refuse_bake(conn, job["id"], job["slug"], "impact", reason,
+                              error=_said(verdict))
+            return {**outcome, "state": "refused", "reason": reason}
+        store.finish_bake(conn, job["id"], track)
+        return {**outcome, "state": "ready"}
+    except Refused as exc:
+        store.refuse_bake(conn, job["id"], job["slug"], "impact", _said(exc))
+        return {**outcome, "state": "refused", "reason": _said(exc)}
+    except Exception as exc:  # noqa: BLE001 -- the Atlas, GENCODE's lookup, storage
+        if job["attempts"] < store.MAX_ATTEMPTS:
+            store.requeue_bake(conn, job["id"], _said(exc))
+            return {**outcome, "state": "queued", "reason": _said(exc)}
+        reason = (f"AlphaGenome's scores could not be fetched: the bake broke each of the "
+                  f"{store.MAX_ATTEMPTS} times it was tried.")
+        store.refuse_bake(conn, job["id"], job["slug"], "impact", reason, error=_said(exc))
+        return {**outcome, "state": "refused", "reason": reason}
+
+
+def clinvar_next(conn, storage, *, clinvar: ClinVar) -> Optional[dict]:
+    """Bake the oldest queued ClinVar track whose protein's AVI bake is over.
+    None when there is none.
+
+    Its records are placed on the protein's bases by AVI's coordinate map
+    (`runs`, `chromosome`, `complemented`), so where AVI was refused, so is it,
+    with AVI's reason after its own.
+    """
+    job = store.claim_bake(conn, "clinvar")
+    if job is None:
+        return None
+    outcome = {"id": job["id"], "slug": job["slug"]}
+    try:
+        protein = store.protein(conn, job["slug"])
+        record_row = store.ready_track(conn, job["slug"], "record")
+        if protein is None or record_row is None:
+            raise Refused("The protein has no ready record to place ClinVar's records on.")
+        target = target_of(protein)
+        map_row = store.ready_track(conn, job["slug"], "impact")
+        if map_row is None:
+            state, why = store.track_state(conn, job["slug"], "impact")
+            raise Refused(_unmapped(target.gene, why if state == "refused" else None))
+        record = _stored(storage, record_row, "record")
+        lay_out(target, record, _stored(storage, map_row, "AVI track"))
+        # A verdict is the baker's own `ValueError` on the records, or the
+        # uploader's (`Declined`). NCBI not answering comes back `Unfetched`,
+        # and storage failing as itself: both are tried again.
+        verdict = None
+        try:
+            payload = clinvar(target)
+        except ValueError as exc:
+            verdict = exc
+        else:
+            try:
+                track = stage(storage, "clinvar", target, payload)
+            except Declined as exc:
+                verdict = exc
+        if verdict is not None:
+            reason = _told(f"ClinVar's records were not placed on {target.gene}'s bases",
+                           target, verdict)
+            store.refuse_bake(conn, job["id"], job["slug"], "clinvar", reason,
+                              error=_said(verdict))
+            return {**outcome, "state": "refused", "reason": reason}
+        store.finish_bake(conn, job["id"], track)
+        return {**outcome, "state": "ready"}
+    except Refused as exc:
+        store.refuse_bake(conn, job["id"], job["slug"], "clinvar", _said(exc))
+        return {**outcome, "state": "refused", "reason": _said(exc)}
+    except Exception as exc:  # noqa: BLE001 -- NCBI or storage: worth another try
+        if job["attempts"] < store.MAX_ATTEMPTS:
+            store.requeue_bake(conn, job["id"], _said(exc))
+            return {**outcome, "state": "queued", "reason": _said(exc)}
+        reason = (f"ClinVar's records could not be fetched: the bake broke each of the "
+                  f"{store.MAX_ATTEMPTS} times it was tried.")
+        store.refuse_bake(conn, job["id"], job["slug"], "clinvar", reason, error=_said(exc))
+        return {**outcome, "state": "refused", "reason": reason}
+
+
+def clinvar_in_process(target: Target, cache: Path,
+                       stopped: Callable[[], bool] = lambda: False) -> bytes:
+    """`bake_clinvar.bake` in this process, unchanged, for a target laid out in
+    `paths.DATA` (`lay_out`): the ClinVar track's bytes.
+
+    Two of the baker's functions are wrapped while it runs, never edited. Its
+    raw responses go to `cache`, not `pipeline/clinvar/cache/` beside the
+    twenty's, and are deleted once the bake is over (Phase 0's fifth
+    decision): the track names the query, the day and each batch's sha256,
+    and a bake made again fetches again. NCBI not answering in full, or
+    `stopped` saying so between two batches, is `Unfetched`. What the baker
+    prints is kept out of the worker's own output.
+    """
+    from pipeline.clinvar import bake_clinvar
+
+    fetch, fetch_batch = bake_clinvar.fetch, bake_clinvar.fetch_batch
+    folder = cache / target.gene
+
+    def fetching(gene, _cache, replay):
+        try:
+            return fetch(gene, folder, replay)
+        except Unfetched:
+            raise
+        except Exception as exc:  # noqa: BLE001 -- NCBI's, whatever it was
+            raise Unfetched(f"ClinVar did not answer in full: {_said(exc)}") from exc
+
+    def batch(efetch, ids, *args, **kwargs):
+        if stopped():
+            raise Unfetched(STOPPED_FETCHING)
+        return fetch_batch(efetch, ids, *args, **kwargs)
+
+    bake_clinvar.fetch, bake_clinvar.fetch_batch = fetching, batch
+    try:
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            bake_clinvar.bake(target, replay=False)
+    finally:
+        bake_clinvar.fetch, bake_clinvar.fetch_batch = fetch, fetch_batch
+        shutil.rmtree(folder, ignore_errors=True)
+    return (paths.DATA / f"assets/clinvar/{target.slug}_clinvar.json").read_bytes()
+
+
+def impact_all(conn, storage, *, limit: int = 20, avi: Avi) -> list[dict]:
+    """Bake queued AVI tracks until none are left, or `limit` are done."""
+    done = []
+    for _ in range(limit):
+        outcome = impact_next(conn, storage, avi=avi)
+        if outcome is None:
+            break
+        done.append(outcome)
+    return done
+
+
+def clinvar_all(conn, storage, *, limit: int = 20, clinvar: ClinVar) -> list[dict]:
+    """Bake queued ClinVar tracks until none are left, or `limit` are done."""
+    done = []
+    for _ in range(limit):
+        outcome = clinvar_next(conn, storage, clinvar=clinvar)
+        if outcome is None:
+            break
+        done.append(outcome)
+    return done
+
+
 def sweep(conn, storage, *, limit: int = 10, fetch_entry=uniprot.fetch_entry,
-          structures: bool = False) -> dict:
+          structures: bool = False, evidence: bool = False) -> dict:
     """Reap what dead workers held, then resolve up to `limit` requests.
 
     Returns what it did, and how many constraint bakes are waiting, so the
     caller knows whether to start a GPU, and how many structure bakes.
-    `structures` queues one for each protein resolved (`resolve_next`).
+    `structures` queues one for each protein resolved, and `evidence` its AVI
+    and ClinVar bakes (`resolve_next`).
     """
     store.reap(conn)
     resolved = []
     for _ in range(limit):
-        outcome = resolve_next(conn, storage, fetch_entry=fetch_entry, structures=structures)
+        outcome = resolve_next(conn, storage, fetch_entry=fetch_entry, structures=structures,
+                               evidence=evidence)
         if outcome is None:
             break
         resolved.append(outcome)
