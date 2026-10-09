@@ -1,6 +1,0 @@
-# The audio bake encodes AAC in MP4 through PyAV, whose wheels carry their own
-# ffmpeg (its native AAC encoder and MP4 muxer), so nothing else is installed.
-# It runs on the backend's own .venv, which already has numpy. The check and
-# the uploader read the file's boxes with the standard library, and decode it
-# with PyAV to listen to it.
-av>=18.1,<19

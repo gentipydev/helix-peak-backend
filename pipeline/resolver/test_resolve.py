@@ -1,7 +1,7 @@
 """The resolver, offline, on insulin.
 
 `fixtures/P01308.json` is UniProt's entry cut down to what the resolver reads:
-the signal and C-peptide from `trafficking/fixtures/` and the names from
+the signal and C-peptide from the full entry and the names from
 `locus/fixtures/` (both release 2026_03), with the two chains and three
 disulfides `targets.py` pins from the same entry, and the sequence, which
 `targets.py` declares identical to NG_007114's. The record is the real

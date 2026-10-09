@@ -49,8 +49,7 @@ def test_the_ca_fit_is_exact_where_the_ribbon_runs_through_the_atoms():
     # A helical CA trace and a model sampled along it, as a ribbon's spine is.
     # On a real cartoon the ribbon's width moves the answer a little: measured
     # on the thirteen stored models whose bridges give the size exactly, the
-    # CA fit lands within 1.2% (see structure_ar/README.md, and the insulin
-    # test below).
+    # CA fit lands within 1.2% (see the insulin test below).
     t = np.linspace(0, 6 * np.pi, 120)
     trace = np.stack([2.3 * np.cos(t), 1.5 * t, 2.3 * np.sin(t)], axis=1)
     spine = np.vstack([trace[:-1] + (trace[1:] - trace[:-1]) * f

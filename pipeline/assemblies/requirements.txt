@@ -1,4 +1,0 @@
-# The assembly bake runs in the structure bake's environment (PyMOL 3.1.0 on
-# PATH and pipeline/structure/requirements.txt); the build, the check, the
-# seeder and the uploader need numpy and psycopg alone, on the backend's .venv.
-numpy==2.5.3

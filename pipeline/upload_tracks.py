@@ -93,11 +93,6 @@ def asset_of(kind: str, target) -> Path | None:
         return path if target.clinvar_available else None
     if kind == "structure":
         return DATA / target.structure_asset
-    if kind == "structure_ar":
-        return DATA / f"assets/models_ar/{target.slug}.usdz" if target.structure else None
-    if kind == "trafficking":
-        # Where `trafficking/bake_trafficking.py` writes it (`trafficking_asset`).
-        return DATA / f"assets/trafficking/{target.slug}_trafficking.json"
     if kind == "folding":
         # Where `folding/bake_folding.py` writes it (`folding_asset`).
         path = DATA / f"assets/folding/{target.slug}_folding.json"
@@ -105,9 +100,6 @@ def asset_of(kind: str, target) -> Path | None:
     if kind == "locus":
         # Where `locus/bake_locus.py` writes it (`locus_asset`).
         return DATA / f"assets/locus/{target.slug}_locus.json"
-    if kind == "audio":
-        # Where `audio/bake_audio.py` writes it (`audio_asset`).
-        return DATA / f"assets/audio/{target.slug}.m4a"
     raise SystemExit(f"unknown kind {kind!r}")
 
 
@@ -122,38 +114,6 @@ def validate(kind: str, target, payload: bytes) -> dict:
             raise ValueError("not a .glb")
         return {"pdb": target.structure.pdb,
                 "nodes": [c.node for c in target.structure.chains]}
-
-    if kind == "structure_ar":
-        # The row names the USDZ AR Quick Look opens; the `.glb` beside it, for
-        # Scene Viewer, goes up with it and is named in `provenance.glb`.
-        if payload[:4] != b"PK":
-            raise ValueError("not a .usdz")
-        # The whole of `check_ar.py` on this protein: the package rules AR
-        # Quick Look needs, the same meshes as the stored .glb at one scale,
-        # and a size it can say how it found. Its metadata is the provenance.
-        from pipeline.structure_ar.check_ar import metadata, problems_of
-        from pxr import Usd
-        found = problems_of(target)
-        if found:
-            raise ValueError("; ".join(found))
-        meta = metadata(Usd.Stage.Open(str(asset_of(kind, target))))
-        if meta["pdb"] != target.structure.pdb:
-            raise ValueError(f"made from {meta['pdb']}, the target is {target.structure.pdb}")
-        return meta
-
-    if kind == "audio":
-        # The whole of `check_audio.py` on this protein, listening included: one
-        # mono AAC-LC stream whose edit list starts on the first note, a timing
-        # map of one onset a residue, and every channel what its input says and
-        # what the file sounds like. The provenance is the map less its arrays.
-        from pipeline.audio.check_audio import problems_of
-        from pipeline.audio.m4a import read_map
-        found = problems_of(target, payload)
-        if found:
-            raise ValueError("; ".join(found))
-        carried = read_map(payload)
-        return {key: carried[key] for key in
-                ("audio", "tempo", "mapping", "sources", "schema_version", "built_by")}
 
     data = json.loads(payload)
     if not isinstance(data, dict):
@@ -208,18 +168,6 @@ def validate(kind: str, target, payload: bytes) -> dict:
         return {key: data.get(key) for key in
                 ("source", "schema_version", "assembly", "scope", "retrieved_at",
                  "searched_records", "excluded")}
-
-    if kind == "trafficking":
-        # The whole of `check_trafficking.py` on this protein: its own names,
-        # the record's length, every span inside the chain, the table's GPI
-        # signal, and a release and a day it can name.
-        from pipeline.trafficking.check_trafficking import problems_of
-        found = problems_of(target, data)
-        if found:
-            raise ValueError("; ".join(found))
-        return {key: data.get(key) for key in
-                ("source", "release", "release_date", "retrieved", "entry_version",
-                 "sequence_version", "schema_version", "built_by")}
 
     if kind == "folding":
         # The whole of `check_folding.py` on this protein: the mature chain
@@ -332,7 +280,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Upload baked tracks to Supabase.")
     parser.add_argument("--kind", required=True, choices=[
         "record", "impact_explanations", "constraint", "impact", "clinvar", "structure",
-        "structure_ar", "trafficking", "folding", "locus", "audio"])
+        "folding", "locus"])
     parser.add_argument("--target", action="append", default=None)
     parser.add_argument("--dry-run", action="store_true")
     arguments = parser.parse_args()
@@ -341,8 +289,6 @@ def main() -> int:
     wanted = set(arguments.target) if arguments.target else None
     bucket, suffix, content_type = {
         "structure": (MODELS_BUCKET, "glb", "model/gltf-binary"),
-        "structure_ar": (MODELS_BUCKET, "usdz", "model/vnd.usdz+zip"),
-        "audio": ("tracks", "m4a", "audio/mp4"),
     }.get(kind, ("tracks", "json", "application/json"))
 
     planned = []
@@ -374,15 +320,6 @@ def main() -> int:
                       f"run the build hook first", file=sys.stderr)
                 continue
             row, uploads = structure_row(target.slug, payload, scene.read_bytes(), provenance)
-        if kind == "structure_ar":
-            room = DATA / f"assets/models_ar/{target.slug}.glb"
-            companion = room.read_bytes()
-            room_digest = hashlib.sha256(companion).hexdigest()
-            room_path = f"{kind}/{target.slug}.{room_digest[:12]}.glb"
-            uploads.append((room_path, companion, "model/gltf-binary"))
-            row["provenance"] = {**provenance, "glb": {
-                "path": room_path, "sha256": room_digest, "bytes": len(companion),
-            }}
         row["_uploads"] = uploads
         planned.append(row)
 

@@ -26,12 +26,8 @@ app's bundle once had, then uploaded:
 | `assets/impact_explanations/<slug>.json` | [`impact/bake_explanations.py`](impact/bake_explanations.py) | `pipeline/impact/venv` | AVI feature attributions (insulin, hemoglobin, CFTR) |
 | `assets/clinvar/<slug>_clinvar.json` | [`clinvar/bake_clinvar.py`](clinvar/bake_clinvar.py) | `.venv` | ClinVar single-base variants on the drawn gene |
 | `assets/models/<slug>.glb` | [`structure/bake.py`](structure/bake.py) | `pipeline/structure/venv` | the fold, as named meshes |
-| `assets/models_ar/<slug>.usdz` | [`structure_ar/bake_ar.py`](structure_ar/bake_ar.py) | `.venv` + usd-core | the fold at its real size, 1 Å = 1 cm, for AR (from the stored `.glb`) |
-| `assets/trafficking/<slug>_trafficking.json` | [`trafficking/bake_trafficking.py`](trafficking/bake_trafficking.py) | `.venv` | UniProt's transmembrane spans, GPI anchor and subcellular location, for the cell scene |
 | `assets/folding/<slug>_folding.json` | [`folding/bake_folding.py`](folding/bake_folding.py) | `pipeline/structure/venv` | each chain's CA trace and secondary structure, residue by residue, in the stored model's frame, for the fold animation |
 | `assets/locus/<slug>_locus.json` | [`locus/bake_locus.py`](locus/bake_locus.py) | `.venv` | the gene's cytogenetic band on GRCh38 and every band of its chromosome, from UCSC's cytoBand table; where the Human Protein Atlas finds it read, and (schema 2) the zoom's one path through an organ and a cell of it |
-| `assets/audio/<slug>.m4a` | [`audio/bake_audio.py`](audio/bake_audio.py) | `.venv` + PyAV | the protein as sound, one note a residue (pitch hydropathy, timbre secondary structure, loudness conservation, a tick at each ClinVar residue), with the map from each residue to the millisecond its note starts inside the file, for Listen |
-| `assets/assemblies/<slug>/…` | [`assemblies/bake_assembly.py`](assemblies/bake_assembly.py) | `pipeline/structure/venv` | not a catalog track: a molecule of more than one gene (the hemoglobin tetramer) as a morph pair, both states in one frame, in its own tables (`assembly`, `assembly_track`) |
 
 Each directory's README has its detail, how to make its environment, and what a
 correct result looks like.
@@ -63,7 +59,6 @@ pipeline/.esm-venv/bin/python -u pipeline/constraint/score_protein.py --target <
 ALPHAGENOME_API_KEY=... pipeline/impact/venv/bin/python -u pipeline/impact/bake_impact.py --target <slug>
 NCBI_EMAIL=you@example.com .venv/bin/python -u pipeline/clinvar/bake_clinvar.py --target <slug>
 pipeline/structure/venv/bin/python pipeline/structure/bake.py --target <slug>
-.venv/bin/python pipeline/structure_ar/bake_ar.py --target <slug>   # after fetch_tracks.py --kind structure
 python3 pipeline/check_assets.py
 set -a && . ./.env && set +a
 .venv/bin/python pipeline/upload_tracks.py --kind <family> --target <slug> --dry-run

@@ -123,9 +123,9 @@ entries needs, so that each reads them one way:
   `(p - centre) / L`. Exact from the bridges' joints where the model has
   bridges, fitted to the ribbon's CA atoms where it has none.
 
-They need numpy and nothing else, so a baker that reads the stored model, as
-`structure_ar/` does, runs on the backend's `.venv` without PyMOL. The three
-moved out of `bake.py`, `structure_ar/bake_ar.py` and `verify_frame.py`
+They need numpy and nothing else, so a baker that reads the stored model runs
+on the backend's `.venv` without PyMOL. The three moved out of `bake.py`,
+`verify_frame.py` and the AR bake (deleted with the app's lab on 2026-10-09)
 unchanged.
 
 `folding/` reads the entry through `pdb.py` too, but takes its frame from

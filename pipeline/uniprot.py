@@ -1,10 +1,9 @@
 """UniProt, as the bakers read it: one entry at a time, from rest.uniprot.org.
 
-Two bakers read the same entries. `mock/build_gene_record.py` checks each
-record's protein against the entry's canonical sequence, and
-`trafficking/bake_trafficking.py` reads its membrane topology, GPI anchor and
-subcellular location. Both fetch through `fetch_entry`, so there is one place
-that knows the URL, and one that knows which release answered.
+`mock/build_gene_record.py` checks each record's protein against the entry's
+canonical sequence, and the resolver builds a protein from it. Both fetch
+through `fetch_entry`, so there is one place that knows the URL, and one that
+knows which release answered.
 """
 
 from __future__ import annotations

@@ -119,8 +119,8 @@ app's fold page frames the loaded model with `PerspectiveCamera.framing` on
 exactly that box, so a fold drawn from this track alone is framed the same way
 without loading the model.
 
-A fit of the CA atoms to the stored ribbon, which is how `structure_ar` sizes a
-model with no bridges, was measured against this frame first. It is exact where
+A fit of the CA atoms to the stored ribbon, which is how `structure/frame.py`
+sizes a model with no bridges, was measured against this frame first. It is exact where
 the model has bridges and within 0.25 A for five of the other seven, but
 ubiquitin's comes out 2.1% large and glucagon's single helix 3.9% small, which
 moves its ends by 1.5 A. A lone helix barely fixes the ribbon's scale along its

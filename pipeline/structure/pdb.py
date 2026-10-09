@@ -1,9 +1,8 @@
 """Reading a PDB entry the way the structure bake exports it.
 
 One reading of `structures/<entry>.pdb`, shared by every baker that starts
-from the twenty entries: `bake.py` builds the bridges from it, `structure_ar`
-recovers each stored model's size from it, and `verify_frame.py` audits the
-export frame with it. Each function here moved unchanged from the baker that
+from the twenty entries: `bake.py` builds the bridges from it, and
+`verify_frame.py` audits the export frame with it. Each function here moved unchanged from the baker that
 wrote it first, so every caller reads the file exactly as it did before.
 
 It needs only numpy, so a baker that reads the stored model instead of running

@@ -66,6 +66,6 @@ def test_a_venv_or_baked_data_never_goes_up():
     for path in ("structure/venv/lib/python3.12/site-packages/torch/__init__.py",
                  "impact/venv/bin/activate_this.py",
                  "data/assets/mock/gene_ins.json", "data/notes.py",
-                 "trafficking/fixtures/P01308.json", "resolver/__pycache__/resolve.cpython-312.pyc"):
+                 "locus/fixtures/chromalias_hg38_five.json", "resolver/__pycache__/resolve.cpython-312.pyc"):
         assert modal_app.not_code(Path(path)), path
     assert not modal_app.not_code(Path("resolver/worker.py"))
