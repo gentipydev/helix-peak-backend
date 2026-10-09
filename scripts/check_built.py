@@ -16,6 +16,11 @@ Its model is checked as it stands: ready (the stored scene and the `.glb` it
 was compiled from, each to its digest, and the fold page's words and chains to
 the model), refused (the sentence why, and nothing on the row), or never asked
 for. A model still pending is not a finished build.
+
+So are its AVI and ClinVar tracks: ready, each to its digest and then to
+`check_assets.py`'s own checks against the record (ClinVar's against AVI's
+map); refused, with the sentence why, ClinVar's naming AVI's where AVI was
+refused; or never asked for, as a protein built before them is.
 """
 
 from __future__ import annotations
@@ -24,16 +29,19 @@ import hashlib
 import json
 import os
 import sys
+import tempfile
 import urllib.request
+from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import psycopg  # noqa: E402
 
 from app.config import settings  # noqa: E402
-from pipeline import uniprot  # noqa: E402
+from pipeline import check_assets, uniprot  # noqa: E402
 from pipeline.constraint.score_protein import MODEL, REVISION  # noqa: E402
-from pipeline.resolver import worker  # noqa: E402
+from pipeline.resolver import store, worker  # noqa: E402
+from pipeline.resolver.resolve import target_of  # noqa: E402
 
 SERVICE = "https://helix-peak-backend.onrender.com"
 wrong: list[str] = []
@@ -101,12 +109,63 @@ def structure(row: dict, track: dict) -> None:
          "its bridges are the row's, each drawn or accounted for")
 
 
+def evidence(tracks: dict, record: dict, target) -> None:
+    """Its AVI and ClinVar tracks, as far as they have got (the docstring)."""
+    payloads = {}
+    for kind in ("impact", "clinvar"):
+        track = tracks.get(kind) or {"state": "absent"}
+        state = track["state"]
+        if state != "ready":
+            print(f"  {kind}: {state}" + (f": {track['reason']}" if track.get("reason") else ""))
+            hold(state in ("refused", "absent"), f"its {kind} track is not still on its way ({state})")
+            hold(state != "refused" or bool(track.get("reason")), f"a refused {kind} track says why")
+            continue
+        payload = fetch(track["url"])
+        hold(hashlib.sha256(payload).hexdigest() == track["sha256"]
+             and len(payload) == track["bytes"], f"{kind} bytes match their sha256 and size")
+        payloads[kind] = json.loads(payload)
+        print(f"  {kind}: {len(payload):,} bytes at {track['url'].rsplit('/', 2)[-2:]}, "
+              f"provenance {track.get('provenance')}")
+    if (tracks.get("impact") or {}).get("state") == "refused" and \
+            (tracks.get("clinvar") or {}).get("state") == "refused":
+        hold(tracks["clinvar"]["reason"].startswith(
+            "ClinVar's records are placed by AlphaGenome's coordinate map")
+            and tracks["impact"]["reason"] in tracks["clinvar"]["reason"],
+            "ClinVar refused because AVI was, and in AVI's words")
+    impact, clinvar = payloads.get("impact"), payloads.get("clinvar")
+    if impact is not None:
+        print(f"  impact: {impact['chromosome']} {impact['transcript']}, orientation "
+              f"{impact['orientation']}, complemented {impact['complemented']}, "
+              f"{len(impact['runs'])} run(s), generation {impact['generation']}")
+    if clinvar is not None:
+        print(f"  clinvar: {len(clinvar['variants']):,} of {clinvar['searched_records']:,} records "
+              f"mapped, excluded {clinvar['excluded']}, retrieved {clinvar['retrieved_at']}")
+        hold(impact is not None, "ClinVar ready only where its AVI map is")
+    # The checks the upload gate made, made again on the stored bytes.
+    with tempfile.TemporaryDirectory() as folder:
+        check_assets.DATA = Path(folder)
+        before = len(check_assets.problems)
+        if impact is not None:
+            check_assets.check_impact(target, record, impact)
+        if impact is not None and clinvar is not None:
+            path = check_assets.DATA / target.impact_asset
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps(impact))
+            check_assets.check_clinvar(target, record, clinvar)
+        found = check_assets.problems[before:]
+    if payloads:
+        hold(not found, "check_assets holds them to the record" + (f": {found}" if found else ""))
+
+
 def main(gene: str, device: str | None) -> int:
     slug = gene.lower()
     print(f"== {gene} ==")
 
     said = get(f"/proteins/resolve/{gene}")
-    hold(said == {"slug": slug, "state": "ready", "reason": None}, f"resolve state: {said}")
+    # Beside the state, how far its build got: over, its evidence too.
+    hold({key: said.get(key) for key in ("slug", "state", "reason")}
+         == {"slug": slug, "state": "ready", "reason": None}
+         and (said.get("build") or {}).get("step") == "done", f"resolve state: {said}")
 
     row = get(f"/protein/{slug}")
     tracks = get(f"/protein/{slug}/tracks")
@@ -129,7 +188,7 @@ def main(gene: str, device: str | None) -> int:
     hold(states.get("record") == "ready" and states.get("constraint") == "ready",
          f"record and constraint ready: {states}")
     hold(all(state == "absent" for kind, state in states.items()
-             if kind not in ("record", "constraint", "structure")),
+             if kind not in ("record", "constraint", "structure", "impact", "clinvar")),
          "every other track absent")
     hold(row["tracks"] == states, "the row's bare states agree with its track rows")
     structure(row, tracks["structure"])
@@ -201,6 +260,11 @@ def main(gene: str, device: str | None) -> int:
             model = conn.execute(
                 "select state, attempts, error, finished_at - started_at from bake_job where slug = %s "
                 "and kind = 'structure' order by id desc limit 1", (slug,)).fetchone()
+            evidence_bakes = conn.execute(
+                "select distinct on (kind) kind, state, attempts, error, finished_at - started_at "
+                "from bake_job where slug = %s and kind in ('impact', 'clinvar') "
+                "order by kind, id desc", (slug,)).fetchall()
+            protein_row = store.protein(conn, slug)
             where = conn.execute(
                 "select accession, slice_start, slice_end, slice_strand, transcript_id, protein_id, chain_name "
                 "from protein where slug = %s", (slug,)).fetchone()
@@ -211,6 +275,8 @@ def main(gene: str, device: str | None) -> int:
     print(f"  request: {request}")
     print(f"  bake: {bake}")
     print(f"  structure bake: {model}")
+    print(f"  evidence bakes: {evidence_bakes}")
+    evidence(tracks, record, target_of(protein_row))
     print(f"  aliases: {aliases}")
     hold(request is not None and request[0] == "done" and request[2] == 1, "request done by resolver version 1")
     hold(bake is not None and bake[0] == "done", "constraint bake done")
