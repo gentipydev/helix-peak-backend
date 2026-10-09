@@ -65,6 +65,9 @@ if str(BACKEND) not in sys.path:
 
 REFUSED = 3
 _CHECK_TIMEOUT = 60
+# How long the Atlas's channel is waited for. Two seconds, mostly, and now and
+# then a minute; unasked, `atlas.create` would wait for ever on a network gone.
+CONNECT_TIMEOUT = 90
 # The base the check asks the Atlas about: one of TTR's, which it scores.
 _PROBE = ("chr18", 31_591_767)
 _ONE_MANE = "expected exactly one MANE Select transcript"
@@ -173,11 +176,13 @@ def check() -> int:
         return 1
     chromosome, position = _PROBE
     try:
-        scores = atlas.create(key).query_interval(
+        scores = atlas.create(key, timeout=CONNECT_TIMEOUT).query_interval(
             genome.Interval(chromosome=chromosome, start=position - 1, end=position),
             requested_scorers=[bake_impact.SCORER])
     except Exception as exc:  # noqa: BLE001 -- grpc raises its own family
-        print(f"The Atlas did not answer: {' '.join(str(exc).split())[-300:]}", file=sys.stderr)
+        # A channel never ready raises with no words: its name says it.
+        said = " ".join(str(exc).split()) or type(exc).__name__
+        print(f"The Atlas did not answer: {said[-300:]}", file=sys.stderr)
         return 1
     if bake_impact.SCORER not in scores:
         print(f"The Atlas answered with no {bake_impact.SCORER}.", file=sys.stderr)
@@ -215,7 +220,7 @@ def main(arguments: list[str]) -> int:
 
     try:
         payload = bake(target, record_file.read_bytes(), out / "data", args.state,
-                       atlas.create(key))
+                       atlas.create(key, timeout=CONNECT_TIMEOUT))
     except bake_impact.BakeError as exc:
         (out / "refusal.txt").write_text(str(exc), encoding="utf-8")
         return REFUSED

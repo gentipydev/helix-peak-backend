@@ -56,8 +56,8 @@ def client(monkeypatch):
                                  asked=[])
 
     class Client:
-        def __init__(self, key):
-            self.key = key
+        def __init__(self, key, timeout=None):
+            self.key, self.timeout = key, timeout
 
         def query_interval(self, interval, requested_scorers):
             said.asked.append((interval, requested_scorers))
@@ -178,7 +178,7 @@ def test_the_driver_writes_the_track_and_exits_0(tmp_path, monkeypatch, unguarde
     handed = []
 
     def bake(target, record, data, state, made):
-        handed.append((target, record, data, state, made.key))
+        handed.append((target, record, data, state, made.key, made.timeout))
         return b"the track"
 
     monkeypatch.setattr(impact_local, "bake", bake)
@@ -186,8 +186,9 @@ def test_the_driver_writes_the_track_and_exits_0(tmp_path, monkeypatch, unguarde
     monkeypatch.setenv("HELIXPEEK_DATA", "untouched")
     assert impact_local.main(_hand_over(tmp_path)) == 0
     assert (tmp_path / "out" / "impact.json").read_bytes() == b"the track"
+    # Its channel waited for, but never for ever.
     assert handed == [(INS, b'{"gene": "INS"}\n', tmp_path / "out" / "data",
-                       tmp_path / "state", "the-atlas-key")]
+                       tmp_path / "state", "the-atlas-key", impact_local.CONNECT_TIMEOUT)]
     assert os.environ["HELIXPEEK_DATA"] == str(tmp_path / "out" / "data")
 
 
@@ -265,6 +266,14 @@ def test_the_check_asks_the_atlas_once_and_says_what_is_missing(
     assert impact_local.check() == 1
     assert "GENCODE's lookup exited with status 2: error: No interpreter" in \
         capsys.readouterr().err
+
+    class FutureTimeoutError(Exception):
+        """What grpc raises for a channel that never became ready: no words."""
+
+    client.answer = lambda interval, scorers: (_ for _ in ()).throw(FutureTimeoutError())
+    monkeypatch.setattr(impact_local.subprocess, "run", lambda command, **how: looked_up)
+    assert impact_local.check() == 1
+    assert capsys.readouterr().err == "The Atlas did not answer: FutureTimeoutError\n"
 
     (skill / "scripts" / "alphagenome_atlas_avi.py").unlink()
     assert impact_local.check() == 1
