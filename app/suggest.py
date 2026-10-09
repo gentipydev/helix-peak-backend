@@ -24,12 +24,19 @@ is nearer to what was typed. Only when nothing matches by prefix is a near miss
 looked for, so a typo such as "insuln" still finds insulin, and an exact
 accession is not padded out with accessions that merely look like it.
 
+The proteins built on demand are listed here too (`/proteins/built`), as the
+same suggestions: every install's, since a built protein is shared, newest
+first. One still being built is left out until it is done, since the app
+watches that one rather than opens it; one whose scoring was stopped is kept,
+and says so.
+
 Reads only, and like the catalog it has no second source: an unreadable index is
 reported as unavailable, never as an empty one.
 """
 
 import logging
-from typing import Dict, List, Optional
+from datetime import datetime, timezone
+from typing import Dict, List, Optional, Tuple
 
 from . import db
 from .catalog import CatalogUnavailable
@@ -118,6 +125,32 @@ where p.catalog_order is null and lower(p.gene) = any(%(genes)s)
   and (j.state in ('queued', 'running') or (j.state = 'stopped' and t.state = 'absent'))
 """
 
+# Every protein built on demand, newest first: a row with a null
+# `catalog_order`, and the index row it was built from. Joined on the accession
+# as well as the gene, because a gene can have more than one index row (SIRPB1
+# has a buildable one and one that is not), and a built protein is listed once.
+#
+# Paged by (resolved_at, slug) rather than by offset, as the catalog is by slug,
+# so a protein built between two requests cannot shift a page and hide a row.
+_BUILT = """
+select {row}, p.resolved_at
+from protein p
+join protein_index i on i.uniprot = p.uniprot and i.gene = p.gene
+where p.catalog_order is null and p.taxon_id = 9606 and i.gene <> ''
+  and (%(at)s::timestamptz is null or p.resolved_at < %(at)s
+       or (p.resolved_at = %(at)s and p.slug > %(slug)s))
+order by p.resolved_at desc, p.slug
+limit %(limit)s
+""".format(row=_ROW)
+
+# A cursor is the last row's time to the microsecond, in UTC, and its slug:
+# "2026-10-09T08:45:20.800935Z|ttr". Opaque to the client, which passes it back.
+_CURSOR_TIME = "%Y-%m-%dT%H:%M:%S.%fZ"
+
+
+class BadCursor(ValueError):
+    """A ``before`` this service did not give out."""
+
 
 def _suggestion(row, building: bool = False, stopped: bool = False) -> dict:
     (uniprot, gene, name, length, buildable, reason,
@@ -189,3 +222,56 @@ def suggest(query: str, limit: int = 12) -> Dict:
         for row in rows
     ]
     return {"q": query, "release": label, "suggestions": suggestions}
+
+
+def _cursor(resolved_at: datetime, slug: str) -> str:
+    return "{}|{}".format(resolved_at.astimezone(timezone.utc).strftime(_CURSOR_TIME), slug)
+
+
+def _parse_cursor(cursor: str) -> Tuple[datetime, str]:
+    at, bar, slug = cursor.partition("|")
+    try:
+        when = datetime.strptime(at, _CURSOR_TIME).replace(tzinfo=timezone.utc)
+    except ValueError:
+        when = None
+    if when is None or not bar or not slug:
+        raise BadCursor("Not a cursor this service gave out: {!r}.".format(cursor))
+    return when, slug
+
+
+def built(limit: int = 50, before: Optional[str] = None) -> Tuple[List[dict], Optional[str]]:
+    """Up to ``limit`` proteins built on demand, newest first, and the cursor
+    for the next page: null on the last.
+
+    A protein whose build is under way is left out after the page is cut, so a
+    page can come back short with more to follow; ``next`` says which.
+    """
+    at, after = _parse_cursor(before) if before else (None, None)
+
+    pool = db.pool
+    if pool is None:
+        raise CatalogUnavailable("No database is configured for the protein index.")
+
+    params = {"at": at, "slug": after, "limit": limit + 1}
+    try:
+        with pool.connection() as conn:
+            rows = conn.execute(_BUILT, params).fetchall()
+            more = len(rows) > limit
+            rows = rows[:limit]
+            genes = sorted({row[1].lower() for row in rows})
+            said = []
+            if genes:
+                said = conn.execute(_BUILDS, {"genes": genes}).fetchall()
+    except Exception as exc:
+        logger.exception("Built proteins read failed")
+        raise CatalogUnavailable("The proteins built on demand could not be read.") from exc
+
+    building = {gene for gene, what in said if what == "building"}
+    stopped = {gene for gene, what in said if what == "stopped"}
+    proteins = [
+        _suggestion(row, stopped=row[1].lower() in stopped)
+        for row in rows
+        if row[1].lower() not in building
+    ]
+    next_cursor = _cursor(rows[-1][9], rows[-1][6]) if more else None
+    return proteins, next_cursor

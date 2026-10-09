@@ -13,6 +13,7 @@ from .config import settings
 from .genbank_parser import GeneNotFound, extract_gene
 from .record_cache import fetch as fetch_genbank_record
 from .schemas import (
+    BuiltResponse,
     CatalogPage,
     GeneResponse,
     ProteinDetail,
@@ -192,6 +193,24 @@ def suggest_proteins(
     """
     with _catalog_errors():
         return suggest.suggest(q, limit=limit)
+
+
+@router.get("/proteins/built", response_model=BuiltResponse)
+def built_proteins(
+    limit: int = Query(50, ge=1, le=200),
+    before: Optional[str] = None,
+) -> dict:
+    """Every protein built on demand, newest first, a page at a time.
+
+    Not the catalog either: the twenty are never among them. ``before`` is the
+    ``next`` of the page before; anything else is a 422, never a first page.
+    """
+    with _catalog_errors():
+        try:
+            proteins, next_cursor = suggest.built(limit=limit, before=before)
+        except suggest.BadCursor as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+    return {"proteins": proteins, "next": next_cursor}
 
 
 def _not_indexed(gene: str) -> HTTPException:

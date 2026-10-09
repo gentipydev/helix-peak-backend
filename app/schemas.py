@@ -257,6 +257,19 @@ class SuggestResponse(BaseModel):
     suggestions: List[Suggestion] = []
 
 
+class BuiltResponse(BaseModel):
+    """The proteins built on demand, newest first (`GET /proteins/built`).
+
+    Every install's, not only the asker's: a built protein is shared. Each is a
+    ``ready`` suggestion; one still being built is left out until it is done,
+    and one whose scoring was stopped is kept, with ``stopped``.
+    """
+
+    proteins: List[Suggestion] = []
+    # Passed back as ``before`` for the next page; null on the last.
+    next: Optional[str] = None
+
+
 class ResolveRequest(BaseModel):
     """A reader asking for the protein a gene makes (`POST /proteins/resolve`)."""
 

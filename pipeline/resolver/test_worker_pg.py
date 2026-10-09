@@ -352,6 +352,51 @@ def test_suggestions_know_which_proteins_are_being_built(conn, offline):
     assert _builds(conn) == set()
 
 
+def test_the_built_list_is_every_resolved_protein_newest_first(
+        conn, offline, database_url, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    # A curated protein, never listed, and an older build whose gene has a
+    # second index row, listed once.
+    conn.execute(
+        """
+        insert into protein_index (uniprot, gene, name, length, annotation_score, existence,
+            buildable, unavailable_reason)
+        values ('P68871', 'HBB', 'Hemoglobin subunit beta', 147, 5, 1, true, null),
+               ('O00241', 'SIRPB1', 'Signal-regulatory protein beta-1', 398, 5, 1, true, null),
+               ('Q5TFQ8', 'SIRPB1', 'Signal-regulatory protein beta-1 isoform 3', 400, 3, 1,
+                false, 'MANE Select encodes another protein.')
+        """)
+    conn.execute(
+        """
+        insert into protein (slug, gene, uniprot, accession, display, summary, residues, exons,
+            chains, bridges, regions, disulfides, provenance, resolver_version, catalog_order,
+            resolved_at)
+        values ('hbb', 'HBB', 'P68871', 'NG_000007', 'Hemoglobin (beta chain)', 'Curated.',
+                147, 3, 1, 0, '[]', '[]', '{}', 0, 3, now()),
+               ('sirpb1', 'SIRPB1', 'O00241', 'NG_000000', 'Signal-regulatory protein beta-1',
+                'Built.', 398, 6, 1, 0, '[]', '[]', '{}', 1, null, now() - interval '1 hour')
+        """)
+    storage = Storage()
+    _ask(conn)
+    worker.resolve_next(conn, storage, fetch_entry=lambda accession: offline(_body()))
+    with _service(database_url, monkeypatch):
+        client = TestClient(app)
+        # Insulin's row is written and its ESM-2 bake is to come: not yet.
+        body = client.get("/proteins/built").json()
+        assert [(s["slug"], s["uniprot"]) for s in body["proteins"]] == [("sirpb1", "O00241")]
+
+        worker.score_next(conn, storage, score=_constraint)
+        first = client.get("/proteins/built", params={"limit": 1}).json()
+        assert [(s["slug"], s["status"], s["name"], s["length"]) for s in first["proteins"]] == \
+            [("ins", "ready", "Insulin", 110)]
+        rest = client.get("/proteins/built", params={"limit": 1, "before": first["next"]}).json()
+        assert [s["slug"] for s in rest["proteins"]] == ["sirpb1"]
+        assert rest["next"] is None
+
+
 def test_a_build_is_stopped_by_the_phone_that_asked_and_scored_again_when_asked(
         conn, offline, database_url, monkeypatch):
     from app import resolves

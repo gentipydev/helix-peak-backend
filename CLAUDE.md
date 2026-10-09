@@ -37,7 +37,7 @@ differs from storage. A mismatch means the refactor changed data. Stop; never up
 ## What the service is, and is not
 
 - Is: `/gene/{id}/{gene}` (read-through cache of whole records), `/catalog`, `/catalog/search`,
-  `/protein/{slug}`, `/protein/{slug}/tracks`, `/proteins/suggest`, `/proteins/resolve` (POST,
+  `/protein/{slug}`, `/protein/{slug}/tracks`, `/proteins/suggest`, `/proteins/built`, `/proteins/resolve` (POST,
   GET `/{gene}`, and POST `/{gene}/stop`), `.../impact-explanations`, `/assembly/{slug}/tracks`, `/health`, `/health/db`.
   It writes `genbank_record`, and one `resolve_request` row per new ask. It names bytes and never carries
   them: a ready track resolves to a public Supabase storage URL the client fetches directly.
@@ -67,6 +67,8 @@ differs from storage. A mismatch means the refactor changed data. Stop; never up
 - `protein_index.py`: pure. `normalize()`, UniProt/MANE parsing, index rows and terms. Shared with `scripts/load_protein_index.py`.
 - `suggest.py`: `/proteins/suggest`. Ranked prefix tiers over `protein_index_term`, near misses last;
   `building` marks a protein whose build is under way, which the app watches rather than opens.
+  And `/proteins/built`: every install's builds as the same suggestions, newest first, paged by
+  (`resolved_at`, slug); one under way is left out, one stopped is kept.
 - `resolves.py`: `/proteins/resolve`. What an ask means (ready, pending, refused, failed, unavailable,
   buildable), the `resolve_request` row, the daily cap and the best-effort wake, and how far a
   build has got (`build`: step, residues scored, seconds left), read from the request and the
@@ -151,13 +153,13 @@ things follow for anyone working in this checkout:
   `entrez_client.Entrez.efetch`, fed `tests/fixtures/ng_007114.gb` (a real NCBI response) or
   `tests/ncbi_errors.py`. `efetch_raising(AssertionError(...))` proves a path never calls NCBI.
 - The database is a `FakePool` set on `db.pool` that answers by SQL shape (`test_catalog.py`,
-  `test_record_cache.py`, `test_suggest.py`). `no_pool` sets it to `None`.
+  `test_record_cache.py`, `test_suggest.py`, `test_built.py`). `no_pool` sets it to `None`.
 - `client` is `TestClient(app)` outside a `with`, so the lifespan never runs and the real
   `DATABASE_URL` in `.env` is never dialled. Never write `with TestClient(app)`.
 - Tests that need stored tracks skip until `fetch_tracks.py`, run by hand, fills `pipeline/data/`.
-- `pipeline/resolver/test_worker_pg.py` runs the resolver's and `/proteins/resolve`'s SQL against
-  a real Postgres, and skips unless `RESOLVER_TEST_DATABASE_URL` names one it may create a scratch
-  database on (a local server, never Supabase). `test_modal_app.py` skips without the Modal client.
+- `pipeline/resolver/test_worker_pg.py` runs the resolver's, `/proteins/resolve`'s and
+  `/proteins/built`'s SQL against a real Postgres, and skips unless `RESOLVER_TEST_DATABASE_URL`
+  names one it may create a scratch database on (a local server, never Supabase). `test_modal_app.py` skips without the Modal client.
 
 ## NCBI error mapping
 
