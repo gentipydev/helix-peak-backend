@@ -1,8 +1,11 @@
 # ClinVar observed evidence
 
 Every catalog gene ships a snapshot: INS since September 21, 2026, and the
-other nineteen since September 22. A row added without one says "not yet
-included" in its About sheet. Nothing calls NCBI at app runtime: the snapshots
+other nineteen since September 22. Since October 9 so does every protein built
+on demand, baked unchanged by the resolver's worker on the Mac
+(`worker.clinvar_in_process`, "The variant evidence" in its README), its raw
+responses deleted once its track is stored. A row added without one says "not
+yet included" in its About sheet. Nothing calls NCBI at app runtime: the snapshots
 are stored tracks, like the AVI and ESM ones -- baked here into `pipeline/data/`,
 sent with `upload_tracks.py --kind clinvar`, and fetched by the app from storage.
 The bake reads the record and the AVI map from `pipeline/data/`; run

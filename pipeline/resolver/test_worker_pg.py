@@ -1408,3 +1408,31 @@ def test_a_gene_the_avi_bake_cannot_place_is_refused_by_the_macs_worker(
     assert [(o["state"], o["reason"]) for o in done["impact"]] == [("refused", avi)]
     assert [o["state"] for o in done["clinvar"]] == ["refused"]
     assert [o["state"] for o in done["scored"]] == ["ready"]
+
+
+def test_a_reader_sees_the_evidence_step_and_then_the_scoring(
+        conn, offline, database_url, monkeypatch, data):
+    from app import resolves
+
+    storage = Storage()
+    with _service(database_url, monkeypatch):
+        _resolved_with_evidence_queued(conn, offline, storage)
+        build = resolves.current("INS")["build"]
+        assert (build["step"], build["ahead"], build["reason"], build["transcript"]) == \
+            ("evidence", None, None, "NM_000207.3")
+
+        worker.impact_next(conn, storage, avi=lambda target, record: an_avi(target, record))
+        assert resolves.current("INS")["build"]["step"] == "evidence"
+        worker.clinvar_next(conn, storage, clinvar=_fetched)
+        build = resolves.current("INS")["build"]
+        assert (build["step"], build["ahead"]) == ("scoring", 0)
+
+        worker.score_next(conn, storage, score=_constraint)
+        assert resolves.current("INS")["build"]["step"] == "done"
+        # A protein given its evidence again after it was built is at it again.
+        store.queue_evidence(conn, "ins")
+        assert resolves.current("INS")["build"]["step"] == "done"
+        conn.execute("update protein_track set state = 'refused', reason = 'Unaccounted "
+                     "records.' where kind = 'clinvar'")
+        assert store.queue_evidence(conn, "ins") == ["clinvar"]
+        assert resolves.current("INS")["build"]["step"] == "evidence"

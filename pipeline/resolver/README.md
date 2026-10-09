@@ -53,9 +53,11 @@ rule; in short:
   on demand from UniProt P38398 and MANE Select NM_007294.4, not curated by
   hand."), and `provenance.prose` says `templated`.
 - **Tracks**: `record` ready, `constraint` pending until the GPU has scored it,
-  and, where the worker makes models, `structure` pending until its model is
-  made (seconds). Nothing else (`impact`, `clinvar` read `absent`, and so does
-  `structure` for a protein resolved by a worker that makes none).
+  where the worker makes models `structure` pending until its model is made
+  (seconds), and where it makes the variant evidence `impact` and `clinvar`
+  pending until AlphaGenome's scores and ClinVar's records are in (minutes).
+  Nothing else; on a worker that makes none of the three (Modal's), they read
+  `absent`.
 - **ESM-2** is the twenty's model and revision, `facebook/esm2_t33_650M_UR50D`,
   run through the same scorer and its alignment gate. The app accepts only that
   model's tracks, so no app change is needed for them. A protein that fails the
@@ -80,7 +82,7 @@ disulfides (`test_resolve.py`).
 ESM-2 takes minutes (838 residues, 9 on the dev Mac), so `GET
 /proteins/resolve/{gene}` says how far a build has got as well as what it is
 (`build`, `BuildReport` in `app/schemas.py`): the step (`queued`, `record`,
-`scoring`, `check`, `done`), the proteins the worker takes first, the residues
+`evidence`, `scoring`, `check`, `done`), the proteins the worker takes first, the residues
 scored and of how many, the seconds the scorer estimates are left, the seconds
 since it was asked for, and the transcript the record was built from. A step
 that ended without its result carries the track's reason.
@@ -155,6 +157,59 @@ pLDDT over the span is under 50.
 `scripts/check_built.py` holds a built protein's model too: the scene and its
 `.glb` to their digests, the nodes to the row's chains, the span, the gate and
 the bridges; or, refused, the sentence why.
+
+## The variant evidence: AVI and ClinVar
+
+The twenty's walk reads AlphaGenome's per-base Variant Impact scores (`impact`)
+and ClinVar's records (`clinvar`); since 2026-10-09 a protein built on demand
+gets both too (HANDOFF-AVI-CLINVAR.md has the user's decisions). They are made
+by the bakers that made the twenty's, unchanged (`impact/bake_impact.py`,
+`clinvar/bake_clinvar.py`), so nothing of the twenty's bytes moved.
+
+- **Queued with the scoring.** `store.write_resolution(..., evidence=True)`
+  puts both tracks `pending` behind a bake each (`store.queue_evidence`), for
+  the same `asker`. Only a worker that can make them asks: the Mac's.
+- **In a build's order, held by the claim.** ClinVar's records are placed on
+  the record's bases by the map AVI's track carries (`runs`, `chromosome`,
+  `complemented`), so a `clinvar` bake is claimed only once its protein's
+  `impact` bake is over, and a `constraint` bake only once both are
+  (`store.WAITS_FOR`). The long step stays last, and a build that opens once
+  its scores are in has its evidence too.
+- **AVI**, on the Mac: `local_worker.Evidencer` runs `impact_local.py` in the
+  AVI bake's own environment (`pipeline/impact/venv`), with
+  `ALPHAGENOME_API_KEY` from `.env` (handed to that bake alone) and `uv` on its
+  PATH for the AlphaGenome skill's GENCODE lookup. GENCODE's answers and the
+  pull's checkpoints are kept in the worker's state between tries, never in
+  `pipeline/impact/`. One of the bake's own gates saying no (the exons do not
+  pair with GENCODE's MANE Select ones, the record's bases are not GRCh38's
+  where GENCODE puts the gene, too few were scored) refuses the track with the
+  gate's words (`worker.Unplaced`); the Atlas or the lookup not answering is
+  tried again, three times a cycle apart. A gene with no intron skips only the
+  bake's biology alarm (exons must outscore intron interiors, which it cannot
+  have), the user's choice of 2026-10-09; the sequence gate still holds every
+  base, and the track's (unread) `generation` says null for the two intron
+  medians.
+- **ClinVar**, in the worker's own process (Biopython is all it needs):
+  `worker.clinvar_in_process` runs the baker with its raw responses in the
+  worker's folder, deleted once the bake is over; the track names the query,
+  the day and each batch's sha256. NCBI not answering in full is tried again
+  (`worker.Unfetched`), and the baker's own `ValueError` is a refusal. Where
+  AVI was refused, so is ClinVar, its sentence ending in AVI's.
+- **Through the upload gate.** `upload_tracks.validate` holds each to
+  `check_assets.py`'s own checks against the record (ClinVar's against AVI's
+  map) before a row says ready. The twenty's 40 stored payloads pass them.
+- **On the build card**: the step is `evidence` while either bake is queued or
+  running, and never carries a reason. No Stop is offered there: Stop ends
+  ESM-2.
+- **Checked** by `scripts/check_built.py`, as it stands: ready, each to its
+  digest and to `check_assets.py` again; refused, with the sentence why.
+
+Measured on the dev Mac (2026-10-09, `HANDOFF-AVI-CLINVAR.md` Phase 1): GENCODE's
+lookup, 1.8 s a gene at about 2.5 GB; TTR's AVI, 6.9 s for one Atlas window;
+its ClinVar, 17 s for 503 records in 6 batches, 28.6 MB of raw responses. Of
+twenty genes tried (the eight built then and twelve more, both strands,
+chromosome slices, compressed introns, chrX, chrY and a PAR gene) all twenty
+mapped every drawn base.
 
 ## Deploying, once
 
@@ -240,6 +295,12 @@ weights in the Hugging Face cache, where a bake of the twenty leaves them.
 Nothing is installed into `.esm-venv`: the worker has an environment of its
 own and runs the scorer there as a subprocess (`score_local.py`).
 
+To make AVI tracks it needs the AVI bake's environment (`pipeline/impact/venv`,
+its README), `ALPHAGENOME_API_KEY` in `.env`, the AlphaGenome skill under
+`../.claude/skills/` and `uv` (`~/.local/bin/uv`, or `RESOLVER_UV`). It asks
+first (`impact_local.py --check`: the client, the key, the skill under `uv`,
+and one 1-base Atlas request), and claims no AVI bake while it could not.
+
 To make models it also needs the structure bake's environment
 (`pipeline/structure/venv`, and PyMOL: its README), and the app's checkout
 beside this one with a Flutter SDK's Dart, for the scene importer. It runs the
@@ -276,7 +337,10 @@ stored scene was compiled by.
   or claimed, as on Modal), and `RESOLVER_STRUCTURE_PYTHON`, `RESOLVER_DART`
   (default: the SDK inside `~/flutter`, not `flutter/bin/dart`, which takes
   Flutter's start-up lock) and `RESOLVER_APP_DIR` (`../helix-peek`) say where
-  its three tools are.
+  its three tools are. For the evidence: `RESOLVER_EVIDENCE=0` makes none (none
+  queued, none claimed; any already queued waits, and so does its protein's
+  scoring), and `RESOLVER_IMPACT_PYTHON` and `RESOLVER_UV` say where its two
+  tools are.
 - **A protein it built** is checked by `.venv/bin/python scripts/check_built.py
   <GENE> mps`: the service, the stored bytes against their sha256, the rows and
   UniProt's features, ending `ALL OK`. The app's
@@ -331,7 +395,12 @@ times: ESM-2 was still scoring after 60 minutes and was stopped."
 Nothing in the code changes: Modal's `sweep` and `score` call what the Mac's
 worker calls.
 
-**Except the fold.** Modal's two images hold neither PyMOL nor a Dart SDK, so
+**Except the fold and the evidence.** Modal's images hold no AlphaGenome client,
+skill or `uv` either, so `modal_app.py` asks for no AVI or ClinVar (`evidence`
+stays off) and a protein Modal resolves has neither; `scripts/queue_evidence.py`
+queues them for a Mac's worker afterwards.
+
+Modal's two images hold neither PyMOL nor a Dart SDK, so
 `modal_app.py` asks for no model (`structures` stays off) and a protein Modal
 resolves has no `structure` track: its fold page says there is no model. To
 keep the models after the switch, one of:
@@ -404,6 +473,18 @@ A model already `ready` is left as it is by the first statement, and its row
 would then be replaced by the bake: its two stored objects are not deleted,
 and nothing points at them afterwards.
 
+AVI and ClinVar for a protein built without them (before 2026-10-09, or by
+Modal), or again after a refusal, without SQL by hand:
+
+```sh
+.venv/bin/python scripts/queue_evidence.py --dry-run TTR PRL   # what it would queue; reads only
+.venv/bin/python scripts/queue_evidence.py TTR PRL             # or --all
+```
+
+One transaction a protein, a ready track left as it is, and one of the twenty
+refused. A protein opened while its evidence is pending keeps it missing until
+the app restarts, so queue it while nobody walks it.
+
 On a Mac, `scripts/resolver_worker.sh status` prints the counts by state, the
 last five requests and every bake still waiting, with its last error.
 
@@ -440,3 +521,8 @@ gate on a model, `test_worker_pg.py` every statement from a queued model to a
 ready one, a refused one and a reaped one, and the service serving it, and
 `test_local_worker.py` the modeller with a script in the place of the structure
 bake's interpreter. The bake itself is `pipeline/structure/test_alphafold.py`.
+
+So is the evidence, with `test_impact_local.py` for the AVI bake's driver: its
+verdicts told from its failures, and the bake pointed at the worker's folders,
+with no AlphaGenome client installed. `test_worker_pg.py` holds the order the
+claim keeps, the cascade, the reaper's patience and the build card's step.

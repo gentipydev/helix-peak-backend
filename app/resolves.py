@@ -30,7 +30,9 @@ the database holds to (`resolve_request_inflight_idx`).
 Beside the state, ``build`` says how far a build has got (`BuildReport`), so a
 reader waiting minutes on ESM-2 sees which step it is at, the residues scored
 and the time left. It is read from the request and the constraint bake, whose
-progress the worker writes as the scorer prints it (`store.note_progress`).
+progress the worker writes as the scorer prints it (`store.note_progress`), and
+from the AVI and ClinVar bakes the Mac's worker makes before it: while either
+is queued or running, the step is ``evidence``.
 
 The reader who asked may stop a build (`stop`): there are no accounts, so who
 asked is the asking install's own random id, kept on the request and on the
@@ -151,6 +153,17 @@ limit 1
 """
 
 
+# Whether a protein's variant evidence is still being made: an AVI or ClinVar
+# bake queued or running. The resolver makes both before ESM-2, whose bake
+# waits for them (`store.WAITS_FOR`), so a build that has them is at them.
+_EVIDENCE = """
+select exists (
+    select 1 from bake_job
+    where slug = %s and kind in ('impact', 'clinvar') and state in ('queued', 'running')
+)
+"""
+
+
 def _said(state: str, slug: Optional[str], reason: Optional[str] = None) -> dict:
     return {"slug": slug, "state": state, "reason": reason}
 
@@ -245,7 +258,15 @@ def _build(conn, gene: str, said: dict) -> Optional[dict]:
     state = said["state"]
     if state == "ready":
         row = conn.execute(_BAKE_BUILD, (said["slug"],)).fetchone()
-        return None if row is None else _baked(row)
+        if row is None:
+            return None
+        build = _baked(row)
+        # AlphaGenome's and ClinVar's tracks, made before the scoring. A
+        # protein with neither queued reads as it always has; one stopped
+        # says so first; and the step carries no reason, which would end it.
+        if not build["stopped"] and conn.execute(_EVIDENCE, (said["slug"],)).fetchone()[0]:
+            return _report("evidence", build["elapsed"], transcript=build["transcript"])
+        return build
     if state not in ("pending", "refused", "failed"):
         return None
     row = conn.execute(_REQUEST_BUILD, (gene,)).fetchone()

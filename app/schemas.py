@@ -292,12 +292,15 @@ class BuildReport(BaseModel):
 
     ``step`` is the step it is at, or ended at: ``queued`` (asked for, and no
     worker has taken it), ``record`` (its row and gene record are being made),
+    ``evidence`` (its AlphaGenome and ClinVar tracks, which the Mac's worker
+    makes before ESM-2; never with a reason, since it never ends a build),
     ``scoring`` (its ESM-2 track: waiting for the scorer, the model loading,
     or residues being scored), ``check`` (every residue scored, the alignment
     gate and the upload left) or ``done``. A step that ended without its
     result has ``reason``; a request the resolver declined says so in the
     response's own ``state`` and ``reason`` instead. ``stopped`` says the
-    reader who asked ended it there.
+    reader who asked ended it there. An app older than a step reads the
+    report as none (`BuildStep.fromWire`).
 
     Every number is the database's, so a phone's clock never enters it.
     """

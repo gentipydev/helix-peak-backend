@@ -33,7 +33,7 @@ class FakeCursor:
 class FakePool:
     def __init__(self, protein=None, index=None, latest=None, today=0, queued=True,
                  failing=False, request_build=None, bake_build=None, ask=None, bake=None,
-                 resumable=False, stoppable=True):
+                 resumable=False, stoppable=True, evidence=False):
         self.protein = protein
         self.index = index
         self.latest = latest
@@ -50,6 +50,10 @@ class FakePool:
         # a stop's update still finds what it stops.
         self.resumable = resumable
         self.stoppable = stoppable
+        # Whether `_EVIDENCE` finds an AVI or ClinVar bake queued or running,
+        # and the proteins it was asked about.
+        self.evidence = evidence
+        self.evidence_read = []
         self.inserted = []
         self.built = []
         self.written = []
@@ -84,6 +88,9 @@ class FakePool:
         if flat.startswith("select j.state, case when j.progress_at"):
             self.built.append(("bake", params))
             return FakeCursor([self.bake_build] if self.bake_build else [])
+        if flat.startswith("select exists ( select 1 from bake_job"):
+            self.evidence_read.append(params)
+            return FakeCursor([(self.evidence,)])
         if flat.startswith("select id, state, asker from resolve_request"):
             return FakeCursor([self.ask] if self.ask else [])
         if flat.startswith("select id, state, asker from bake_job"):
@@ -338,6 +345,38 @@ def test_a_scorer_that_never_got_going_ends_at_the_scoring(client, pool):
         job="failed", elapsed=30.0, track="refused", reason=reason))
     assert client.get("/proteins/resolve/BRCA1").json()["build"] == _report(
         "scoring", 30.0, transcript="NM_007294.4", reason=reason)
+
+
+@pytest.mark.parametrize("bake", [
+    _bake(job="queued", ahead=2),
+    # A protein built before its evidence was, given it afterwards: its
+    # scores already in, and the build not over until the evidence is.
+    _bake(job="done", done=1863, total=1863, elapsed=905.0, track="ready"),
+])
+def test_a_protein_whose_evidence_is_being_made_is_at_its_evidence(client, pool, bake):
+    fake = pool(protein="brca1", index=BRCA1, latest=("done", None), bake_build=bake,
+                evidence=True)
+    said = client.get("/proteins/resolve/BRCA1").json()
+    assert (said["state"], said["slug"]) == ("ready", "brca1")
+    # No ahead, no residues, and no reason: a reason would end the build.
+    assert said["build"] == _report("evidence", bake[5], transcript="NM_007294.4")
+    assert fake.evidence_read == [("brca1",)]
+
+
+def test_a_build_stopped_says_so_whatever_its_evidence_is_doing(client, pool):
+    fake = pool(protein="brca1", index=BRCA1, evidence=True, bake_build=_bake(
+        job="stopped", done=450, total=1863, elapsed=400.0))
+    build = client.get("/proteins/resolve/BRCA1").json()["build"]
+    assert (build["step"], build["stopped"]) == ("scoring", True)
+    assert fake.evidence_read == []
+
+
+def test_a_protein_with_no_evidence_under_way_reads_as_it_always_has(client, pool):
+    fake = pool(protein="brca1", index=BRCA1, bake_build=_bake(
+        job="done", done=1863, total=1863, elapsed=905.0, track="ready"))
+    assert client.get("/proteins/resolve/BRCA1").json()["build"] == _report(
+        "done", 905.0, scored=1863, residues=1863, transcript="NM_007294.4")
+    assert fake.evidence_read == [("brca1",)]
 
 
 def test_one_of_the_twenty_has_no_build(client, pool):

@@ -70,8 +70,9 @@ differs from storage. A mismatch means the refactor changed data. Stop; never up
 - `resolves.py`: `/proteins/resolve`. What an ask means (ready, pending, refused, failed, unavailable,
   buildable), the `resolve_request` row, the daily cap and the best-effort wake, and how far a
   build has got (`build`: step, residues scored, seconds left), read from the request and the
-  constraint bake's progress (`0010`), which the worker writes as the scorer prints it; and
-  stopping a build for the install that asked (`asker`, `0011`).
+  constraint bake's progress (`0010`), which the worker writes as the scorer prints it, and
+  from the AVI and ClinVar bakes made before it (step `evidence`); and stopping a build for
+  the install that asked (`asker`, `0011`).
 - `schemas.py`: pydantic response models that mirror the Dart entities field for field.
 - `router.py`: every non-health endpoint, with the NCBI 404/502 and catalog 503 mappings.
 
@@ -104,7 +105,8 @@ with the uploader's credentials in a Modal secret, calling the record builder an
 scorer unchanged. A protein it resolves is a `protein` row with a null `catalog_order` and
 `resolver_version` 1, so it never joins `/catalog`. It may never write over a curated row
 (the upsert is guarded), and a change to a baker it calls needs the same sha256 proof:
-`structure/bake.py` is one of them now (its `export` and `assemble` make every model).
+`structure/bake.py` is one of them now (its `export` and `assemble` make every model), and so
+are `impact/bake_impact.py` and `clinvar/bake_clinvar.py` (every protein's variant evidence).
 
 Until Modal has a payment method, the worker is a launchd agent on the dev Mac:
 `local_worker.py`, the same `worker.sweep` and `worker.score_all`, with `.env` for the secret
@@ -126,6 +128,12 @@ things follow for anyone working in this checkout:
   stored scene was compiled by (`alphafold.FLUTTER_SCENE`); otherwise no model is claimed.
   `RESOLVER_STRUCTURES=0` in `.env` turns it off. It writes the row's `structure` column, the one
   column a bake writes on `protein`, and only where `catalog_order is null`.
+- And each protein's AVI and ClinVar tracks, after the model and before the scoring, which
+  waits for them (`store.WAITS_FOR`): the twenty's bakers, unchanged, AVI in
+  `pipeline/impact/venv` (`impact_local.py`, with `ALPHAGENOME_API_KEY` from `.env` and `uv`)
+  and ClinVar in the worker's own process, its raw responses deleted once the bake is done.
+  AVI refused refuses ClinVar too: its records are placed by AVI's map. `RESOLVER_EVIDENCE=0`
+  turns it off; `scripts/queue_evidence.py` queues it for a protein built without it.
 
 ## Checklist: adding a track kind
 

@@ -15,6 +15,12 @@ pipeline/impact/venv/bin/python -u pipeline/impact/bake_impact.py --all
 `--map-only` builds and prints the coordinate map without scoring anything,
 which is the cheap way to check a new row before spending any quota.
 
+Which proteins get one: the twenty, baked by hand as above, and since
+2026-10-09 every protein built on demand, by the resolver's worker on the Mac
+(`pipeline/resolver/impact_local.py`, "The variant evidence" in its README).
+That calls `bake()` unchanged, with its files in the worker's own folders; a
+gene with no intron skips only `check_biology` there, the user's choice.
+
 The environment is `alphagenome` and nothing else:
 
 ```sh
