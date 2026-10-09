@@ -32,7 +32,7 @@ What it decides, and the rule for each:
   sulfurs within 2.5 A of each other. The model file names none, so the bake
   is handed a copy of it that does.
 - **Size.** Cartoon sampling by length, lowered until the compiled scene is
-  inside the budget every model is held to, and refused if none is.
+  inside the budget a model made on demand is held to, and refused if none is.
 
 A refusal is a `Refused`, whose message is the sentence a reader is shown.
 Anything else that goes wrong (the API not answering, PyMOL or the importer
@@ -107,6 +107,14 @@ FLUTTER_SCENE = "0.23.0"
 BYTES_PER_RESIDUE_SAMPLE = 440
 TARGET_BYTES = 500_000
 MAX_SAMPLING = 8
+
+# The most a model made on demand may compile to. More than the 900 kB the
+# twenty are held to (`bake.FSCENEB_BUDGET_BYTES`), because at the coarsest
+# sampling there is, a long protein is more: about 480 B a helical residue, so
+# mTOR's 2,549 are 1.22 MB. This holds every chain AlphaFold DB models, which
+# stop at 2,700 residues; some 150,000 vertices, which is light for a phone.
+# The user's decision, 2026-10-09.
+BUDGET_BYTES = 1_300_000
 
 # The export frame's audit, by `folding/check_folding.py`'s measures: a CA lies
 # on its ribbon, within the 0.25 A the twenty's are held to (a tube's radius,
@@ -601,7 +609,7 @@ def build(job: Job, workspace: Path, app: Path, dart: str = "dart", get: Get = _
 
     from pipeline.structure import bake
 
-    budget = bake.FSCENEB_BUDGET_BYTES if budget is None else budget
+    budget = BUDGET_BYTES if budget is None else budget
     workspace.mkdir(parents=True, exist_ok=True)
     whole = workspace / f"{entry.entry_id}.pdb"
     whole.write_bytes(raw)

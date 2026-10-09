@@ -202,7 +202,7 @@ each rule; in short:
 | colour | pLDDT's four bands (90, 70, 50), one node each: `plddtVeryHigh`, `plddtConfident`, `plddtLow`, `plddtVeryLow` |
 | bridges | UniProt's pairs, each drawn only where the model's sulfurs are within 2.5 Å, as the `bonds` node |
 | shape | a cartoon; a tube where PyMOL finds no helix or strand |
-| size | sampling by length, lowered until the compiled scene fits `FSCENEB_BUDGET_BYTES`, refused if none does |
+| size | sampling by length, lowered until the compiled scene fits `alphafold.BUDGET_BYTES` (1.3 MB), refused if none does |
 
 The worker bakes it (the resolver's README). By hand, from what the service
 serves of a protein, writing nothing anywhere but `--out`:
@@ -249,12 +249,16 @@ Measured on 2026-10-08, by hand:
 | B2M | 21–119 | 97.0 | 8 | 210 kB, bridge 45–100 at 2.02 Å |
 | OCA2 | 1–838 | 73.8 | 1 | 384 kB |
 | TSC2 | 1–1,807 | 67.9 | 1 | 767 kB |
-| filamin A | 1–2,647 | 76.5 | 1 | 914 kB: over the budget, refused |
-| mTOR | 1–2,549 | 78.0 | 1 | 1.22 MB: over the budget, refused |
+| filamin A | 1–2,647 | 76.5 | 1 | 914 kB |
+| mTOR | 1–2,549 | 78.0 | 1 | 1.22 MB |
 
 At sampling 1 a helical protein costs about 480 B a residue and a strand-rich
-one about 350 B, so the 900 kB every scene is held to stops between 1,900 and
-2,600 residues, short of AlphaFold DB's own limit of 2,700. Insulin (48.0) and
+one about 350 B, so the 900 kB the twenty's scenes are held to would stop
+between 1,900 and 2,600 residues, short of AlphaFold DB's own limit of 2,700,
+and refuse some 240 buildable proteins as too large. A model made on demand
+is therefore held to 1.3 MB (`alphafold.BUDGET_BYTES`, the user's decision of
+2026-10-09), which the longest chain AlphaFold DB models fits; the twenty keep
+their 900 kB. Insulin (48.0) and
 BRCA1 (41.6) are refused at the gate. Of 150 reviewed human proteins sampled
 that day, AlphaFold DB's sequence was UniProt's current one for 147; the other
 three differ in length, and are refused as another sequence.

@@ -262,6 +262,14 @@ def test_sampling_falls_as_the_span_grows():
     assert set(chosen) <= set(range(1, 9))
 
 
+def test_a_model_made_on_demand_has_room_for_the_longest_chain_there_is():
+    # At sampling 1 a helical residue is about 480 B of compiled scene (mTOR:
+    # 2,549 residues, 1,219,176 B), and AlphaFold DB stops at 2,700.
+    assert alphafold.BUDGET_BYTES == 1_300_000
+    assert alphafold.MODEL_LIMIT * 480 <= alphafold.BUDGET_BYTES
+    assert 1_219_176 <= alphafold.BUDGET_BYTES
+
+
 def test_per_cents_add_to_a_hundred():
     assert alphafold.percentages((0.774, 0.161, 0.065, 0.0)) == [77, 16, 7, 0]
     assert alphafold.percentages((1 / 3, 1 / 3, 1 / 3, 0.0)) == [34, 33, 33, 0]
@@ -464,7 +472,7 @@ def test_sarcolipin_is_baked_whole(tmp_path):
     assert [c["node"] for c in built.chains] == list(meshes)
     everything = np.vstack([m.positions for m in meshes.values()])
     assert abs(np.ptp(everything, axis=0).max() - 1.0) < 1e-6      # cut to the twenty's measure
-    assert 0 < len(built.scene) <= 900_000
+    assert 0 < len(built.scene) <= alphafold.BUDGET_BYTES
     assert built.chrome["count"] == 31 and built.chrome["modelled"] is None
     said = built.provenance
     assert (said["entry"], said["model_version"], said["licence"]) == (

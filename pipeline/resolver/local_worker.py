@@ -1039,8 +1039,10 @@ def main(arguments: Optional[list] = None) -> int:
     stop = Stop()
     _listen(stop)
 
-    log.info("started (pid %d): asking the queue every %g s, scoring with %s, state in %s",
-             os.getpid(), settings.poll, settings.esm_python, settings.state)
+    log.info("started (pid %d): asking the queue every %g s, scoring with %s, %s, state in %s",
+             os.getpid(), settings.poll, settings.esm_python,
+             f"making models with {settings.structure_python}" if settings.structures
+             else "making no models", settings.state)
     for note in settings.notes:
         log.warning("%s", note)
     try:
