@@ -186,6 +186,115 @@ secondary structure to draw — oxytocin's nine residues — takes
 `representation="tube"` instead, which is `cartoon tube` and not
 `cartoon_trace_atoms`: the latter threads the tube through the side chains.
 
+## Experimental entries, for proteins built on demand
+
+A protein resolved on demand (`pipeline/resolver/`) has nobody to choose an
+entry for it. A rule does, over every PDB entry of the protein, and AlphaFold
+DB's model ([below](#alphafold-db-models-for-proteins-built-on-demand)) is for
+the protein a whole, successful search finds nothing suitable for. Until the
+worker runs it, this is a choice that is made and reported and nothing more:
+`scripts/dry_fold.py` writes a report and nothing else.
+
+| | |
+|---|---|
+| `pdb_search.py` | what there is: every polymer entity RCSB's search maps to the UniProt accession (paged, experimental only), and of each, from RCSB's data API, its source organism, its SIFTS alignment, each chain's unplaced residues and its residue-by-residue validation; UniProt's domains, and Pfam's |
+| `pdb_policy.py` | which of it may be drawn, each rejection with its reason, and the order of what may: **policy 1** |
+| `normalize.py` | the entry's own file (PDBe's SIFTS-enriched mmCIF, read by `mmcif.py`) held to the choice residue by residue, and from it the one model, one conformation and one numbering a bake reads |
+| `pdb_words.py` | the fold page's words, from the entry's own numbers |
+| `fold_job.py` | all of it for one protein, ending `chosen`, `none` or `incomplete` |
+
+An outage is none of those three. A search that could not be finished, a page
+that did not arrive, a file that cannot be read: each is raised, and asked
+again. "Nothing suitable" is said only of a search that ran to its end.
+
+**Policy 1**, frozen on 2026-10-12. Every number is a constant of
+`pdb_policy.py` (and `normalize.py`, for what only the file shows); a change
+to one is policy 2, and what policy 1 decided is not reused.
+
+| may be drawn | |
+|---|---|
+| method | X-ray, neutron or electron crystallography, cryo-EM, solution or solid-state NMR. No computed or integrative model |
+| organism | the whole entity's source is human. The expression host is not read; a fusion with another organism's protein is out |
+| mapping | SIFTS's, to the canonical sequence, in one unbroken stretch. An insertion, a deletion or a chimera splits it, and stretches are never joined. An entity SIFTS has not mapped is found by sequence (95% identity) and laid on the record only where it fits once, without a gap |
+| coverage | 70% of a mature product placed. Otherwise 90% of an annotated domain of 30 residues or more (UniProt's Domain, Repeat and Zinc finger; Pfam's where UniProt names none), drawn with at most 10 residues either side |
+| fidelity | at most 2% of the residues drawn are not the record's, rounded down, so a peptide under 50 residues may differ nowhere |
+| crystal | 3.0 Å or better, R-free 0.30 or under; of the residues drawn, at most 10% RSRZ outliers and 20% with RSCC under 0.8 |
+| cryo-EM | 4.0 Å or better; at most half of the residues drawn fitting the map poorly (a Q-score more than 0.10 under what the resolution predicts) |
+| NMR | at most 5% Ramachandran outliers |
+| any method | at most 30% of the residues drawn in a clash |
+| its own file | one model (an NMR entry's representative conformer, never an average), one conformation a residue, no break in the chain, chains drawn together touching, a bridge only where its sulfurs are within 2.5 Å |
+
+Coverage counts residues the entry places, each once: not the construct's
+length, and not its copies. Chains are drawn together (at most three, one
+node each) only where they are different products of the one precursor, in
+one entry, and touch.
+
+Ranked, among what may be drawn, in this order:
+
+1. A mature product before a domain.
+2. More of a precursor's products drawn together before fewer.
+3. Coverage, in tenths below the best: a few flexible residues never beat a
+   better experiment.
+4. A mature construct before one that places five or more residues the
+   precursor loses.
+5. Fewer residues that are not the gene's.
+6. A method with a resolution before one without.
+7. A region measured residue by residue before one that is not.
+8. The finer resolution, then the better fit.
+9. Entry id, then chain id, so the same inputs choose the same chains.
+
+Three of these were the user's to settle, on the report's numbers:
+
+- **5 before 6 to 8: wild type first.** R5.4's "prefer wild-type". CFTR draws
+  9DW5 (3.8 Å, the gene's own residues) and not 9MXL (2.1 Å, one substitution).
+  With the experiment first, 11 of the 52 picks change.
+- **6 before 7: a resolution first.** An old crystal with no structure factors
+  cannot be measured residue by residue, and an NMR model can. Relaxin keeps
+  6RLX (1.5 Å), the entry chosen for it by hand; the other order draws 2MV1.
+- **Cryo-EM: half, not 30%.** A hormone on its receptor and a loop in a 3 to
+  4 Å map sit under the map's average. At 30% oxytocin has no entry left, and
+  mTOR loses its fullest (8ERA, 2,177 residues placed).
+
+**The words** (`pdb_words.py`). The header names the entry and the span, so
+the sentence carries the method, the resolution and how much is placed, in
+two lines at most:
+
+| drawn | label | sentence |
+|---|---|---|
+| one chain | the fold | X-ray, 1.65 Å. 149 of these 153 residues placed. |
+| one chain of a symmetric assembly of this protein alone | the subunit | X-ray, 1.07 Å. One chain of two; every residue placed. |
+| a precursor's chains together | the mature chains | X-ray, 0.92 Å. Two chains, joined by two disulfide bridges. |
+| one of a precursor's products | one of its products | X-ray, 1.10 Å. Glucagon, one of six products; 28 of 29 placed. |
+| a domain | the P53 DNA-binding domain | X-ray, 1.32 Å. Only this part is drawn; 192 of these 200 residues placed. |
+
+A residue the entry does not place is never called disordered: an experiment
+that did not see it has not shown that. A partner, a receptor or an antibody
+fragment beside the chain is named to a screen reader only, as not drawn.
+
+**The dry run.** Against live RCSB, PDBe and UniProt; the database is read in
+read-only transactions; nothing is queued, stored or uploaded:
+
+```sh
+.venv/bin/python scripts/dry_fold.py --out /tmp/folds TTR INSL3     # resolved as the worker would
+.venv/bin/python scripts/dry_fold.py --out /tmp/folds --curated --built
+```
+
+`report.md` and `report.json` give, for each protein, the winner, the
+runners-up and why the winner beat the next, every rejection by its reason,
+each candidate's fate against its own file, and the words. On 2026-10-12, over
+the twenty (as biological cases: their entries stay the ones chosen by hand),
+the nine proteins built by then, and 23 chosen to be hard:
+
+| | |
+|---|---|
+| 43 | an entry passes |
+| 7 | none does: no entry at all (CHRDL2, OCA2); fragments under 70% of the product (APLN, GAL, PTH); chains that fit their maps poorly (PIEZO1); and erythropoietin, whose 1EER differs at 5 residues where 3 are allowed and whose other two entries fail on quality |
+| 2 | the resolver refuses the protein before any search (CALCA, KCNQ1) |
+
+`fixtures/pdb/` stands in for the network in the tests, which hold each rule
+on recorded answers and on small files written where one thing is wrong at a
+time.
+
 ## AlphaFold DB models, for proteins built on demand
 
 A protein resolved on demand (`pipeline/resolver/`) has no entry chosen by

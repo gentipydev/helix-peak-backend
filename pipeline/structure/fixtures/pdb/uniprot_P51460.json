@@ -1,0 +1,106 @@
+{
+ "primaryAccession": "P51460",
+ "sequence": {
+  "value": "MDPRLPAWALVLLGPALVFALGPAPTPEMREKLCGHHFVRALVRVCGGPRWSTEARRPATGGDRELLQWLERRHLLHGLVADSNLTLGPGLQPLPQTSHHHRHHRAAATNPARYCCLSGCTQQDLLTLCPY"
+ },
+ "features": [
+  {
+   "type": "Signal",
+   "location": {
+    "start": {
+     "value": 1,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 20,
+     "modifier": "EXACT"
+    }
+   },
+   "description": ""
+  },
+  {
+   "type": "Peptide",
+   "location": {
+    "start": {
+     "value": 21,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 55,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "Insulin-like 3 B chain"
+  },
+  {
+   "type": "Propeptide",
+   "location": {
+    "start": {
+     "value": 58,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 104,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "C peptide like"
+  },
+  {
+   "type": "Peptide",
+   "location": {
+    "start": {
+     "value": 106,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 131,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "Insulin-like 3 A chain"
+  },
+  {
+   "type": "Disulfide bond",
+   "location": {
+    "start": {
+     "value": 34,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 116,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "Interchain (between B and A chains)"
+  },
+  {
+   "type": "Disulfide bond",
+   "location": {
+    "start": {
+     "value": 46,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 129,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "Interchain (between B and A chains)"
+  },
+  {
+   "type": "Disulfide bond",
+   "location": {
+    "start": {
+     "value": 115,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 120,
+     "modifier": "EXACT"
+    }
+   },
+   "description": ""
+  }
+ ]
+}

@@ -1,0 +1,330 @@
+{
+ "primaryAccession": "P00734",
+ "sequence": {
+  "value": "MAHVRGLQLPGCLALAALCSLVHSQHVFLAPQQARSLLQRVRRANTFLEEVRKGNLERECVEETCSYEEAFEALESSTATDVFWAKYTACETARTPRDKLAACLEGNCAEGLGTNYRGHVNITRSGIECQLWRSRYPHKPEINSTTHPGADLQENFCRNPDSSTTGPWCYTTDPTVRRQECSIPVCGQDQVTVAMTPRSEGSSVNLSPPLEQCVPDRGQQYQGRLAVTTHGLPCLAWASAQAKALSKHQDFNSAVQLVENFCRNPDGDEEGVWCYVAGKPGDFGYCDLNYCEEAVEEETGDGLDEDSDRAIEGRTATSEYQTFFNPRTFGSGEADCGLRPLFEKKSLEDKTERELLESYIDGRIVEGSDAEIGMSPWQVMLFRKSPQELLCGASLISDRWVLTAAHCLLYPPWDKNFTENDLLVRIGKHSRTRYERNIEKISMLEKIYIHPRYNWRENLDRDIALMKLKKPVAFSDYIHPVCLPDRETAASLLQAGYKGRVTGWGNLKETWTANVGKGQPSVLQVVNLPIVERPVCKDSTRIRITDNMFCAGYKPDEGKRGDACEGDSGGPFVMKSPFNNRWYQMGIVSWGEGCDRDGKYGFYTHVFRLKKWIQKVIDQFGE"
+ },
+ "features": [
+  {
+   "type": "Signal",
+   "location": {
+    "start": {
+     "value": 1,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 24,
+     "modifier": "EXACT"
+    }
+   },
+   "description": ""
+  },
+  {
+   "type": "Propeptide",
+   "location": {
+    "start": {
+     "value": 25,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 43,
+     "modifier": "EXACT"
+    }
+   },
+   "description": ""
+  },
+  {
+   "type": "Chain",
+   "location": {
+    "start": {
+     "value": 44,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 622,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "Prothrombin"
+  },
+  {
+   "type": "Peptide",
+   "location": {
+    "start": {
+     "value": 44,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 198,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "Activation peptide fragment 1"
+  },
+  {
+   "type": "Peptide",
+   "location": {
+    "start": {
+     "value": 199,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 327,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "Activation peptide fragment 2"
+  },
+  {
+   "type": "Chain",
+   "location": {
+    "start": {
+     "value": 315,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 363,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "Thrombin light chain"
+  },
+  {
+   "type": "Chain",
+   "location": {
+    "start": {
+     "value": 364,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 622,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "Thrombin heavy chain"
+  },
+  {
+   "type": "Domain",
+   "location": {
+    "start": {
+     "value": 44,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 89,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "Gla"
+  },
+  {
+   "type": "Domain",
+   "location": {
+    "start": {
+     "value": 108,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 186,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "Kringle 1"
+  },
+  {
+   "type": "Domain",
+   "location": {
+    "start": {
+     "value": 213,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 291,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "Kringle 2"
+  },
+  {
+   "type": "Domain",
+   "location": {
+    "start": {
+     "value": 364,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 618,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "Peptidase S1"
+  },
+  {
+   "type": "Disulfide bond",
+   "location": {
+    "start": {
+     "value": 60,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 65,
+     "modifier": "EXACT"
+    }
+   },
+   "description": ""
+  },
+  {
+   "type": "Disulfide bond",
+   "location": {
+    "start": {
+     "value": 90,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 103,
+     "modifier": "EXACT"
+    }
+   },
+   "description": ""
+  },
+  {
+   "type": "Disulfide bond",
+   "location": {
+    "start": {
+     "value": 108,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 186,
+     "modifier": "EXACT"
+    }
+   },
+   "description": ""
+  },
+  {
+   "type": "Disulfide bond",
+   "location": {
+    "start": {
+     "value": 129,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 169,
+     "modifier": "EXACT"
+    }
+   },
+   "description": ""
+  },
+  {
+   "type": "Disulfide bond",
+   "location": {
+    "start": {
+     "value": 157,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 181,
+     "modifier": "EXACT"
+    }
+   },
+   "description": ""
+  },
+  {
+   "type": "Disulfide bond",
+   "location": {
+    "start": {
+     "value": 213,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 291,
+     "modifier": "EXACT"
+    }
+   },
+   "description": ""
+  },
+  {
+   "type": "Disulfide bond",
+   "location": {
+    "start": {
+     "value": 234,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 274,
+     "modifier": "EXACT"
+    }
+   },
+   "description": ""
+  },
+  {
+   "type": "Disulfide bond",
+   "location": {
+    "start": {
+     "value": 262,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 286,
+     "modifier": "EXACT"
+    }
+   },
+   "description": ""
+  },
+  {
+   "type": "Disulfide bond",
+   "location": {
+    "start": {
+     "value": 336,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 482,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "Interchain (between light and heavy chains)"
+  },
+  {
+   "type": "Disulfide bond",
+   "location": {
+    "start": {
+     "value": 391,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 407,
+     "modifier": "EXACT"
+    }
+   },
+   "description": ""
+  },
+  {
+   "type": "Disulfide bond",
+   "location": {
+    "start": {
+     "value": 536,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 550,
+     "modifier": "EXACT"
+    }
+   },
+   "description": ""
+  },
+  {
+   "type": "Disulfide bond",
+   "location": {
+    "start": {
+     "value": 564,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 594,
+     "modifier": "EXACT"
+    }
+   },
+   "description": ""
+  }
+ ]
+}

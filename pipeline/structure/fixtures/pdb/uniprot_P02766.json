@@ -1,0 +1,36 @@
+{
+ "primaryAccession": "P02766",
+ "sequence": {
+  "value": "MASHRLLLLCLAGLVFVSEAGPTGTGESKCPLMVKVLDAVRGSPAINVAVHVFRKAADDTWEPFASGKTSESGELHGLTTEEEFVEGIYKVEIDTKSYWKALGISPFHEHAEVVFTANDSGPRRYTIAALLSPYSYSTTAVVTNPKE"
+ },
+ "features": [
+  {
+   "type": "Signal",
+   "location": {
+    "start": {
+     "value": 1,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 20,
+     "modifier": "EXACT"
+    }
+   },
+   "description": ""
+  },
+  {
+   "type": "Chain",
+   "location": {
+    "start": {
+     "value": 21,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 147,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "Transthyretin"
+  }
+ ]
+}

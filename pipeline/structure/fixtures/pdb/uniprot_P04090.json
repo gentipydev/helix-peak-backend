@@ -1,0 +1,106 @@
+{
+ "primaryAccession": "P04090",
+ "sequence": {
+  "value": "MPRLFFFHLLGVCLLLNQFSRAVADSWMEEVIKLCGRELVRAQIAICGMSTWSKRSLSQEDAPQTPRPVAEIVPSFINKDTETINMMSEFVANLPQELKLTLSEMQPALPQLQQHVPVLKDSSLLFEEFKKLIRNRQSEAADSSPSELKYLGLDTHSRKKRQLYSALANKCCHVGCTKRSLARFC"
+ },
+ "features": [
+  {
+   "type": "Signal",
+   "location": {
+    "start": {
+     "value": 1,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 24,
+     "modifier": "EXACT"
+    }
+   },
+   "description": ""
+  },
+  {
+   "type": "Peptide",
+   "location": {
+    "start": {
+     "value": 25,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 53,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "Relaxin B chain"
+  },
+  {
+   "type": "Propeptide",
+   "location": {
+    "start": {
+     "value": 56,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 157,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "Connecting peptide"
+  },
+  {
+   "type": "Peptide",
+   "location": {
+    "start": {
+     "value": 162,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 185,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "Relaxin A chain"
+  },
+  {
+   "type": "Disulfide bond",
+   "location": {
+    "start": {
+     "value": 35,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 172,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "Interchain (between B and A chains)"
+  },
+  {
+   "type": "Disulfide bond",
+   "location": {
+    "start": {
+     "value": 47,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 185,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "Interchain (between B and A chains)"
+  },
+  {
+   "type": "Disulfide bond",
+   "location": {
+    "start": {
+     "value": 171,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 176,
+     "modifier": "EXACT"
+    }
+   },
+   "description": ""
+  }
+ ]
+}

@@ -1,0 +1,134 @@
+{
+ "primaryAccession": "P04156",
+ "sequence": {
+  "value": "MANLGCWMLVLFVATWSDLGLCKKRPKPGGWNTGGSRYPGQGSPGGNRYPPQGGGGWGQPHGGGWGQPHGGGWGQPHGGGWGQPHGGGWGQGGGTHSQWNKPSKPKTNMKHMAGAAAAGAVVGGLGGYMLGSAMSRPIIHFGSDYEDRYYRENMHRYPNQVYYRPMDEYSNQNNFVHDCVNITIKQHTVTTTTKGENFTETDVKMMERVVEQMCITQYERESQAYYQRGSSMVLFSSPPVILLISFLIFLIVG"
+ },
+ "features": [
+  {
+   "type": "Signal",
+   "location": {
+    "start": {
+     "value": 1,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 22,
+     "modifier": "EXACT"
+    }
+   },
+   "description": ""
+  },
+  {
+   "type": "Chain",
+   "location": {
+    "start": {
+     "value": 23,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 230,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "Major prion protein"
+  },
+  {
+   "type": "Propeptide",
+   "location": {
+    "start": {
+     "value": 231,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 253,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "Removed in mature form"
+  },
+  {
+   "type": "Repeat",
+   "location": {
+    "start": {
+     "value": 51,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 59,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "1"
+  },
+  {
+   "type": "Repeat",
+   "location": {
+    "start": {
+     "value": 60,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 67,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "2"
+  },
+  {
+   "type": "Repeat",
+   "location": {
+    "start": {
+     "value": 68,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 75,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "3"
+  },
+  {
+   "type": "Repeat",
+   "location": {
+    "start": {
+     "value": 76,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 83,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "4"
+  },
+  {
+   "type": "Repeat",
+   "location": {
+    "start": {
+     "value": 84,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 91,
+     "modifier": "EXACT"
+    }
+   },
+   "description": "5"
+  },
+  {
+   "type": "Disulfide bond",
+   "location": {
+    "start": {
+     "value": 179,
+     "modifier": "EXACT"
+    },
+    "end": {
+     "value": 214,
+     "modifier": "EXACT"
+    }
+   },
+   "description": ""
+  }
+ ]
+}
