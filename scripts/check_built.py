@@ -4,13 +4,16 @@ the stored bytes, the database rows and UniProt's own features.
     .venv/bin/python scripts/check_built.py ANTXR1        # any device, printed
     .venv/bin/python scripts/check_built.py ANTXR1 mps    # scored by the Mac's worker
     .venv/bin/python scripts/check_built.py ANTXR1 cuda   # scored on Modal
+    .venv/bin/python scripts/check_built.py HERC2 fold    # its model and fold alone
 
 From the repository root: the rows are read through `.env`'s DATABASE_URL.
 Nothing here writes. It prints what it found and exits 1 if anything is wrong.
 
 It checks a protein whose ESM-2 track is ready. One whose scores the scorer
-refused has no track to check here; the app's test/live_resolved_check.dart
-reads it as the app does (LIVE_EXPECT=refused).
+refused, or whose scoring was stopped, has no track to check here; the app's
+test/live_resolved_check.dart reads it as the app does (LIVE_EXPECT=refused,
+or absent), and `fold` checks its model and its fold alone, which no score
+bears on: what a backfill of folds needs said of every protein.
 
 Its model is checked as it stands: ready (the stored scene and the `.glb` it
 was compiled from, each to its digest, and the fold page's words and chains to
@@ -381,7 +384,45 @@ def main(gene: str, device: str | None) -> int:
     return 1 if wrong else 0
 
 
+def fold_alone(gene: str) -> int:
+    """A protein's model and its fold, and nothing else of it: for one whose
+    ESM-2 track is not ready, which `main` cannot read."""
+    slug = gene.lower()
+    print(f"== {gene}: its model and fold alone ==")
+    row = get(f"/protein/{slug}")
+    tracks = get(f"/protein/{slug}/tracks")
+    hold(row["catalog_order"] is None, "catalog_order is null (never joins the list)")
+    hold(row["tracks"] == {kind: track["state"] for kind, track in tracks.items()},
+         "the row's bare states agree with its track rows")
+    record_bytes = fetch(tracks["record"]["url"])
+    hold(hashlib.sha256(record_bytes).hexdigest() == tracks["record"]["sha256"]
+         and len(record_bytes) == tracks["record"]["bytes"], "record bytes match their sha256 and size")
+    structure(row, tracks, json.loads(record_bytes)["protein"]["translation"])
+    with psycopg.connect(settings.database_url, prepare_threshold=None) as conn:
+        with conn.transaction():
+            conn.execute("set transaction read only")
+            drawn = conn.execute(
+                "select id, source, state, structure_track ->> 'sha256', "
+                "folding_track ->> 'sha256' from fold_generation where slug = %s and active",
+                (slug,)).fetchone()
+            folds = conn.execute(
+                "select id, source, state, active from fold_generation where slug = %s "
+                "order by id", (slug,)).fetchall()
+    print(f"  folds kept: {folds}")
+    if drawn is not None:
+        folding = tracks.get("folding") or {}
+        hold(drawn[3] == tracks["structure"].get("sha256") and drawn[4] == folding.get("sha256"),
+             f"the fold the database records as drawn (generation {drawn[0]}, {drawn[1]} "
+             f"{drawn[2]}) is the one served")
+        hold((drawn[1] == "pdb") == (folding.get("state") == "ready"),
+             "an experimental fold, and only one, is animated")
+    print(f"== {gene}: {'ALL OK' if not wrong else str(len(wrong)) + ' WRONG'} ==")
+    return 1 if wrong else 0
+
+
 if __name__ == "__main__":
     if len(sys.argv) not in (2, 3):
         raise SystemExit(__doc__)
+    if sys.argv[2:] == ["fold"]:
+        sys.exit(fold_alone(sys.argv[1]))
     sys.exit(main(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None))

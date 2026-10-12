@@ -397,7 +397,9 @@ verdict, and the bake is tried again.
   tools are.
 - **A protein it built** is checked by `.venv/bin/python scripts/check_built.py
   <GENE> mps`: the service, the stored bytes against their sha256, the rows and
-  UniProt's features, ending `ALL OK`. The app's
+  UniProt's features, ending `ALL OK`. One whose ESM-2 track is not ready (the
+  scorer refused it, or its scoring was stopped) is checked for its model and
+  fold alone, `scripts/check_built.py <GENE> fold`. The app's
   `test/live_resolved_check.dart` reads it as the app does; its header says how
   to run it.
 
@@ -541,7 +543,9 @@ its build is never held. An experimental fold that stands for the same record,
 regions and rule is left as it is unless `--refresh`.
 
 Every fold published is a generation (`fold_generation`), and so is the one a
-protein drew before its first since 0012. Put one back, whole:
+protein drew before its first since 0012: an AlphaFold model, kept when the
+next is published, or the sentence why it had none, kept when its fold is
+queued again, before its track says a model is on its way. Put one back, whole:
 
 ```sh
 .venv/bin/python scripts/fold_rollback.py TTR --list       # its folds, newest first

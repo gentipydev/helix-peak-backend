@@ -286,6 +286,36 @@ def test_a_fold_is_put_back_and_forward_whole(conn, offline):
         store.roll_back_fold(conn, "ins", to=9)
 
 
+def test_a_refusal_stood_on_before_is_kept_when_its_fold_is_queued_again(conn, offline):
+    """A protein with no model before 0012 (AlphaFold DB had none of it), queued
+    for a search: its refusal is a generation before its track says a model is
+    on its way, so the sentence it showed can be put back."""
+    storage = Storage()
+    _resolved_with_a_model_queued(conn, offline, storage)
+    why = "AlphaFold DB has no model of proteins over 2,700 residues; this one has 4,834."
+    job = store.claim_bake(conn, "structure")
+    store.refuse_bake(conn, job["id"], "ins", "structure", why)
+    refused = _fold(conn)
+    assert refused["tracks"] == {"structure": ("refused", None, why)}
+    assert refused["generations"] == []
+
+    assert store.queue_structure(conn, "ins", policy=POLICY) == "queued"
+    queued = _fold(conn)
+    assert queued["tracks"] == {"structure": ("pending", None, None)}
+    assert queued["generations"] == [(1, "none", "refused", False)]
+
+    worker.structure_next(conn, storage, model=_modeller(a_fold()))
+    assert _fold(conn)["generations"] == [(1, "none", "refused", False),
+                                          (2, "pdb", "ready", True)]
+    # Put back: no model, no words for one, and the sentence it showed.
+    assert store.roll_back_fold(conn, "ins") == {"from": 2, "to": 1, "source": "none",
+                                                 "state": "refused"}
+    back = _fold(conn)
+    assert back["structure"] is None
+    assert back["tracks"] == {"structure": ("refused", None, why),
+                              "folding": ("absent", None, None)}
+
+
 def test_a_protein_with_one_fold_has_nothing_to_put_back(conn, offline):
     storage = Storage()
     _resolved_with_a_model_queued(conn, offline, storage)

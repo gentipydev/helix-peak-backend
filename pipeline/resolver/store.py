@@ -829,6 +829,9 @@ def queue_structure(conn, slug: str, *, refresh: bool = False, policy: Optional[
 
     - `queued`: a bake is queued, and a track with no model yet says one is
       coming (`pending`). A model it draws is kept until another is published.
+      A refusal it stood on before any fold was published here is kept as a
+      generation first (`_snapshot`): its sentence goes when its track says a
+      model is on its way, and could not be put back otherwise.
     - `waiting`: one is queued or running already.
     - `kept`: its experimental fold stands for the same record, regions and
       rule (`pinned`); `refresh` searches all the same.
@@ -838,7 +841,7 @@ def queue_structure(conn, slug: str, *, refresh: bool = False, policy: Optional[
     with conn.transaction():
         found = conn.execute(
             f"""
-            select r.sha256, {_REGIONS} from protein p
+            select r.sha256, {_REGIONS}, p.structure from protein p
             left join protein_track r on r.slug = p.slug and r.kind = 'record'
                                      and r.state = 'ready'
             where p.slug = %s and p.catalog_order is null and p.resolver_version > 0
@@ -856,6 +859,9 @@ def queue_structure(conn, slug: str, *, refresh: bool = False, policy: Optional[
         if not refresh and policy is not None and pinned(fold_prior(conn, slug), found[0],
                                                          found[1], policy):
             return "kept"
+        standing = _track(conn, slug, "structure")
+        if standing is not None and standing["state"] == "refused":
+            _snapshot(conn, slug, found[2])
         conn.execute(
             """
             insert into protein_track (slug, kind, state, reason, format, provenance)
