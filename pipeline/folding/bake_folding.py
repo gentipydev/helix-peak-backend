@@ -265,12 +265,22 @@ def ribbon_at(ribbon: np.ndarray, ca: np.ndarray, before: np.ndarray, after: np.
 
 
 def chain_track(target: Target, node: str, pdb_chain: str, translation: str,
-                helices: dict, frame: Frame, ribbon: np.ndarray | None = None) -> dict:
+                helices: dict, frame: Frame, ribbon: np.ndarray | None = None, *,
+                entry: Path | None = None, offset: int | None = None) -> dict:
+    """One chain's residues, placed in the model's frame.
+
+    [entry] reads another file than the entry's own under `structures/`: a
+    working copy of an entry chosen for a protein built on demand
+    (`structure/normalize.working_copy`). [offset] is the numbering offset
+    where it is known (a working copy is numbered as the precursor, so 0),
+    and not to be guessed from the letters, which a repeat or a short peptide
+    can fool. Both default to what the twenty are baked with.
+    """
     structure = target.structure
-    residues = chain_residues(structure, pdb_chain)
+    residues = chain_residues(structure, pdb_chain, entry)
     if not residues:
         raise ValueError(f"{target.slug}: the entry holds nothing of chain {pdb_chain}")
-    k = numbering_offset(residues, translation)
+    k = numbering_offset(residues, translation) if offset is None else offset
     located = [r.number + k for r in residues if r.ca is not None]
     start, end = mature_span(target, located)
     if structure.residues is not None:
@@ -337,18 +347,19 @@ def cartoon_of(target: Target) -> dict:
     }
 
 
-def bridge_track(target: Target, chains: list[dict], frame: Frame) -> list[dict]:
+def bridge_track(target: Target, chains: list[dict], frame: Frame, *,
+                 entry: Path | None = None) -> list[dict]:
     """Each bridge the model draws, as the atoms its rods run through.
 
     The structure bake's own reading: `ssbonds` for the pairs and `atoms` for
     the coordinates, CA to CB to SG, across, and back. Numbered as the chains
     are, in the precursor, the lower number first. None where the model has
-    no `bonds` node.
+    no `bonds` node. [entry] is the file read, as in `chain_track`.
     """
     structure = target.structure
     if not structure.bonds:
         return []
-    path = pdb_path(structure)
+    path = entry or pdb_path(structure)
     at = atoms(path)
     by_chain = {c["pdb_chain"]: c for c in chains}
     out = []
@@ -399,8 +410,13 @@ def hold_to_pymol() -> None:
             raise ValueError(f"{name} is {ours} here and {theirs} in structure/bake.py")
 
 
-def payload(target: Target, record: dict, glb: bytes, frame: Frame) -> dict:
-    """The track for one protein: its stored record and model, in `frame`."""
+def payload(target: Target, record: dict, glb: bytes, frame: Frame, *,
+            entry: Path | None = None, offset: int | None = None) -> dict:
+    """The track for one protein: its stored record and model, in `frame`.
+
+    [entry] and [offset] are `chain_track`'s: the file the model was cut
+    from where that is not the entry's own, and its numbering offset where
+    that is known."""
     structure = target.structure
     translation = record["protein"]["translation"]
     if record.get("gene") != target.gene:
@@ -408,12 +424,12 @@ def payload(target: Target, record: dict, glb: bytes, frame: Frame) -> dict:
     if len(translation) != target.aa:
         raise ValueError(f"{target.slug}: the record translates {len(translation)} "
                          f"residues, the table says {target.aa}")
-    helices = secondary_structure(pdb_path(structure))
+    helices = secondary_structure(entry or pdb_path(structure))
     meshes = read_glb(glb)
     stacked = np.vstack([m.positions for m in meshes.values()])
     chains = [chain_track(target, c.node, c.pdb_chain, translation, helices, frame,
                           meshes[c.node].positions if structure.representation == "cartoon"
-                          else None)
+                          else None, entry=entry, offset=offset)
               for c in structure.chains]
     return {
         "slug": target.slug,
@@ -437,7 +453,7 @@ def payload(target: Target, record: dict, glb: bytes, frame: Frame) -> dict:
         "secondary_structure": f"HELIX and SHEET records of {structure.pdb}",
         "cartoon": cartoon_of(target),
         "chains": chains,
-        "bridges": bridge_track(target, chains, frame),
+        "bridges": bridge_track(target, chains, frame, entry=entry),
         "built_by": "pipeline/folding/bake_folding.py",
     }
 

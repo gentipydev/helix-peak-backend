@@ -127,8 +127,16 @@ def mature_chain(target: Target, ordered: list[int]) -> tuple[int, int]:
     return start, end
 
 
-def problems_of(target: Target, track: dict | None = None) -> list[str]:
-    """Everything wrong with one protein's track: the file's, or [track]."""
+def problems_of(target: Target, track: dict | None = None, *, record: dict | None = None,
+                glb: bytes | None = None, entry: Path | None = None) -> list[str]:
+    """Everything wrong with one protein's track: the file's, or [track].
+
+    It is held to the protein's stored record and model, and to its entry
+    under `structures/`: the twenty's. A track baked for a protein built on
+    demand is held to what it was baked from instead: [record], the model's
+    [glb], and [entry], the working copy of the entry chosen for it
+    (`structure/normalize.working_copy`).
+    """
     where = target.slug
     if track is None:
         path = DATA / folding_asset(target)
@@ -144,13 +152,15 @@ def problems_of(target: Target, track: dict | None = None) -> list[str]:
         if track.get(key) != want:
             out.append(f"{where}: {key} is {track.get(key)!r}, expected {want!r}")
 
-    record = record_of(target)
-    model_path = DATA / target.structure_asset
-    if record is None or not model_path.exists():
+    if record is None:
+        record = record_of(target)
+    if glb is None:
+        model_path = DATA / target.structure_asset
+        glb = model_path.read_bytes() if model_path.exists() else None
+    if record is None or glb is None:
         return out + [f"{where}: no stored record or model to hold it to; "
                       f"run fetch_tracks.py --kind record --kind structure first"]
     translation = record["protein"]["translation"]
-    glb = model_path.read_bytes()
     meshes = read_glb(glb)
 
     frame = track.get("frame") or {}
@@ -174,7 +184,8 @@ def problems_of(target: Target, track: dict | None = None) -> list[str]:
         return out + [f"{where}: chains {[(c.get('node'), c.get('pdb_chain')) for c in chains]}, "
                       f"the structure exports {wanted}"]
 
-    entry = pdb_path(structure)
+    if entry is None:
+        entry = pdb_path(structure)
     declared = substituted(entry)
     on_ribbon = ON_TUBE if structure.representation == "tube" else ON_RIBBON
     peptides = {(translation.find(p["translation"]) + 1,
@@ -239,7 +250,8 @@ def problems_of(target: Target, track: dict | None = None) -> list[str]:
         if not isinstance(offset, int):
             out.append(f"{at}: no offset to read the entry by")
             continue
-        entry_cas = {r.number + offset: r.ca for r in chain_residues(structure, chain["pdb_chain"])
+        entry_cas = {r.number + offset: r.ca
+                     for r in chain_residues(structure, chain["pdb_chain"], entry)
                      if r.ca is not None}
         placed = {r["n"]: np.array(r["ca"], dtype=float) for r in residues if r["state"] == "ordered"}
         if sorted(entry_cas) != sorted(placed):
@@ -297,7 +309,7 @@ def problems_of(target: Target, track: dict | None = None) -> list[str]:
     if track.get("cartoon") != cartoon_of(target):
         out.append(f"{where}: the cartoon is {track.get('cartoon')!r}, "
                    f"the model is drawn as {cartoon_of(target)!r}")
-    out += _bridge_problems(target, track, chains, meshes, length, centre)
+    out += _bridge_problems(target, track, chains, meshes, length, centre, entry)
 
     if track.get("secondary_structure") != f"HELIX and SHEET records of {structure.pdb}":
         out.append(f"{where}: secondary_structure is {track.get('secondary_structure')!r}")
@@ -307,7 +319,7 @@ def problems_of(target: Target, track: dict | None = None) -> list[str]:
 
 
 def _bridge_problems(target: Target, track: dict, chains: list[dict], meshes: dict,
-                     length: float, centre: np.ndarray) -> list[str]:
+                     length: float, centre: np.ndarray, entry: Path) -> list[str]:
     where = target.slug
     structure = target.structure
     bridges = track.get("bridges")
@@ -315,7 +327,7 @@ def _bridge_problems(target: Target, track: dict, chains: list[dict], meshes: di
         return [f"{where}: no bridges list"]
     if not structure.bonds:
         return [] if not bridges else [f"{where}: {len(bridges)} bridges the model does not draw"]
-    wanted = ssbonds(pdb_path(structure), structure)
+    wanted = ssbonds(entry, structure)
     if len(bridges) != len(wanted):
         return [f"{where}: {len(bridges)} bridges, the entry's SSBOND records give {len(wanted)}"]
     joints = meshes.get("bonds")
