@@ -58,13 +58,17 @@ def write_pml(
     workspace: Path,
     source: Path | None = None,
     origin: np.ndarray | None = None,
+    dashes: bool = True,
 ) -> Path:
     """The PyMOL script that exports one model's chains.
 
     [source] loads another file than the entry's own: an assembly built from
     it. [origin] pins the export frame's origin, where by default each export
     is centred on its own extent, so that two exports can share one frame.
-    Both default to what the twenty are baked with.
+    [dashes] false leaves out the dashed loop PyMOL draws across a gap of up
+    to ten residues the entry does not place, so that the ribbon simply stops
+    at the gap and starts again after it. All three default to what the
+    twenty are baked with.
     """
     structure = target.structure
     lines = [
@@ -75,6 +79,8 @@ def write_pml(
         f"set cartoon_sampling, {structure.sampling}",
         f"set ribbon_sampling, {structure.sampling}",
     ]
+    if not dashes:
+        lines.append("set cartoon_gap_cutoff, 0")
     if structure.representation == "tube":
         # A nine-residue hormone has no helix and no sheet. Asked for a
         # cartoon, PyMOL draws a hairline; a tube down the backbone is the
@@ -188,15 +194,16 @@ def export(
     workspace: Path,
     source: Path | None = None,
     origin: np.ndarray | None = None,
+    dashes: bool = True,
 ) -> tuple[np.ndarray, dict]:
     """PyMOL's cartoon of each chain, and the bridges, in the export frame.
 
     The export frame is the PDB frame less `origin` (see `write_pml`, which
-    also says what [source] and a given [origin] change). Returns the origin
-    and the meshes by node name, in the order the model holds them.
+    also says what [source], a given [origin] and [dashes] change). Returns
+    the origin and the meshes by node name, in the order the model holds them.
     """
     structure = target.structure
-    origin = run_pymol(write_pml(target, workspace, source, origin))
+    origin = run_pymol(write_pml(target, workspace, source, origin, dashes))
 
     meshes = {}
     for chain in structure.chains:

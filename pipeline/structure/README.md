@@ -134,12 +134,15 @@ model vertex for vertex. That is exact on all twenty, where `frame.py`'s ribbon
 fit is not (see `folding/README.md`).
 
 For an export outside the twenty, `write_pml` and `export` take a `source` (an
-assembly built from an entry, loaded in place of the entry itself) and an
-`origin` (one export origin for two exports, so that they share a frame), and
-`verify_frame.py` takes `--pdb`, `--out`, `--origin` and `--chain`. Unset, each
-is what the twenty are baked and audited with: re-baking all twenty after they
-were added gave the same `.glb` files byte for byte, the same `.pml` scripts
-and the same `verify_frame.py` report.
+assembly built from an entry, or a working copy of one, loaded in place of the
+entry itself), an `origin` (one export origin for two exports, so that they
+share a frame) and `dashes` (false leaves out PyMOL's dashed loop across a
+short gap), and `verify_frame.py` takes `--pdb`, `--out`, `--origin` and
+`--chain`. Unset, each is what the twenty are baked and audited with:
+re-baking all twenty after they were added gave the same `.glb` files byte
+for byte, the same `.pml` scripts and the same `verify_frame.py` report, and
+so did re-baking them after `dashes` was added (2026-10-12: every `.glb` the
+digest its row names).
 
 ### Re-baking on Windows
 
@@ -202,6 +205,8 @@ worker runs it, this is a choice that is made and reported and nothing more:
 | `normalize.py` | the entry's own file (PDBe's SIFTS-enriched mmCIF, read by `mmcif.py`) held to the choice residue by residue, and from it the one model, one conformation and one numbering a bake reads |
 | `pdb_words.py` | the fold page's words, from the entry's own numbers |
 | `fold_job.py` | all of it for one protein, ending `chosen`, `none` or `incomplete` |
+| `experimental.py` | the entry chosen, baked into the model and its fold, and held to the app's own check ([below](#baking-the-entry-chosen)) |
+| `fold_report.py` | what a search found, as the dry run's report and as an audit's record |
 
 An outage is none of those three. A search that could not be finished, a page
 that did not arrive, a file that cannot be read: each is raised, and asked
@@ -294,6 +299,71 @@ the nine proteins built by then, and 23 chosen to be hard:
 `fixtures/pdb/` stands in for the network in the tests, which hold each rule
 on recorded answers and on small files written where one thing is wrong at a
 time.
+
+### Baking the entry chosen
+
+A candidate whose file passes is baked before it wins, and the next is tried
+where the bake refuses it by a documented rule (`fold_job.choose(draw=...)`).
+`experimental.py`'s docstring has each step; in short:
+
+- **One working copy.** `normalize.working_copy` writes the chosen chains as
+  one PDB-format file in the record's numbering, chains A to C, with the
+  entry's own helices and strands (PDBe's DSSP; PyMOL's `dss` where the file
+  assigns none, written into the copy so both bakes read the same), its
+  `SSBOND`s, `REMARK 465` and `SEQADV`. The twenty's readers read it as they
+  read an entry.
+- **The model, by the twenty's bake.** `bake.export(source=...)` and
+  `bake.assemble`, unchanged; the scene compiled by the app's importer;
+  sampling lowered until it fits 1.3 MB. A gap the entry does not place is
+  left open: PyMOL's dashed loop across one of up to ten residues is not
+  drawn (`GAP_DASHES`, `bake.write_pml(dashes=False)`). It is a curve made up
+  where the entry has no atoms, and the app cannot lay it on the chain where
+  it curves.
+- **The fold, from the same export.** `folding/bake_folding.payload(entry=,
+  offset=0)` in the export's own frame, so the track names the very `.glb` it
+  was made with. Then each chain is named as the entry names it (`pdb_chain`),
+  with the author's numbering offset where one number does for every residue,
+  and `null` where it does not (an insertion code); the whole map is in the
+  audit.
+- **Held to the twenty's rule.** `folding/check_folding.problems_of` with the
+  record, the model and the copy, its bridges by R5.6's reach (sulfurs within
+  2.5 Å). A ribbon measure that check would turn down (a strand's first
+  residue far from where PyMOL flattens its sheet) is dropped first, as one
+  `ribbon_at` cannot make is: the app smooths the strand there.
+- **Held to the app's rules.** `test/fold_bundle_check.dart`, run from the
+  app's checkout with `FOLD_BUNDLE`, reads the bundle as the fold page will:
+  the scene equals the `.glb` as the compiler bakes it, the track parses for
+  the row's own chains, every ring binds to its stretch of chain (in order to a
+  quarter of a residue), every rod to its bridge, the fold is the stored mesh
+  float for float once the bridges close, and no vertex jumps between two of
+  480 frames. It writes `check.json`: `ok`, `unsuitable` (the entry breaks a
+  rule of the animation: the next candidate) or `fault` (no verdict: tried
+  again).
+
+By hand, writing nothing anywhere but `--out`:
+
+```sh
+pipeline/structure/venv/bin/python pipeline/structure/experimental.py \
+    --service https://helix-peak-backend.onrender.com --slug ttr --out /tmp/ttr
+.venv/bin/python scripts/dry_fold.py --out /tmp/folds --curated --built --bake
+```
+
+Measured on 2026-10-12 over the dry run's 52 proteins, on this Mac: every
+one of the 43 the rule chooses for bakes and passes both checks, as its first
+candidate. Two keep fewer ribbon measures (HERC2 two, HGF one).
+
+| | min | median | max |
+|---|---:|---:|---:|
+| scene | 27 kB | 332 kB | 973 kB (mTOR, 2,549 residues, sampling 1) |
+| `.glb` | 81 kB | 1.1 MB | 3.5 MB |
+| folding track | 2.8 kB | 26 kB | 345 kB |
+| bake | 0.7 s | 1.0 s | 8.4 s |
+| the app's check | 1.8 s | 2.1 s | 3.4 s |
+| binding, in the check | 27 ms | 74 ms | 124 ms |
+| 480 frames, in the check | 19 ms | 114 ms | 498 ms |
+
+The check's times are a Mac's CPU under `flutter test`, not a phone's. 42 are
+cartoons and one a tube (oxytocin); 42 take PDBe's DSSP and one PyMOL's.
 
 ## AlphaFold DB models, for proteins built on demand
 

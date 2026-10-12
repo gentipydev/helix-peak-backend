@@ -18,6 +18,7 @@ if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
 from pipeline.structure import fold_job, mmcif, pdb_policy, pdb_search  # noqa: E402
+from pipeline.structure.normalize import Unsuitable  # noqa: E402
 from pipeline.structure.pdb_policy import Inputs, Product  # noqa: E402
 from pipeline.structure.pdb_search import Domain, Incomplete, Missing, TooLarge, Unreachable  # noqa: E402
 
@@ -81,7 +82,8 @@ def services(metadata: str = "graphql_relaxin.json", ids=None, files=None, by_se
 
 
 def choose(protein=RELAXIN, **said):
-    kwargs = {k: said.pop(k) for k in ("limit", "skip", "recovery") if k in said}
+    kwargs = {k: said.pop(k) for k in ("limit", "skip", "recovery", "draw", "draws")
+              if k in said}
     post, get, asked = services(**said)
     return fold_job.choose(protein, get=get, post=post, now=lambda: NOW, **kwargs), asked
 
@@ -180,6 +182,71 @@ def test_every_candidate_refused_is_a_complete_search_with_nothing_suitable():
                               "2MV1": MV1.replace(b"P04090", b"Q99999")})
     assert choice.outcome == "none"
     assert {e.refused.reason for e in choice.examinations} == {"mapping"}
+
+
+# ------------------------------------------------------------ the bake
+
+
+def drawing(refuse=(), broken=None):
+    """A `draw` that bakes nothing: it refuses the entries named, by a rule,
+    breaks on `broken`, and says what it was handed."""
+    seen = []
+
+    def draw(candidate, examined, entry, entity):
+        seen.append((fold_job.candidate_id(candidate), entry.entry,
+                     None if entity is None else entity.id))
+        if candidate.entry == broken:
+            raise RuntimeError("PyMOL exited with status 1")
+        if candidate.entry in refuse:
+            raise Unsuitable("binding", "A ring of chainA lies on no stretch of its chain")
+        return f"baked {candidate.entry}"
+
+    return draw, seen
+
+
+def test_a_candidate_is_baked_before_it_is_chosen_and_keeps_what_was_baked():
+    draw, seen = drawing()
+    choice, _ = choose(files={"6RLX": RLX, "2MV1": MV1}, draw=draw)
+    assert choice.outcome == "chosen" and choice.winner.built == "baked 6RLX"
+    # Two chains drawn, so no one entity is the one drawn.
+    assert seen == [("6RLX:B@26,A@162", "6RLX", None)]
+
+
+def test_a_candidate_the_bake_refuses_by_a_rule_gives_way_to_the_next():
+    draw, seen = drawing(refuse={"6RLX"})
+    choice, asked = choose(files={"6RLX": RLX, "2MV1": MV1}, draw=draw, draws=9)
+    assert choice.outcome == "chosen" and choice.winner.candidate.entry == "2MV1"
+    assert choice.winner.built == "baked 2MV1"
+    turned_down = [e for e in choice.examinations if not e.passed]
+    assert turned_down and {e.candidate.entry for e in turned_down} == {"6RLX"}
+    # Its file passed; the bake is what refused it, and says so.
+    assert all(e.examined is not None and e.refused.reason == "binding" for e in turned_down)
+    assert choice.refused == [fold_job.candidate_id(e.candidate) for e in turned_down]
+
+
+def test_a_bake_that_breaks_is_raised_and_never_a_refusal():
+    draw, _ = drawing(broken="6RLX")
+    with pytest.raises(RuntimeError, match="PyMOL exited"):
+        choose(files={"6RLX": RLX, "2MV1": MV1}, draw=draw)
+
+
+def test_a_bound_on_bakes_leaves_the_search_incomplete_and_the_next_one_untried():
+    draw, seen = drawing(refuse={"6RLX"})
+    choice, _ = choose(files={"6RLX": RLX, "2MV1": MV1}, draw=draw, draws=1)
+    assert choice.outcome == "incomplete" and choice.winner is None
+    assert len(seen) == 1
+    # What was not tried is not recorded, so the next attempt tries it.
+    assert [fold_job.candidate_id(e.candidate) for e in choice.examinations] == choice.refused
+    again, _ = choose(files={"6RLX": RLX, "2MV1": MV1}, draw=draw, draws=9, skip=choice.refused)
+    assert again.outcome == "chosen" and seen[0][0] not in [
+        fold_job.candidate_id(e.candidate) for e in again.examinations]
+
+
+def test_every_candidate_the_bake_refuses_is_a_complete_search_with_nothing_suitable():
+    draw, seen = drawing(refuse={"6RLX", "2MV1"})
+    choice, _ = choose(files={"6RLX": RLX, "2MV1": MV1}, draw=draw, draws=99)
+    assert choice.outcome == "none" and choice.winner is None
+    assert len(seen) == len(choice.ranking.candidates) == len(choice.refused)
 
 
 # ------------------------------------------------------------ recovery

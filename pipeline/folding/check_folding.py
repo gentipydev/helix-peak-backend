@@ -128,7 +128,8 @@ def mature_chain(target: Target, ordered: list[int]) -> tuple[int, int]:
 
 
 def problems_of(target: Target, track: dict | None = None, *, record: dict | None = None,
-                glb: bytes | None = None, entry: Path | None = None) -> list[str]:
+                glb: bytes | None = None, entry: Path | None = None,
+                reach: float | None = None) -> list[str]:
     """Everything wrong with one protein's track: the file's, or [track].
 
     It is held to the protein's stored record and model, and to its entry
@@ -136,6 +137,12 @@ def problems_of(target: Target, track: dict | None = None, *, record: dict | Non
     demand is held to what it was baked from instead: [record], the model's
     [glb], and [entry], the working copy of the entry chosen for it
     (`structure/normalize.working_copy`).
+
+    [reach] is the rule such an entry's bridges are drawn by: its sulfurs
+    within that many angstroms (R5.6, `normalize.BRIDGE_REACH`), whatever its
+    other bonds measure in a structure nobody chose for its geometry. Unset,
+    each bond of a bridge is held to a cysteine's own length, as the twenty's
+    are.
     """
     where = target.slug
     if track is None:
@@ -309,7 +316,7 @@ def problems_of(target: Target, track: dict | None = None, *, record: dict | Non
     if track.get("cartoon") != cartoon_of(target):
         out.append(f"{where}: the cartoon is {track.get('cartoon')!r}, "
                    f"the model is drawn as {cartoon_of(target)!r}")
-    out += _bridge_problems(target, track, chains, meshes, length, centre, entry)
+    out += _bridge_problems(target, track, chains, meshes, length, centre, entry, reach)
 
     if track.get("secondary_structure") != f"HELIX and SHEET records of {structure.pdb}":
         out.append(f"{where}: secondary_structure is {track.get('secondary_structure')!r}")
@@ -319,7 +326,8 @@ def problems_of(target: Target, track: dict | None = None, *, record: dict | Non
 
 
 def _bridge_problems(target: Target, track: dict, chains: list[dict], meshes: dict,
-                     length: float, centre: np.ndarray, entry: Path) -> list[str]:
+                     length: float, centre: np.ndarray, entry: Path,
+                     reach: float | None = None) -> list[str]:
     where = target.slug
     structure = target.structure
     bridges = track.get("bridges")
@@ -353,10 +361,16 @@ def _bridge_problems(target: Target, track: dict, chains: list[dict], meshes: di
             if np.abs(np.array(end["ca"]) - point).max() > 1e-4:
                 out.append(f"{at}: the path does not start on the CA of {end['n']}")
         steps = np.linalg.norm(np.diff(path, axis=0), axis=1) * length
-        for step, (want, room) in zip(steps, BONDS + BONDS[1::-1]):
-            if abs(step - want) > room:
-                out.append(f"{at}: a bond of {step:.2f} A, a cysteine's is {want}")
-                break
+        if reach is not None:
+            # The path is rounded to the track's places, so to a hundredth.
+            if steps[2] > reach + 0.01:
+                out.append(f"{at}: its sulfurs are {steps[2]:.2f} A apart, and a bridge is "
+                           f"drawn within {reach}")
+        else:
+            for step, (want, room) in zip(steps, BONDS + BONDS[1::-1]):
+                if abs(step - want) > room:
+                    out.append(f"{at}: a bond of {step:.2f} A, a cysteine's is {want}")
+                    break
         inner = path[1:5]
         nearest = np.linalg.norm(inner - _nearest(inner, joints.positions), axis=1) * length
         if nearest.max() > _ON_ROD:

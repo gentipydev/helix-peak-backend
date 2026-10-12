@@ -34,7 +34,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Callable, Dict, FrozenSet, List, Optional, Sequence, Tuple
 
 SEARCH = "https://search.rcsb.org/rcsbsearch/v2/query"

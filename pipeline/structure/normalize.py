@@ -402,8 +402,6 @@ def _touch(chains: Sequence[Drawn], bonded: set) -> bool:
 
 
 def _near(a, b) -> bool:
-    import numpy as np
-
     if not len(a) or not len(b):
         return False
     for start in range(0, len(a), 512):

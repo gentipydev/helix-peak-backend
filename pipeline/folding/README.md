@@ -187,3 +187,30 @@ in the twenty files, every chain; the folds export 3,775 of them.
 - **APP**: 580 `absent`, everything after the E1 domain, which is all the entry
   holds; its 11 `disordered` are the ends of that construct.
 - **Relaxin**: 6RLX's B chain starts at Ser26, so Asp25 is `absent`.
+
+## For a protein built on demand
+
+A protein built on demand has no entry under `structures/` and no row in
+`targets.py`: its fold is cut from an entry chosen by rule, through a working
+copy of it numbered as the precursor (`structure/experimental.py`). The same
+bake and the same check serve it, told what to read instead of looking it up:
+
+- `payload(target, record, glb, frame, entry=<working copy>, offset=0)`:
+  `entry` is the file every chain, helix and bridge is read from, and `offset`
+  the numbering offset, known (0) rather than guessed from the letters.
+- `check_folding.problems_of(target, track, record=, glb=, entry=,
+  reach=2.5)`: the record, the model and the copy it is held to, and its
+  bridges held to the rule they were drawn by (sulfurs within 2.5 Å, R5.6)
+  rather than to the twenty's bond lengths, which an entry nobody chose for
+  its geometry need not keep.
+
+Unset, each is what the twenty are baked and checked with. Adding them changed
+none of the twenty's tracks: re-baked, all twenty equal the digests their rows
+carry (2026-10-12).
+
+The track is then given the entry's own chain names (`pdb_chain`) and, where
+one number does for every residue, the author's numbering offset (`offset`,
+otherwise `null`); `secondary_structure` says whose assignment it is (PDBe's
+DSSP, or PyMOL's `dss`), and `built_by` the baker. The app reads none of the
+four.
+

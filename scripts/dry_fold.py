@@ -3,6 +3,7 @@
     .venv/bin/python scripts/dry_fold.py --out /tmp/folds TTR INSL3     # resolved here, as the worker would
     .venv/bin/python scripts/dry_fold.py --out /tmp/folds --curated     # the twenty, as biological cases
     .venv/bin/python scripts/dry_fold.py --out /tmp/folds --built       # every protein built on demand
+    .venv/bin/python scripts/dry_fold.py --out /tmp/folds --built --bake   # and bake what is chosen
 
 For each protein it builds what a structure is chosen for (`fold_job.inputs_of`)
 the way the worker will: a gene named here is resolved exactly as the resolver
@@ -10,6 +11,11 @@ does (`resolve.resolve`, against live NCBI and UniProt), one of the twenty from
 its `targets.py` row and its stored record, and a built protein from its live
 row and stored record. Then it runs the choice (`fold_job.choose`) against
 live RCSB and PDBe, and writes `report.json` and `report.md` into `--out`.
+
+`--bake` goes on to what the worker will do with a choice: each candidate
+whose file passes is baked (`structure/experimental.py`, in the structure
+bake's environment, a process a protein) and held to the app's own check, and
+the report gains what the bake measured. What is baked stays under `--out`.
 
 Nothing is queued, stored or uploaded. The database is read in read-only
 transactions, through `DATABASE_URL` in `--env` (this checkout's `.env`, else
@@ -62,6 +68,12 @@ def main(arguments: list) -> int:
     parser.add_argument("--jobs", type=Path, default=None,
                         help="proteins as an earlier run resolved them (its jobs.pickle), "
                              "in place of resolving them again")
+    parser.add_argument("--bake", action="store_true",
+                        help="bake each choice and hold it to the app's check")
+    parser.add_argument("--structure-python", type=Path, default=None,
+                        help="the structure bake's Python (pipeline/structure/venv)")
+    parser.add_argument("--app", type=Path, default=BACKEND.parent / "helix-peek")
+    parser.add_argument("--draws", type=int, default=None, help="candidates baked at most")
     args = parser.parse_args(arguments)
 
     from dotenv import dotenv_values
@@ -75,23 +87,29 @@ def main(arguments: list) -> int:
     os.environ["HELIXPEEK_DATA"] = str(scratch / "data")
 
     from pipeline import uniprot
-    from pipeline.structure import fold_job
+    from pipeline.structure import fold_job, fold_report
 
     import pickle
 
-    jobs = []           # (name, how, target, translation) or (name, how, error)
+    # (name, how, target, translation, record, row) or (name, how, error): the
+    # record's bytes and the protein's row are what a bake needs beside the rest.
+    jobs = []
     if args.jobs:
         jobs = pickle.loads(args.jobs.read_bytes())
     elif args.curated:
+        from pipeline import seed_catalog
         from pipeline.targets import TARGETS
 
+        curated = seed_catalog.curated_rows()
         for target in TARGETS:
             record = args.records / target.mock_asset
             if not record.exists():
                 jobs.append((target.slug, "curated", f"no stored record at {record}"))
                 continue
-            translation = json.loads(record.read_bytes())["protein"]["translation"]
-            jobs.append((target.slug, "curated", target, translation))
+            stored = record.read_bytes()
+            translation = json.loads(stored)["protein"]["translation"]
+            jobs.append((target.slug, "curated", target, translation, stored,
+                         seed_catalog.protein_row(target, curated[target.slug])))
     if not args.jobs and (args.built or args.genes):
         jobs += _from_database(env, args.genes, args.built)
     args.out.mkdir(parents=True, exist_ok=True)
@@ -111,6 +129,19 @@ def main(arguments: list) -> int:
             continue
         target, translation = job[2], job[3]
         started = time.monotonic()
+        if args.bake:
+            if len(job) < 6:
+                raise SystemExit("These jobs were resolved without their records; run without "
+                                 "--jobs to resolve them again.")
+            said = _baked(args, name, how, target, job[4], job[5])
+            said.setdefault("seconds", round(time.monotonic() - started, 1))
+            report.append(said)
+            baked = said.get("baked") or {}
+            print(f"  {said.get('outcome', said.get('error'))} "
+                  f"{(said.get('chosen') or {}).get('entry', '')} "
+                  + (f"scene {baked['scene_bytes']:,} B, bind {baked.get('bind_ms')} ms "
+                     if baked else "") + f"in {said['seconds']} s", flush=True)
+            continue
         try:
             entry = uniprot.fetch_entry(target.uniprot)
             from pipeline.structure import pdb_search
@@ -121,7 +152,7 @@ def main(arguments: list) -> int:
             if args.limit:
                 kwargs["limit"] = args.limit
             choice = fold_job.choose(inputs, **kwargs)
-            said = describe(name, how, target, inputs, choice, entry.release)
+            said = fold_report.describe(name, how, target, inputs, choice, entry.release)
         except Exception as exc:  # noqa: BLE001 -- the report says what broke, and goes on
             said = {"name": name, "how": how, "error": f"{type(exc).__name__}: {exc}",
                     "trace": traceback.format_exc()}
@@ -133,9 +164,52 @@ def main(arguments: list) -> int:
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "report.json").write_text(json.dumps(report, indent=1, ensure_ascii=False,
                                                      default=str) + "\n")
-    (args.out / "report.md").write_text(markdown(report))
+    (args.out / "report.md").write_text(fold_report.markdown(report))
     print(f"{len(report)} protein(s): {args.out / 'report.md'}")
     return 0
+
+
+def _baked(args, name: str, how: str, target, record: bytes, protein: dict) -> dict:
+    """One protein's choice, baked and checked, by `structure/experimental.py`
+    in the structure bake's environment: its part of the report."""
+    import subprocess
+
+    from pipeline.structure import experimental
+
+    python = args.structure_python or next(
+        (candidate for candidate in (
+            BACKEND / "pipeline" / "structure" / "venv" / "bin" / "python",
+            BACKEND.parent / "helix-peek-backend" / "pipeline" / "structure" / "venv" / "bin"
+            / "python") if candidate.exists()), None)
+    if python is None:
+        raise SystemExit("No structure bake environment (pipeline/structure/venv); "
+                         "pass --structure-python.")
+    folder = args.out / "baked" / name
+    if folder.exists():
+        shutil.rmtree(folder)
+    folder.mkdir(parents=True)
+    (folder / "record.json").write_bytes(record)
+    job = {"target": experimental.target_json(target), "record": "record.json",
+           "row": experimental.served_row(protein)}
+    if how == "curated" and target.structure is not None:
+        job["hand_pick"] = target.structure.pdb
+    (folder / "job.json").write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
+    ran = subprocess.run(
+        [str(python), "-u", str(BACKEND / "pipeline" / "structure" / "experimental.py"),
+         "--job", str(folder / "job.json"), "--out", str(folder), "--app", str(args.app),
+         "--describe", name, how]
+        + (["--limit", str(args.limit)] if args.limit else [])
+        + (["--draws", str(args.draws)] if args.draws else []),
+        cwd=str(BACKEND), stdin=subprocess.DEVNULL, capture_output=True, text=True)
+    (folder / "stdout.txt").write_text(ran.stdout)
+    (folder / "stderr.txt").write_text(ran.stderr)
+    described = folder / "report.json"
+    if ran.returncode != 0 or not described.exists():
+        return {"name": name, "how": how,
+                "error": f"the bake exited with status {ran.returncode}: "
+                         f"{' '.join(ran.stderr.split())[-400:]}",
+                "trace": ran.stderr[-4000:]}
+    return json.loads(described.read_text(encoding="utf-8"))
 
 
 def _from_database(env: dict, genes: list, built: bool) -> list:
@@ -175,7 +249,8 @@ def _from_database(env: dict, genes: list, built: bool) -> list:
             jobs.append((gene, "resolved here", f"the resolver refuses it: {exc}"))
             continue
         translation = json.loads(resolution.record)["protein"]["translation"]
-        jobs.append((gene, "resolved here", resolution.target, translation))
+        jobs.append((gene, "resolved here", resolution.target, translation, resolution.record,
+                     resolution.protein))
     public = env["SUPABASE_URL"].rstrip("/") + "/storage/v1/object/public"
     for slug, protein, record in rows:
         if record is None:
@@ -183,196 +258,10 @@ def _from_database(env: dict, genes: list, built: bool) -> list:
             continue
         with urllib.request.urlopen(f"{public}/{record['bucket']}/{record['object_path']}",
                                     timeout=120) as response:
-            translation = json.loads(response.read())["protein"]["translation"]
-        jobs.append((slug, "built", target_of(protein), translation))
+            stored = response.read()
+        translation = json.loads(stored)["protein"]["translation"]
+        jobs.append((slug, "built", target_of(protein), translation, stored, protein))
     return jobs
-
-
-def describe(name: str, how: str, target, inputs, choice, release) -> dict:
-    """One protein's part of the report: what was searched, ranked, examined and
-    chosen, and the words the fold page would carry."""
-    from pipeline.structure import normalize, pdb_policy, pdb_words
-    from pipeline.structure.fold_job import candidate_id
-
-    ranking = choice.ranking
-    said = {
-        "name": name, "how": how, "gene": inputs.gene, "accession": inputs.accession,
-        "display": inputs.display, "residues": len(inputs.translation), "uniprot_release": release,
-        "products": [{"label": p.label, "start": p.start, "end": p.end} for p in inputs.products],
-        "domains": [{"kind": d.kind, "name": d.name, "start": d.start, "end": d.end,
-                     "source": d.source} for d in inputs.domains],
-        "outcome": choice.outcome,
-        "search": choice.discovery.snapshot, "recovered": list(choice.recovered),
-        "recovery_refusals": choice.recovery_refusals,
-        "candidates": len(ranking.candidates), "rejected": ranking.reasons(),
-        "rejection_examples": _examples(ranking.rejections),
-        "top": [_row(i + 1, c) for i, c in enumerate(_distinct(ranking.candidates)[:8])],
-        "examined": [{"candidate": candidate_id(e.candidate),
-                      "passed": e.examined is not None,
-                      "reason": None if e.refused is None else e.refused.reason,
-                      "detail": None if e.refused is None else e.refused.detail}
-                     for e in choice.examinations],
-        "timings": choice.seconds,
-    }
-    said["otherwise"] = alternatives(inputs, choice)
-    if how == "curated" and target.structure is not None:
-        said["historical"] = _historical(target.structure.pdb, ranking)
-    winner = choice.winner
-    if winner is not None:
-        candidate, examined = winner.candidate, winner.examined
-        others = [c for c in ranking.candidates if c.entry != candidate.entry]
-        said["chosen"] = {**_row(ranking.candidates.index(candidate) + 1, candidate),
-                          "why": pdb_policy.why(candidate, others[0] if others else None),
-                          "examined": normalize.summary(examined)}
-        lone = candidate.picks[0].entity if len(candidate.picks) == 1 else None
-        said["words"] = pdb_words.words(inputs, candidate, examined,
-                                        choice.entries[candidate.entry],
-                                        choice.entities.get(lone) if lone else None)
-    return said
-
-
-def alternatives(inputs, choice) -> dict:
-    """What would rank first under each setting the policy could have had
-    instead, for the report's reader to weigh. None of these is examined
-    against its file: each is the head of a ranking, not a choice.
-
-    - `quality_first`: the experiment's quality before the residues that are
-      not the gene's (a sharper mutant before a coarser wild type).
-    - `measured_first`: a region measured residue by residue before any that
-      is not, whatever its method (an NMR model before a crystal nobody
-      deposited the data of).
-    - `map_fit_30`: an EM chain refused where 30% of the residues drawn fit
-      their map poorly, not 50%.
-    """
-    from pipeline.structure import pdb_policy
-
-    ranked = choice.ranking.candidates
-
-    def head(key):
-        return _row(1, min(ranked, key=key)) if ranked else None
-
-    # The key's parts: scope, chains together, coverage, precursor, fidelity,
-    # no resolution, unmeasured, resolution, fit, entry, chains.
-    out = {
-        "quality_first": head(lambda c: c.key()[:4] + c.key()[5:9] + (c.key()[4],) + c.key()[9:]),
-        "measured_first": head(lambda c: c.key()[:5] + c.key()[6:]),
-    }
-    held = pdb_policy.Q_SHARE
-    pdb_policy.Q_SHARE = 0.30
-    try:
-        strict = pdb_policy.rank(inputs, list(choice.entities.values())).candidates
-    finally:
-        pdb_policy.Q_SHARE = held
-    out["map_fit_30"] = _row(1, strict[0]) if strict else None
-    return out
-
-
-def _distinct(candidates):
-    """The best candidate of each entry, in rank order."""
-    seen, out = set(), []
-    for c in candidates:
-        if c.entry not in seen:
-            seen.add(c.entry)
-            out.append(c)
-    return out
-
-
-def _row(rank: int, c) -> dict:
-    return {"rank": rank, "entry": c.entry, "scope": c.scope,
-            "chains": [f"{p.asym}:{p.first}-{p.last} ({p.placed})" for p in c.picks],
-            "domains": list(c.domains), "method": c.method, "resolution": c.resolution,
-            "useful": c.useful, "coverage": round(c.coverage, 3), "share": round(c.share, 3),
-            "shortfall": c.shortfall,
-            "precursor": c.precursor, "mismatches": c.mismatches, "allowed": c.allowed,
-            "tier": c.tier, "support": None if c.support is None else round(c.support, 3),
-            "measures": c.measures}
-
-
-def _examples(rejections) -> dict:
-    out: dict = {}
-    for r in rejections:
-        held = out.setdefault(r.reason, [])
-        if len(held) < 4:
-            held.append(f"{r.entity}{'/' + r.chain if r.chain else ''}: {r.detail}")
-    return out
-
-
-def _historical(pdb: str, ranking) -> dict:
-    """Where the entry chosen by hand for one of the twenty stands under the rule."""
-    for i, c in enumerate(ranking.candidates):
-        if c.entry.upper() == pdb.upper():
-            return {"entry": pdb, "rank": i + 1, "of": len(ranking.candidates)}
-    reasons = sorted({r.reason + ": " + r.detail for r in ranking.rejections
-                      if r.entity.upper().startswith(pdb.upper() + "_")})
-    return {"entry": pdb, "rank": None, "rejected": reasons[:4]}
-
-
-def markdown(report: list) -> str:
-    lines = ["# Experimental folds: dry run", "",
-             "| protein | outcome | entry | method | scope | placed / spanned | sentence |",
-             "|---|---|---|---|---|---|---|"]
-    for p in report:
-        if "error" in p:
-            lines.append(f"| {p['name']} | error | | | | | {p['error'][:80]} |")
-            continue
-        chosen, words = p.get("chosen") or {}, (p.get("words") or {}).get("chrome") or {}
-        examined = chosen.get("examined") or {}
-        placed = sum(c["placed"] for c in examined.get("chains", []))
-        listed = sum(c["listed"] for c in examined.get("chains", []))
-        lines.append(f"| {p['name']} | {p['outcome']} | {chosen.get('entry', '')} | "
-                     f"{chosen.get('method', '')} {chosen.get('resolution') or ''} | "
-                     f"{chosen.get('scope', '')} | {f'{placed}/{listed}' if chosen else ''} | "
-                     f"{words.get('sentence', '')} |")
-    for p in report:
-        lines += ["", f"## {p['name']} ({p['how']})", ""]
-        if "error" in p:
-            lines += ["```", p.get("trace") or p["error"], "```"]
-            continue
-        lines.append(f"{p['display']}, UniProt {p['accession']} ({p['uniprot_release']}), "
-                     f"{p['residues']:,} residues. Products: "
-                     + "; ".join(f"{x['label']} {x['start']}–{x['end']}" for x in p["products"])
-                     + f". Domains annotated: {len(p['domains'])}.")
-        s = p["search"]
-        lines.append(f"Search: {s['entities']} entities (release {s['release']}), recovered "
-                     f"{len(p['recovered'])}; {p['candidates']} eligible; rejected "
-                     + (", ".join(f"{k} {v}" for k, v in p["rejected"].items()) or "none")
-                     + f". Timings {p['timings']}, {p['seconds']} s.")
-        if p.get("historical"):
-            h = p["historical"]
-            lines.append(f"Chosen by hand: {h['entry']}: "
-                         + (f"rank {h['rank']} of {h['of']}" if h.get("rank")
-                            else f"not eligible ({'; '.join(h.get('rejected') or ['not found'])})"))
-        lines += ["", "| # | entry | scope | chains | method | Å | placed | short | precursor | "
-                      "mism. | tier | support |", "|---|---|---|---|---|---|---|---|---|---|---|---|"]
-        for r in p["top"]:
-            lines.append(f"| {r['rank']} | {r['entry']} | {r['scope']} | {' '.join(r['chains'])} | "
-                         f"{r['method']} | {r['resolution'] or ''} | {r['useful']} | "
-                         f"{r['shortfall']} | {'yes' if r['precursor'] else ''} | "
-                         f"{r['mismatches']}/{r['allowed']} | {r['tier']} | {r['support']} |")
-        refused = [e for e in p["examined"] if not e["passed"]]
-        if refused:
-            lines += ["", "Refused on examination: " + "; ".join(
-                f"{e['candidate']} ({e['reason']}: {e['detail']})" for e in refused)]
-        if p.get("chosen"):
-            c, w = p["chosen"], p["words"]
-            e = c["examined"]
-            lines += ["", f"**Chosen: {c['entry']}** {', '.join(c['chains'])}: {c['why']}. "
-                          f"Bridges {[(b['a'], b['b']) for b in e['bridges']]}"
-                          f"{', dropped ' + str(e['bridges_dropped']) if e['bridges_dropped'] else ''}; "
-                          f"helices {e['helix']}, strands {e['strand']} "
-                          f"({e['secondary_method'] or 'PyMOL to assign'}); modified "
-                          f"{len(e['modified'])}; mismatches {e['mismatches']}.",
-                      "", f"- label: {w['chrome']['label']}; count {w['chrome']['count']}; "
-                          f"modelled {w['chrome']['modelled']}; tints "
-                          + ", ".join(f"{x['node']}={x['tint']}" for x in w["chains"]),
-                      f"- sentence: {w['chrome']['sentence']}",
-                      f"- semantics: {w['chrome']['semantics']}"]
-        if p["rejection_examples"]:
-            lines += ["", "<details><summary>rejections, examples</summary>", ""]
-            for reason, examples in p["rejection_examples"].items():
-                lines.append(f"- {reason}: " + "; ".join(examples))
-            lines.append("</details>")
-    return "\n".join(lines) + "\n"
 
 
 if __name__ == "__main__":
