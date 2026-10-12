@@ -81,6 +81,8 @@ class Choice:
     entries: Dict[str, pdb_search.Entry]
     entities: Dict[str, pdb_search.Entity] = field(default_factory=dict)
     seconds: Dict[str, float] = field(default_factory=dict)
+    # The candidates an earlier attempt refused, skipped here (`resume`).
+    resumed: Tuple[str, ...] = ()
 
     @property
     def winner(self) -> Optional[Examination]:
@@ -88,9 +90,12 @@ class Choice:
 
     @property
     def refused(self) -> List[str]:
-        """The candidates a rule turned down, by `candidate_id`: what a
+        """The candidates a rule turned down, by `candidate_id`, in this
+        attempt and in the earlier ones it went on from (`resumed`): what a
         resumed search is told to skip."""
-        return [candidate_id(e.candidate) for e in self.examinations if not e.passed]
+        return list(dict.fromkeys(
+            list(self.resumed)
+            + [candidate_id(e.candidate) for e in self.examinations if not e.passed]))
 
 
 def inputs_of(target, translation: str, uniprot_body: dict,
@@ -124,12 +129,17 @@ def _recovered(inputs: Inputs, known: Sequence[str], post: pdb_search.Post,
 def choose(inputs: Inputs, *, get: pdb_search.Get = pdb_search.get_bounded,
            post: pdb_search.Post = pdb_search.post, limit: int = EXAMINE_LIMIT,
            recovery: bool = RECOVERY, skip: Sequence[str] = (),
+           resume: Optional[Tuple[str, Sequence[str]]] = None,
            draw: Optional[Draw] = None, draws: int = DRAW_LIMIT,
            now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> Choice:
     """Search, rank, and examine in rank order until an entry passes.
 
     `skip` names candidates already examined and refused in an earlier
     attempt, by `candidate_id`, so a resumed search goes on from where it was.
+    `resume` is the same, held to the search it was made in: the digest of the
+    entities an attempt cut short found (`Discovery.digest`), and the
+    candidates it refused, skipped only where this search finds the same
+    entities; where the PDB has moved on, the search starts over.
     `draw` bakes each candidate whose file passes, at most `draws` of them an
     attempt; without it the first whose file passes is chosen, unbaked."""
     seconds: Dict[str, float] = {}
@@ -161,7 +171,10 @@ def choose(inputs: Inputs, *, get: pdb_search.Get = pdb_search.get_bounded,
     examinations: List[Examination] = []
     files: Dict[str, bytes] = {}
     refused_entries: Dict[str, Unsuitable] = {}
-    skipped = set(skip)
+    resumed: Tuple[str, ...] = ()
+    if resume is not None and resume[0] == discovery.digest:
+        resumed = tuple(resume[1])
+    skipped = set(skip) | set(resumed)
     by_id = {e.id: e for e in usable}
     drawn = 0
     outcome = "none"
@@ -211,7 +224,7 @@ def choose(inputs: Inputs, *, get: pdb_search.Get = pdb_search.get_bounded,
         break
     seconds["examine"] = round(time.monotonic() - started, 2)
     return Choice(inputs, outcome, discovery, tuple(recovered), refusals, ranking, examinations,
-                  entries, by_id, seconds)
+                  entries, by_id, seconds, resumed)
 
 
 def candidate_id(candidate: Candidate) -> str:

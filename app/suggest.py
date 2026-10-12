@@ -9,7 +9,8 @@ type instead. A suggestion says what the app can do with the protein today:
 - ``unavailable``: not buildable, and ``reason`` says why.
 
 ``building`` is true while a build is under way: a request queued or running,
-or a constraint bake not yet over. A protein is ``ready`` once its row is
+a constraint bake not yet over, or its first fold still being made, as long as
+its build is held for it (`resolves.FOLD_HOLD`). A protein is ``ready`` once its row is
 written, minutes before ESM-2 has scored it, and a walk opened then keeps the
 track it read as pending; so the app watches the build instead of opening it.
 ``stopped`` is true for one whose scoring the reader who asked stopped: it
@@ -41,6 +42,7 @@ from typing import Dict, List, Optional, Tuple
 from . import db
 from .catalog import CatalogUnavailable
 from .protein_index import bounds, normalize
+from .resolves import FOLD_HOLD
 
 logger = logging.getLogger(__name__)
 
@@ -107,9 +109,10 @@ limit %(limit)s
 
 _RELEASE = "select uniprot, mane from protein_index_release"
 
-# Which of these genes have a build under way (a request not yet resolved, or a
-# protein resolved on demand whose latest ESM-2 bake is not over), and which a
-# reader stopped while ESM-2 scored, with nothing on the track since.
+# Which of these genes have a build under way (a request not yet resolved, a
+# protein resolved on demand whose latest ESM-2 bake is not over, or one whose
+# first fold is still being made within the hold, `resolves._build`), and which
+# a reader stopped while ESM-2 scored, with nothing on the track since.
 _BUILDS = """
 select lower(gene), 'building' from resolve_request
 where state in ('queued', 'running') and lower(gene) = any(%(genes)s)
@@ -123,6 +126,17 @@ join lateral (
 join protein_track t on t.slug = p.slug and t.kind = 'constraint'
 where p.catalog_order is null and lower(p.gene) = any(%(genes)s)
   and (j.state in ('queued', 'running') or (j.state = 'stopped' and t.state = 'absent'))
+union
+select lower(p.gene), 'building'
+from protein p
+join protein_track s on s.slug = p.slug and s.kind = 'structure' and s.state = 'pending'
+where p.catalog_order is null and lower(p.gene) = any(%(genes)s)
+  and coalesce((select b.state from bake_job b where b.slug = p.slug and b.kind = 'constraint'
+                order by b.requested_at desc, b.id desc limit 1), '') <> 'stopped'
+  and exists (select 1 from bake_job f
+              where f.slug = p.slug and f.kind = 'structure'
+                and (f.state = 'running'
+                     or (f.state = 'queued' and f.requested_at > now() - %(hold)s::interval)))
 """
 
 # Every protein built on demand, newest first: a row with a null
@@ -206,7 +220,7 @@ def suggest(query: str, limit: int = 12) -> Dict:
             genes = sorted({row[1].lower() for row in rows if row[1]})
             said = []
             if genes:
-                said = conn.execute(_BUILDS, {"genes": genes}).fetchall()
+                said = conn.execute(_BUILDS, {"genes": genes, "hold": FOLD_HOLD}).fetchall()
             building = {gene for gene, what in said if what == "building"}
             stopped = {gene for gene, what in said if what == "stopped"} - building
     except Exception as exc:
@@ -261,7 +275,7 @@ def built(limit: int = 50, before: Optional[str] = None) -> Tuple[List[dict], Op
             genes = sorted({row[1].lower() for row in rows})
             said = []
             if genes:
-                said = conn.execute(_BUILDS, {"genes": genes}).fetchall()
+                said = conn.execute(_BUILDS, {"genes": genes, "hold": FOLD_HOLD}).fetchall()
     except Exception as exc:
         logger.exception("Built proteins read failed")
         raise CatalogUnavailable("The proteins built on demand could not be read.") from exc

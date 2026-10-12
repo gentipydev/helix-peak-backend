@@ -106,7 +106,9 @@ scorer unchanged. A protein it resolves is a `protein` row with a null `catalog_
 `resolver_version` 1, so it never joins `/catalog`. It may never write over a curated row
 (the upsert is guarded), and a change to a baker it calls needs the same sha256 proof:
 `structure/bake.py` is one of them now (its `export` and `assemble` make every model), and so
-are `impact/bake_impact.py` and `clinvar/bake_clinvar.py` (every protein's variant evidence).
+are `folding/bake_folding.py` and `folding/check_folding.py` (every experimental fold made on
+demand), and `impact/bake_impact.py` and `clinvar/bake_clinvar.py` (every protein's variant
+evidence).
 
 Until Modal has a payment method, the worker is a launchd agent on the dev Mac:
 `local_worker.py`, the same `worker.sweep` and `worker.score_all`, with `.env` for the secret
@@ -121,13 +123,21 @@ things follow for anyone working in this checkout:
   imports stays `scoring.py`, `score_protein.py`, `targets.py` and `paths.py`.
 - `local_worker.py` imports nothing under `pipeline` at module level: `paths.DATA` is fixed at
   first import, and the worker's is its own directory, never `pipeline/data/`.
-- It also makes each protein's fold, from AlphaFold DB's model (`pipeline/structure/alphafold.py`),
-  between resolving and scoring: `model_local.py` in `pipeline/structure/venv`, with PyMOL and the
-  scene importer of the app's checkout (`../helix-peek`, read and run from, never written). The
-  importer is the flutter_scene that checkout's `pubspec.lock` pins, which must be the one every
-  stored scene was compiled by (`alphafold.FLUTTER_SCENE`); otherwise no model is claimed.
-  `RESOLVER_STRUCTURES=0` in `.env` turns it off. It writes the row's `structure` column, the one
-  column a bake writes on `protein`, and only where `catalog_order is null`.
+- It also makes each protein's fold, between resolving and scoring: an experimental PDB entry
+  chosen by rule (policy 1, `pipeline/structure/pdb_policy.py`) and baked with the twenty's fold
+  animation (`experimental.py`), and AlphaFold DB's model (`alphafold.py`) only where a whole
+  search finds none. `model_local.py` runs in `pipeline/structure/venv`, with PyMOL 3.1.0, the
+  scene importer of the app's checkout (`../helix-peek`), and the app's own check of a fold
+  (`flutter test --no-pub test/fold_bundle_check.dart`, run there: it writes only the test's
+  build files, under `.dart_tool/` and `build/`, both ignored by git). The importer is the
+  flutter_scene that checkout's `pubspec.lock` pins, which must be the one every stored scene was
+  compiled by (`alphafold.FLUTTER_SCENE`); otherwise no model is claimed, nor before
+  `migrations/0012_fold_generation.sql` is applied. `RESOLVER_STRUCTURES=0` in `.env` turns it
+  off. A fold is published whole or not at all (`store.publish_fold`): the row's `structure`
+  column, the one column a bake writes on `protein`, and only where `catalog_order is null`, its
+  `structure` and `folding` tracks, and a `fold_generation` row. `scripts/queue_structures.py`
+  queues it again for proteins built before (a backfill) and `scripts/fold_rollback.py` puts back
+  an earlier generation.
 - And each protein's AVI and ClinVar tracks, after the model and before the scoring, which
   waits for them (`store.WAITS_FOR`): the twenty's bakers, unchanged, AVI in
   `pipeline/impact/venv` (`impact_local.py`, with `ALPHAGENOME_API_KEY` from `.env` and `uv`)

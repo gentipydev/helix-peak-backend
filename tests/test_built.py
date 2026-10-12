@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app import db
+from app import db, resolves
 
 T0 = datetime(2026, 10, 9, 8, 45, 20, 800935, tzinfo=timezone.utc)
 
@@ -148,7 +148,7 @@ def test_a_build_under_way_is_left_out_and_a_stopped_one_kept(client, fake_pool)
     ]
     (asked,) = [params for flat, params in pool.statements
                 if flat.startswith("select lower(gene), 'building' from resolve_request")]
-    assert asked == {"genes": ["herc2", "prl", "ttr"]}
+    assert asked == {"genes": ["herc2", "prl", "ttr"], "hold": resolves.FOLD_HOLD}
 
 
 def test_none_built_asks_nothing_about_builds(client, fake_pool):

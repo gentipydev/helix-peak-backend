@@ -25,11 +25,13 @@ work is started and where ESM-2 runs:
   subprocess, one protein at a time, and comes back with what
   `score_with_esm` would have: the track's bytes, or the scorer's own
   `ValueError`.
-- A model wants numpy, trimesh, PyMOL and the app's scene importer, and the
-  worker's environment has none of them. A `Modeller` runs `model_local.py`
-  in the structure bake's own environment (`pipeline/structure/venv`), the
-  same way. A model takes seconds, so it is made before the scoring: a
-  protein's fold page is ready long before its ESM-2 track is.
+- A fold wants numpy, trimesh, PyMOL, the app's scene importer and the app's
+  own check (Flutter), and the worker's environment has none of them. A
+  `Modeller` runs `model_local.py` in the structure bake's own environment
+  (`pipeline/structure/venv`), the same way: an experimental entry where one
+  passes, with the fold animation, and AlphaFold DB's model where a whole
+  search finds none. A fold takes seconds to a minute, so it is made before
+  the scoring: a protein's fold page is ready long before its ESM-2 track is.
 - The variant evidence comes next, and before the scoring too
   (`worker.impact_all`, then `worker.clinvar_all`): minutes, where ESM-2 can
   take an hour, so an Atlas quota spent shows early. AVI wants the AlphaGenome
@@ -182,9 +184,11 @@ class Settings:
     score_timeout: float = 3600.0
     esm_python: Path = BACKEND / "pipeline" / ".esm-venv" / "bin" / "python"
     # What a model is made with: the structure bake's interpreter, the Dart
-    # that runs the scene importer, and the app's checkout it is run from.
+    # that runs the scene importer, the Flutter that runs the app's check of a
+    # fold, and the app's checkout both are run from.
     structure_python: Path = BACKEND / "pipeline" / "structure" / "venv" / "bin" / "python"
     dart: Path = Path("dart")
+    flutter: Path = Path("flutter")
     app: Path = BACKEND.parent / "helix-peek"
     # Whether this worker makes models at all. Off, no structure bake is
     # queued and none is claimed: the worker is the one Modal runs.
@@ -277,6 +281,14 @@ def default_dart(home: Path) -> Path:
     return sdk if sdk.exists() else Path(shutil.which("dart") or "dart")
 
 
+def default_flutter(home: Path) -> Path:
+    """Flutter in the home directory, where there is one, and otherwise
+    whichever `flutter` is on the path. Under launchd the path names neither,
+    so the first is what the agent finds."""
+    found = home / "flutter" / "bin" / "flutter"
+    return found if found.exists() else Path(shutil.which("flutter") or "flutter")
+
+
 def default_uv(home: Path) -> Path:
     """`uv` where its installer puts it in the home directory, and otherwise
     whichever is on the path. Under launchd the path names neither."""
@@ -327,6 +339,7 @@ def load_settings(environ: Optional[Mapping[str, str]] = None, env_file: Optiona
         structure_python=Path(said.get("RESOLVER_STRUCTURE_PYTHON")
                               or BACKEND / "pipeline" / "structure" / "venv" / "bin" / "python"),
         dart=Path(said.get("RESOLVER_DART") or default_dart(home)),
+        flutter=Path(said.get("RESOLVER_FLUTTER") or default_flutter(home)),
         app=Path(said.get("RESOLVER_APP_DIR") or BACKEND.parent / "helix-peek"),
         structures=said.get("RESOLVER_STRUCTURES", "1").strip().lower()
         not in ("0", "false", "no", "off"),
@@ -550,11 +563,13 @@ class Modeller:
     """`worker.Model`, run where the structure bake's packages are:
     `model_local.py`, one protein a process.
 
-    It raises what `worker.structure_next` reads: `worker.Unmodelled` where no
-    model is drawn for the protein, which is a refusal, and a `RuntimeError`
-    for everything else (the bake breaking, running past its time, or being
-    stopped with the worker), which puts the bake back on the queue, up to
-    `store.MAX_ATTEMPTS` times.
+    It returns a `worker.Folded`, and raises what `worker.structure_next`
+    reads: `worker.Unmodelled` where no model is drawn for the protein, which
+    is a refusal; `worker.Unfinished` where the search reached its bounds
+    before it decided, which is asked again without spending a try; and a
+    `RuntimeError` for everything else (the bake breaking, running past its
+    time, or being stopped with the worker), which puts the bake back on the
+    queue, up to `store.MAX_ATTEMPTS` times.
     """
 
     def __init__(self, settings: Settings, stop: threading.Event):
@@ -564,7 +579,8 @@ class Modeller:
     def _command(self, *arguments: str) -> list:
         settings = self.settings
         return [str(settings.structure_python), "-u", "-m", _MODEL_DRIVER,
-                "--app", str(settings.app), "--dart", str(settings.dart), *arguments]
+                "--app", str(settings.app), "--dart", str(settings.dart),
+                "--flutter", str(settings.flutter), *arguments]
 
     def _environment(self) -> dict:
         # A model is made from public data and handed back as files: the
@@ -607,7 +623,7 @@ class Modeller:
                 return (f"The model was still being made after {MODEL_TIMEOUT / 60:.0f} "
                         f"minutes and was stopped.")
 
-    def __call__(self, target, record: bytes):
+    def __call__(self, target, record: bytes, ask=None):
         from pipeline.resolver import model_local, worker
 
         settings = self.settings
@@ -619,7 +635,9 @@ class Modeller:
             work = Path(folder)
             job_file, out = work / "job.json", work / "out"
             printed_file, errors_file = work / "stdout.txt", work / "stderr.txt"
-            job_file.write_text(json.dumps(worker.model_job(target, record)), encoding="utf-8")
+            job = worker.model_job(target, record, ask)
+            (work / job["record"]).write_bytes(record)
+            job_file.write_text(json.dumps(job), encoding="utf-8")
 
             started = time.monotonic()
             with open(printed_file, "wb") as printed, open(errors_file, "wb") as errors:
@@ -636,32 +654,68 @@ class Modeller:
                 raise RuntimeError(cut)
 
             code = child.returncode
+            said = _outcome(out)
+            selection = None if said is None else said.get("selection")
             refusal = out / "refusal.txt"
             if code == model_local.REFUSED and refusal.exists():
-                raise worker.Unmodelled(refusal.read_text(encoding="utf-8"))
+                raise worker.Unmodelled(refusal.read_text(encoding="utf-8"), selection)
+            if code == model_local.UNFINISHED and said is not None and selection:
+                log.info("%s: the search for an experimental structure stopped at its bounds "
+                         "after %.1f s; it goes on next cycle", target.slug, seconds)
+                raise worker.Unfinished(selection)
             glb, scene, described = (out / name for name in
                                      ("model.glb", "model.fsceneb", "described.json"))
-            if code == 0 and glb.exists() and scene.exists() and described.exists():
-                said = json.loads(described.read_text(encoding="utf-8"))
-                built = worker.Modelled(glb.read_bytes(), scene.read_bytes(), said["chrome"],
-                                        said["chains"], said["provenance"])
-                log.info("%s: %s", target.slug, _model_facts(built, seconds))
-                return built
+            made = None if said is None else said.get("made")
+            if (code == 0 and made in ("pdb", "alphafold") and glb.exists() and scene.exists()
+                    and described.exists()):
+                told = json.loads(described.read_text(encoding="utf-8"))
+                built = worker.Modelled(glb.read_bytes(), scene.read_bytes(), told["chrome"],
+                                        told["chains"], told["provenance"])
+                folding = audit = None
+                if made == "pdb":
+                    folding_file, audit_file = out / "folding.json", out / "audit.json"
+                    if not (folding_file.exists() and audit_file.exists()):
+                        raise RuntimeError("The modeller made an experimental fold and left no "
+                                           "folding track or audit.")
+                    folding, audit = folding_file.read_bytes(), audit_file.read_bytes()
+                folded = worker.Folded(made, built, folding, audit, selection)
+                log.info("%s: %s", target.slug, _model_facts(folded, seconds))
+                return folded
 
-            said = _read(errors_file)
-            if said.strip():
+            errors = _read(errors_file)
+            if errors.strip():
                 log.error("%s: the modeller's last words:\n%s", target.slug,
-                          said[-2000:].rstrip())
+                          errors[-2000:].rstrip())
             if code == 0:
                 raise RuntimeError("The modeller exited with status 0 and wrote no model.")
             if code == model_local.REFUSED:
                 raise RuntimeError("The modeller exited with status 3 and gave no reason.")
-            raise RuntimeError(_last_words(code, said, "The modeller"))
+            if code == model_local.UNFINISHED:
+                raise RuntimeError("The modeller exited with status 4 and said nothing of its "
+                                   "search.")
+            raise RuntimeError(_last_words(code, errors, "The modeller"))
 
 
-def _model_facts(built, seconds: float) -> str:
-    """What the modeller made, on one line: which model, how sure, how large."""
+def _outcome(out: Path) -> Optional[dict]:
+    """What the modeller said of how it ended (`outcome.json`), or None."""
+    try:
+        said = json.loads((out / "outcome.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return said if isinstance(said, dict) else None
+
+
+def _model_facts(folded, seconds: float) -> str:
+    """What the modeller made, on one line: which model, from what, how large."""
+    built = getattr(folded, "model", folded)
     said = built.provenance
+    if getattr(folded, "source", "alphafold") == "pdb":
+        chains = said.get("chains") or []
+        return (f"PDB {said.get('entry')} ({', '.join(said.get('method') or [])}"
+                f"{', ' + str(said.get('resolution')) + ' A' if said.get('resolution') else ''}), "
+                f"{len(chains)} chain(s), {sum(c.get('placed', 0) for c in chains)} residues "
+                f"placed, sampling {said.get('sampling')}, scene {len(built.scene):,} B, "
+                f"with its fold, {seconds:.1f} s")
     span = said.get("span") or ["?", "?"]
     return (f"{said.get('entry')} v{said.get('model_version')}, residues {span[0]}-{span[1]}, "
             f"mean pLDDT {said.get('mean_plddt')}, sampling {said.get('sampling')}, "
@@ -885,7 +939,8 @@ def _say(name: str, what: str, outcome: dict, seconds: float) -> None:
     line = f"{name}: {what} {told} in {seconds:.1f} s"
     if outcome.get("reason"):
         line += f": {outcome['reason']}"
-    log.log(logging.WARNING if state in ("queued", "failed") else logging.INFO, "%s", line)
+    log.log(logging.WARNING if state in ("queued", "failed", "superseded") else logging.INFO,
+            "%s", line)
 
 
 def _resolve(conn, storage, stop: threading.Event, resolved: list,
@@ -1033,7 +1088,9 @@ def cycle(settings: Settings, scorer: Scorer, stop: threading.Event,
                 models = store.queued_bakes(conn, "structure")
                 if models:
                     awake.hold()
-                    unready = modeller.unready()
+                    unready = (modeller.unready() if store.folds_ready(conn) else
+                               "The database cannot record a fold yet: apply "
+                               "migrations/0012_fold_generation.sql.")
                     if unready:
                         log.error("%d model(s) left on the queue: no model can be made here "
                                   "now. %s", models, unready)
@@ -1250,6 +1307,15 @@ def queue(conn) -> str:
         last = conn.execute(
             "select requested_at, gene, state, reason from resolve_request "
             "order by requested_at desc, id desc limit 5").fetchall()
+        folds = searches = None
+        if conn.execute("select to_regclass('fold_generation') is not null").fetchone()[0]:
+            folds = dict(conn.execute(
+                "select source || ' ' || state, count(*) from fold_generation where active "
+                "group by 1").fetchall())
+            searches = dict(conn.execute(
+                "select outcome, count(*) from (select distinct on (slug) slug, outcome "
+                "from fold_selection order by slug, decided_at desc, id desc) latest "
+                "group by outcome").fetchall())
 
     def counted(found: dict, finished: tuple) -> str:
         return (f"{found.get('queued', 0)} queued, {found.get('running', 0)} running ("
@@ -1257,6 +1323,13 @@ def queue(conn) -> str:
 
     lines = ["requests  " + counted(requests, ("done", "refused", "failed")),
              "bakes     " + counted(bakes, ("done", "failed"))]
+    if folds is not None:
+        # What each protein built on demand draws now, and how its latest
+        # search for an experimental structure ended.
+        lines.append("folds     " + (", ".join(f"{count} {what}" for what, count in
+                                              sorted(folds.items())) or "none published yet")
+                     + "; searches " + (", ".join(f"{count} {outcome}" for outcome, count in
+                                                  sorted(searches.items())) or "none yet"))
     for slug, kind, state, attempts, error in held:
         lines.append(f"  {slug} {kind}: {state}, claimed {attempts} time(s)"
                      + (f"; last: {error}" if error else ""))

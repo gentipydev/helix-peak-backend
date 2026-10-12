@@ -340,7 +340,8 @@ def test_proteins_ahead_are_counted_in_the_order_the_worker_takes_them(
 def _builds(conn):
     from app import suggest
 
-    return set(conn.execute(suggest._BUILDS, {"genes": ["ins", "b2m"]}).fetchall())
+    return set(conn.execute(suggest._BUILDS, {"genes": ["ins", "b2m"],
+                                              "hold": suggest.FOLD_HOLD}).fetchall())
 
 
 def test_suggestions_know_which_proteins_are_being_built(conn, offline):
@@ -764,6 +765,7 @@ def test_the_queue_is_read_as_lines(conn, mac):
     assert local_worker.queue(conn).splitlines() == [
         "requests  0 queued, 0 running (0 done, 0 refused, 0 failed)",
         "bakes     0 queued, 0 running (0 done, 0 failed)",
+        "folds     none published yet; searches none yet",
         "no request yet"]
 
     _ask(conn)
@@ -771,12 +773,13 @@ def test_the_queue_is_read_as_lines(conn, mac):
         "requests  1 queued, 0 running (0 done, 0 refused, 0 failed)"
     mac("no-torch", "sys.exit(1)", check=1)
     lines = local_worker.queue(conn).splitlines()
-    assert lines[:4] == [
+    assert lines[:5] == [
         "requests  0 queued, 0 running (1 done, 0 refused, 0 failed)",
         "bakes     1 queued, 0 running (0 done, 0 failed)",
+        "folds     none published yet; searches none yet",
         "  ins constraint: queued, claimed 0 time(s)",
         "last requests"]
-    assert re.fullmatch(r"  \d{4}-\d\d-\d\d \d\d:\d\d  INS +done", lines[4]) and len(lines) == 5
+    assert re.fullmatch(r"  \d{4}-\d\d-\d\d \d\d:\d\d  INS +done", lines[5]) and len(lines) == 6
     # It only read: the queue is as it was.
     assert _bake_and_track(conn) == (("queued", 0, None, None), ("pending",))
 
@@ -821,9 +824,10 @@ def test_the_queue_command_prints_the_queue_and_minds_no_reader_leaving(
                           text=True, timeout=120)
     assert (done.returncode, done.stderr) == (0, "")
     lines = done.stdout.splitlines()
-    assert lines[:3] == ["requests  1 queued, 0 running (0 done, 0 refused, 0 failed)",
-                         "bakes     0 queued, 0 running (0 done, 0 failed)", "last requests"]
-    assert re.fullmatch(r"  \d{4}-\d\d-\d\d \d\d:\d\d  INS +queued", lines[3])
+    assert lines[:4] == ["requests  1 queued, 0 running (0 done, 0 refused, 0 failed)",
+                         "bakes     0 queued, 0 running (0 done, 0 failed)",
+                         "folds     none published yet; searches none yet", "last requests"]
+    assert re.fullmatch(r"  \d{4}-\d\d-\d\d \d\d:\d\d  INS +queued", lines[4])
     # It read, and that is all: no log, no directory, and the request untouched.
     assert not (home / "Library" / "Logs").exists()
     assert not (home / "Library" / "Application Support").exists()
@@ -841,7 +845,7 @@ def test_the_queue_command_prints_the_queue_and_minds_no_reader_leaving(
 # ------------------------------------------------- a model made on demand
 
 
-def _modelled(target, record: bytes):
+def _modelled(target, record: bytes, ask=None):
     """What a baker hands over, as far as the worker's gate reads it."""
     return a_model()
 
@@ -886,7 +890,7 @@ def test_a_queued_model_is_made_and_lands_ready(conn, offline):
     job = _one(conn, "select id from bake_job where kind = 'structure'")[0]
 
     assert worker.structure_next(conn, storage, model=_modelled) == \
-        {"id": job, "slug": "ins", "state": "ready"}
+        {"id": job, "slug": "ins", "state": "ready", "source": "alphafold", "generation": 1}
     built = a_model()
     bucket, path, sha, fmt, provenance, state = _one(
         conn, "select bucket, object_path, sha256, format, provenance, state "
@@ -946,7 +950,7 @@ def test_a_protein_with_no_model_says_why_on_its_track(conn, offline):
     _resolved_with_a_model_queued(conn, offline, storage)
     why = "AlphaFold DB has no model of proteins over 2,700 residues; this one has 4,834."
 
-    def none(target, record):
+    def none(target, record, ask):
         raise worker.Unmodelled(why)
 
     outcome = worker.structure_next(conn, storage, model=none)
@@ -962,12 +966,12 @@ def test_a_bake_that_breaks_is_tried_three_times_and_a_reader_is_not_told_how(co
     storage = Storage()
     _resolved_with_a_model_queued(conn, offline, storage)
 
-    def broken(target, record):
+    def broken(target, record, ask):
         raise RuntimeError("the scene importer failed (255):\nUnhandled exception")
 
     states = [worker.structure_next(conn, storage, model=broken) for _ in range(3)]
     assert [outcome["state"] for outcome in states] == ["queued", "queued", "refused"]
-    said = ("AlphaFold's model could not be made: the bake broke each of the 3 times "
+    said = ("The fold could not be made this time: its bake broke each of the 3 times "
             "it was tried.")
     assert states[2]["reason"] == said
     # The track carries the reader's sentence, and the job what broke.
@@ -979,7 +983,8 @@ def test_a_bake_that_breaks_is_tried_three_times_and_a_reader_is_not_told_how(co
 def test_a_model_the_gate_declines_is_not_stored_and_is_tried_again(conn, offline):
     storage = Storage()
     _resolved_with_a_model_queued(conn, offline, storage)
-    wrong = lambda target, record: a_model(chains=[{"node": "chainA", "tint": "mature1"}])  # noqa: E731
+    wrong = lambda target, record, ask: a_model(  # noqa: E731
+        chains=[{"node": "chainA", "tint": "mature1"}])
     outcome = worker.structure_next(conn, storage, model=wrong)
     assert outcome["state"] == "queued" and "names no tint" in outcome["reason"]
     assert [path for _, path in storage.objects if path.startswith("structure/")] == []

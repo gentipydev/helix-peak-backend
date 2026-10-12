@@ -34,6 +34,15 @@ progress the worker writes as the scorer prints it (`store.note_progress`), and
 from the AVI and ClinVar bakes the Mac's worker makes before it: while either
 is queued or running, the step is ``evidence``.
 
+And from its fold (``fold``): the structure track's state, where the worker
+makes models. A first fold is made in seconds to a minute, before the scoring,
+so it is nearly always there when the scores are; where it is not, the build is
+held at ``structure`` rather than ``done`` while the fold is still being made,
+for `FOLD_HOLD` at most: a bake still queued after that is one no worker is
+making, and the build opens without it, its fold page saying a model is on its
+way. A protein that draws a model already is never held while a new one is
+made for it: it keeps the one it has until the new one is published.
+
 The reader who asked may stop a build (`stop`): there are no accounts, so who
 asked is the asking install's own random id, kept on the request and on the
 bake it queues (0011). Stopped while queued, nothing was built and asking
@@ -64,6 +73,25 @@ class NotYours(Exception):
 class NothingToStop(Exception):
     """No build a stop could end is under way; the message says what there is."""
 
+
+# How long a build may be held from `done` while its first fold is made.
+FOLD_HOLD = "20 minutes"
+
+# A protein's fold as its build reports it: its structure track's state;
+# whether a bake of it is running, or queued within `FOLD_HOLD`; and the
+# seconds since its scoring ended, which a held build's clock runs on by.
+_FOLD = """
+select t.state,
+       exists (select 1 from bake_job j
+               where j.slug = t.slug and j.kind = 'structure'
+                 and (j.state = 'running'
+                      or (j.state = 'queued' and j.requested_at > now() - %s::interval))),
+       (select extract(epoch from now() - c.finished_at)::float8 from bake_job c
+        where c.slug = t.slug and c.kind = 'constraint'
+        order by c.requested_at desc, c.id desc limit 1)
+from protein_track t
+where t.slug = %s and t.kind = 'structure'
+"""
 
 _PROTEIN = """
 select slug from protein where lower(gene) = lower(%s) and taxon_id = 9606
@@ -225,7 +253,7 @@ where slug = %s and kind = 'constraint' and state = 'absent'
 def _report(step: str, elapsed: float, **said) -> dict:
     return {"step": step, "ahead": None, "scored": None, "residues": None, "left": None,
             "elapsed": elapsed, "transcript": None, "reason": None, "stopped": False,
-            "ran": None, **said}
+            "ran": None, "fold": None, **said}
 
 
 def _baked(row: tuple) -> dict:
@@ -261,11 +289,22 @@ def _build(conn, gene: str, said: dict) -> Optional[dict]:
         if row is None:
             return None
         build = _baked(row)
+        # Its fold, where models are made: none where none was asked for.
+        fold = conn.execute(_FOLD, (FOLD_HOLD, said["slug"])).fetchone()
+        if fold is not None and fold[0] != "absent":
+            build["fold"] = fold[0]
         # AlphaGenome's and ClinVar's tracks, made before the scoring. A
         # protein with neither queued reads as it always has; one stopped
         # says so first; and the step carries no reason, which would end it.
         if not build["stopped"] and conn.execute(_EVIDENCE, (said["slug"],)).fetchone()[0]:
-            return _report("evidence", build["elapsed"], transcript=build["transcript"])
+            return _report("evidence", build["elapsed"], transcript=build["transcript"],
+                           fold=build["fold"])
+        # Its scores are over (made, or declined), and its first fold is still
+        # being made: held, within `FOLD_HOLD`, with no reason, which would end it.
+        over = build["step"] == "done" or build["reason"] is not None
+        if (over and not build["stopped"] and build["fold"] == "pending" and fold[1]):
+            return _report("structure", build["elapsed"] + (fold[2] or 0.0),
+                           transcript=build["transcript"], fold="pending")
         return build
     if state not in ("pending", "refused", "failed"):
         return None

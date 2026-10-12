@@ -326,6 +326,8 @@ def test_a_model_the_app_would_trip_on_is_never_stored(offline, changes, why):
 
 
 def test_a_model_is_made_for_the_protein_as_its_record_and_row_have_it(offline):
+    from pipeline.structure import experimental
+
     resolution = resolve(INS, offline(_body()))
     job = worker.model_job(resolution.target, resolution.record)
     protein = json.loads(resolution.record)["protein"]["translation"]
@@ -336,8 +338,19 @@ def test_a_model_is_made_for_the_protein_as_its_record_and_row_have_it(offline):
         "disulfides": [[31, 96], [43, 109], [95, 100]],
         # As far as the resolver let the record differ from UniProt.
         "allowed": 3,
+        # The protein itself, for the search for an experimental entry, and the
+        # record's file beside the job's.
+        "target": experimental.target_json(resolution.target),
+        "record": "record.json",
     }
     assert len(protein) == 110
+    # With what was asked: the row the app's check reads, and what earlier
+    # searches decided.
+    prior = {"none": None, "progress": None, "active": None, "refresh": True}
+    asked = worker.model_job(resolution.target, resolution.record,
+                             worker.FoldAsk(resolution.protein, prior))
+    assert asked == {**job, "row": experimental.served_row(resolution.protein), "prior": prior}
+    assert asked["row"]["structure"] is None and asked["row"]["chains"] == []
     long = replace(resolution.target, regions=())
     record = json.dumps({"protein": {"translation": "M" * 2500}}).encode()
     assert worker.model_job(long, record)["allowed"] == 25
@@ -346,7 +359,13 @@ def test_a_model_is_made_for_the_protein_as_its_record_and_row_have_it(offline):
 
 def test_the_worker_and_the_bake_agree_on_the_words_and_the_tints():
     alphafold = pytest.importorskip("pipeline.structure.alphafold")   # needs numpy
+    from pipeline.structure import normalize, pdb_words
+
     assert worker._TINTS == {name for name, _ in alphafold.BANDS} | {"cysteine"}
+    # An experimental entry's chains, as `pdb_words` tints them, and its bridges.
+    assert worker._TINTS_BY_SOURCE["pdb"] == {
+        f"mature{index + 1}" for index in range(len(normalize.NODES))} | {"cysteine"}
+    assert pdb_words.tint_of(0, 1) == "mature1"
     job = alphafold.Job(slug="x", accession="P00000", display="X", protein="M" * 9,
                         kept=((1, 9),))
     entry = alphafold.Entry("P00000", "AF-P00000-F1", 6, "https://example.invalid/m.pdb")
@@ -365,18 +384,135 @@ def _one_bake(monkeypatch, attempts=1):
         "id": 4, "slug": "ins", "kind": kind, "attempts": attempts})
     monkeypatch.setattr(store, "protein", lambda conn, slug: None)
     monkeypatch.setattr(store, "ready_track", lambda conn, slug, kind: None)
-    for name in ("finish_structure", "refuse_bake", "requeue_bake"):
+    for name in ("finish_structure", "refuse_bake", "requeue_bake", "publish_fold",
+                 "end_fold_bake", "save_progress", "keep_fold"):
         monkeypatch.setattr(store, name, lambda conn, *said, _name=name, **more:
-                            did.append((_name, said, more)))
+                            did.append((_name, said, more)) or True)
     return did
 
 
 def test_a_protein_with_no_record_has_no_model_to_be_held_to(monkeypatch):
     did = _one_bake(monkeypatch)
-    outcome = worker.structure_next(None, Storage(), model=lambda target, record: a_model())
+    outcome = worker.structure_next(None, Storage(),
+                                    model=lambda target, record, ask: a_model())
     assert outcome == {"id": 4, "slug": "ins", "state": "refused",
                        "reason": "The protein has no ready record to hold a model to."}
-    assert did == [("refuse_bake", (4, "ins", "structure", outcome["reason"]), {})]
+    job = {"id": 4, "slug": "ins", "kind": "structure", "attempts": 1}
+    assert did == [("end_fold_bake", (job,),
+                    {"error": outcome["reason"], "requeue": False, "reason": outcome["reason"]})]
+
+
+def a_fold(nodes=("chainA", "chainB", "bonds"), *, folding=None, audit=None, **model):
+    """What a baker hands over for an experimental fold of INS from 1ABC
+    (`model_local.py`): the model, its folding track, and the audit."""
+    glb = a_glb(*nodes)
+    track = {"slug": "ins", "gene": "INS", "uniprot": "P01308", "pdb": "1ABC",
+             "schema_version": 2,
+             "frame": {"glb_sha256": hashlib.sha256(glb).hexdigest(), "length_angstrom": 30.0},
+             "chains": [{"node": node, "pdb_chain": "AB"[index], "offset": 24, "first": 25,
+                         "last": 54, "residues": []}
+                        for index, node in enumerate(n for n in nodes if n != "bonds")],
+             "bridges": [{"a": 31, "b": 96}] if "bonds" in nodes else [],
+             "secondary_structure": "DSSP in the entry's file from PDBe, 1ABC",
+             "built_by": "pipeline/structure/experimental.py"}
+    track.update(folding or {})
+    built = a_model(*nodes, **{
+        "chrome": {"pdb": "1ABC", "modelled": None, "label": "the mature chains", "count": 51,
+                   "unit": "residues",
+                   "sentence": "X-ray, 1.50 Å. Two chains, joined by two disulfide bridges.",
+                   "semantics": "The Insulin structure in PDB 1ABC. Drag to turn it."},
+        "chains": [{"node": node, "tint": "cysteine" if node == "bonds" else f"mature{i + 1}"}
+                   for i, node in enumerate(nodes)],
+        "provenance": {"pdb": "1ABC", "nodes": list(nodes), "source": "PDB", "entry": "1ABC",
+                       "method": ["X-RAY DIFFRACTION"], "resolution": 1.5, "sampling": 8},
+        **model})
+    return worker.Folded("pdb", built, json.dumps(track).encode(),
+                         json.dumps({"entry": "1ABC", **(audit or {})}).encode(),
+                         a_selection("chosen", candidate="1ABC:A@25,B@90",
+                                     chosen={"entry": "1ABC"}))
+
+
+def a_selection(outcome: str, **said) -> dict:
+    """What a search decided, as `fold_report.selection` says it."""
+    return {"policy": 1, "inputs": "the-inputs-digest", "outcome": outcome,
+            "search": {"query": "UniProt P01308", "release": "2026-10-07", "entities": 3,
+                       "sha256": "the-ids-digest"},
+            "refused": [], **said}
+
+
+def test_an_experimental_fold_is_stored_as_the_twentys_are_with_its_audit_beside_it(offline):
+    target = resolve(INS, offline(_body())).target
+    storage = Storage()
+    folded = a_fold()
+    staged = worker.stage_fold(storage, target, folded)
+
+    glb, scene, folding, audit = (hashlib.sha256(payload).hexdigest() for payload in (
+        folded.model.glb, folded.model.scene, folded.folding, folded.audit))
+    assert staged["source"] == "pdb" and staged["selection"] == folded.selection
+    assert staged["structure"] == {"chrome": folded.model.chrome, "chains": folded.model.chains}
+    row = staged["structure_row"]
+    assert (row["bucket"], row["object_path"], row["sha256"]) == (
+        "models", f"structure/ins.{scene[:12]}.fsceneb", scene)
+    # The audit is named in the structure track's provenance, as the `.glb` is.
+    assert row["provenance"]["audit"] == {
+        "path": f"fold_audit/ins.{audit[:12]}.json", "sha256": audit,
+        "bytes": len(folded.audit)}
+    assert row["provenance"]["glb"]["sha256"] == glb
+    assert staged["folding_row"] == {
+        "slug": "ins", "kind": "folding", "bucket": "tracks",
+        "object_path": f"folding/ins.{folding[:12]}.json", "bytes": len(folded.folding),
+        "sha256": folding, "format": "json",
+        # What `upload_tracks.validate` says of the twenty's.
+        "provenance": {"pdb": "1ABC",
+                       "chains": [{"node": "chainA", "pdb_chain": "A", "offset": 24,
+                                   "first": 25, "last": 54},
+                                  {"node": "chainB", "pdb_chain": "B", "offset": 24,
+                                   "first": 25, "last": 54}],
+                       "frame": json.loads(folded.folding)["frame"],
+                       "secondary_structure": "DSSP in the entry's file from PDBe, 1ABC",
+                       "schema_version": 2, "built_by": "pipeline/structure/experimental.py"}}
+    assert staged["audit"] == {"bucket": "tracks", "path": f"fold_audit/ins.{audit[:12]}.json",
+                               "sha256": audit, "bytes": len(folded.audit)}
+    assert sorted((bucket, path) for bucket, path, _ in storage.objects) == sorted([
+        ("models", f"structure/ins.{glb[:12]}.glb"),
+        ("models", f"structure/ins.{scene[:12]}.fsceneb"),
+        ("tracks", f"folding/ins.{folding[:12]}.json"),
+        ("tracks", f"fold_audit/ins.{audit[:12]}.json")])
+
+
+@pytest.mark.parametrize("folded, why", [
+    (a_fold(folding={"gene": "RLN2"}), "another protein's"),
+    (a_fold(folding={"pdb": "2XYZ"}), "another entry"),
+    (a_fold(folding={"schema_version": 1}), "another schema"),
+    (a_fold(folding={"frame": {"glb_sha256": "0" * 64}}), "another model's frame"),
+    (a_fold(folding={"chains": [{"node": "chainB"}, {"node": "chainA"}]}), "chains are not"),
+    (a_fold(folding={"bridges": []}), "disagree about bridges"),
+    (a_fold(audit={"entry": "2XYZ"}), "audit is of another entry"),
+    (a_fold(provenance={"pdb": "1ABC", "nodes": ["chainA", "chainB", "bonds"],
+                        "source": "AlphaFold DB"}), "not the PDB's"),
+    (a_fold(chains=[{"node": "chainA", "tint": "plddtLow"}, {"node": "chainB", "tint": "mature2"},
+                    {"node": "bonds", "tint": "cysteine"}]), "names no tint"),
+    (a_fold()._replace(folding=None), "without its folding track"),
+    (worker.Folded("alphafold", a_model(chrome={**a_model().chrome, "pdb": "1ABC"},
+                                        provenance={**a_model().provenance, "pdb": "1ABC"})),
+     "names another entry than AlphaFold DB's"),
+    (worker.Folded("swissmodel", a_model()), "which no model is made from"),
+])
+def test_a_fold_the_app_would_trip_on_is_never_stored(offline, folded, why):
+    target = resolve(INS, offline(_body())).target
+    storage = Storage()
+    with pytest.raises(worker.Declined, match=why):
+        worker.stage_fold(storage, target, folded)
+    assert storage.objects == {}
+
+
+def test_alphafolds_model_is_still_stored_as_it_was(offline):
+    target = resolve(INS, offline(_body())).target
+    built = a_model()
+    staged = worker.stage_fold(Storage(), target, worker.Folded("alphafold", built))
+    row, structure = worker.stage_structure(Storage(), target, built)
+    assert (staged["structure_row"], staged["structure"]) == (row, structure)
+    assert (staged["folding_row"], staged["audit"], staged["selection"]) == (None, None, None)
 
 
 # ------------------------------------------------------------ the evidence

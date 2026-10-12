@@ -509,27 +509,41 @@ class Made:
         return None if winner is None else winner.built
 
 
-def make(target, record: bytes, row: dict, workspace: Path, app: Path, dart: str, flutter: str,
-         *, skip: Sequence[str] = (), budget: Optional[int] = None,
-         limit: int = fold_job.EXAMINE_LIMIT, draws: int = fold_job.DRAW_LIMIT,
-         fetch_entry: Optional[Callable] = None, pfam: Optional[Callable] = None,
-         **services) -> Made:
-    """Search, choose, bake and check one protein's experimental fold.
-
-    `target` is its `Target`, `record` its stored record's bytes, and `row`
-    the protein as the service serves it. `skip` is what an earlier attempt
-    refused. `services` are `fold_job.choose`'s (`get`, `post`, `now`), for a
-    test to stand in for the network; `fetch_entry` and `pfam` likewise, for
-    UniProt and InterPro."""
+def inputs_for(target, record: bytes, *, fetch_entry: Optional[Callable] = None,
+               pfam: Optional[Callable] = None) -> Tuple[Inputs, Optional[str]]:
+    """What a protein's structure is chosen for (`fold_job.inputs_of`), and the
+    UniProt release its domains were read from. `fetch_entry` and `pfam` stand
+    in for UniProt and InterPro in a test."""
     from pipeline import uniprot
 
     entry = (fetch_entry or uniprot.fetch_entry)(target.uniprot)
     translation = json.loads(record)["protein"]["translation"]
     inputs = fold_job.inputs_of(target, translation, entry.body,
                                 (pfam or pdb_search.pfam_domains)(target.uniprot))
+    return inputs, entry.release
+
+
+def make(target, record: bytes, row: dict, workspace: Path, app: Path, dart: str, flutter: str,
+         *, inputs: Optional[Inputs] = None, release: Optional[str] = None,
+         skip: Sequence[str] = (), resume: Optional[Tuple[str, Sequence[str]]] = None,
+         budget: Optional[int] = None, limit: int = fold_job.EXAMINE_LIMIT,
+         draws: int = fold_job.DRAW_LIMIT, fetch_entry: Optional[Callable] = None,
+         pfam: Optional[Callable] = None, **services) -> Made:
+    """Search, choose, bake and check one protein's experimental fold.
+
+    `target` is its `Target`, `record` its stored record's bytes, and `row`
+    the protein as the service serves it. `inputs` (and the `release` they
+    were read from) are `inputs_for`'s, read here where not given. `skip` and
+    `resume` are what earlier attempts refused (`fold_job.choose`).
+    `services` are `fold_job.choose`'s (`get`, `post`, `now`), for a test to
+    stand in for the network; `fetch_entry` and `pfam` likewise, for UniProt
+    and InterPro."""
+    if inputs is None:
+        inputs, release = inputs_for(target, record, fetch_entry=fetch_entry, pfam=pfam)
     drawer = Drawer(target, inputs, record, row, workspace, app, dart, flutter, budget)
-    choice = fold_job.choose(inputs, limit=limit, skip=skip, draw=drawer, draws=draws, **services)
-    return Made(inputs, choice, entry.release)
+    choice = fold_job.choose(inputs, limit=limit, skip=skip, resume=resume, draw=drawer,
+                             draws=draws, **services)
+    return Made(inputs, choice, release)
 
 
 # ------------------------------------------------------------ a protein, as a job

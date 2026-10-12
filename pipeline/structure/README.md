@@ -5,10 +5,13 @@ renders. It is offline, run by hand, and run once per protein. The `.glb`s it
 writes land under `pipeline/data/assets/models/`; storage keeps each one beside
 the `.fsceneb` compiled from it, which is what the app fetches.
 
-One thing here is not run by hand: `alphafold.py` makes the model of a protein
-built on demand, from AlphaFold DB, and the resolver's worker runs it
-([below](#alphafold-db-models-for-proteins-built-on-demand)). It uses this
-bake's own export, and changes none of the twenty.
+Two things here are not run by hand: `experimental.py` makes the model of a
+protein built on demand from an experimental entry chosen by rule, with its
+fold animation ([below](#experimental-entries-for-proteins-built-on-demand)),
+and `alphafold.py` from AlphaFold DB where no entry passes
+([below](#alphafold-db-models-for-proteins-built-on-demand)); the resolver's
+worker runs both. They use this bake's own export, and change none of the
+twenty.
 
 It is kept because a stored binary that cannot be regenerated is a
 liability. If a model ever needs to change — a different colour split, a
@@ -194,9 +197,10 @@ secondary structure to draw — oxytocin's nine residues — takes
 A protein resolved on demand (`pipeline/resolver/`) has nobody to choose an
 entry for it. A rule does, over every PDB entry of the protein, and AlphaFold
 DB's model ([below](#alphafold-db-models-for-proteins-built-on-demand)) is for
-the protein a whole, successful search finds nothing suitable for. Until the
-worker runs it, this is a choice that is made and reported and nothing more:
-`scripts/dry_fold.py` writes a report and nothing else.
+the protein a whole, successful search finds nothing suitable for. The Mac's
+worker runs it for every protein built on demand (`pipeline/resolver/`, its
+README has the publication and the backfill); `scripts/dry_fold.py` runs it
+for any protein and writes a report and nothing else.
 
 | | |
 |---|---|
@@ -368,9 +372,11 @@ cartoons and one a tube (oxytocin); 42 take PDBe's DSSP and one PyMOL's.
 ## AlphaFold DB models, for proteins built on demand
 
 A protein resolved on demand (`pipeline/resolver/`) has no entry chosen by
-hand. Its fold page draws AlphaFold DB's model of its UniProt sequence, under
-rule R5.4 as the user settled it on 2026-10-08. `alphafold.py`'s docstring has
-each rule; in short:
+hand. Where a whole search finds no experimental entry that passes
+([above](#experimental-entries-for-proteins-built-on-demand)), its fold page
+draws AlphaFold DB's model of its UniProt sequence, still, under rule R5.4 as
+the user settled it on 2026-10-08 (for every protein built on demand, until
+2026-10-12). `alphafold.py`'s docstring has each rule; in short:
 
 | | |
 |---|---|

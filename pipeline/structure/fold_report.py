@@ -87,9 +87,14 @@ def selection(inputs, choice, release) -> dict:
                      for e in choice.examinations],
         "top": [_row(i + 1, c) for i, c in enumerate(_distinct(ranking.candidates)[:8])],
     }
+    # What a resumed search skips: every candidate turned down, in this attempt
+    # and those it went on from.
+    said["refused"] = choice.refused
+    said["resumed"] = len(choice.resumed)
     winner = choice.winner
     if winner is not None:
         others = [c for c in ranking.candidates if c.entry != winner.candidate.entry]
+        said["candidate"] = candidate_id(winner.candidate)
         said["chosen"] = {**_row(ranking.candidates.index(winner.candidate) + 1, winner.candidate),
                           "why": pdb_policy.why(winner.candidate, others[0] if others else None)}
     return said

@@ -8,9 +8,13 @@ the record holds; that wants a GPU. `modal_app.py` runs each where it belongs,
 and either can be run by hand on any machine with the same credentials.
 
 A third, where a worker asks for it (`structures`): `structure_next` takes one
-queued structure bake and makes the fold page's model from AlphaFold DB's
-(`structure/alphafold.py`). That wants PyMOL and the app's scene importer,
-which the Mac's worker has and Modal's image does not, so only the Mac asks.
+queued structure bake and makes the fold page's model: from an experimental
+entry chosen by rule, with the fold animation the twenty play
+(`structure/experimental.py`), and from AlphaFold DB's model only where a whole
+search finds none (`structure/alphafold.py`). The two tracks and the row's
+words are published together or not at all (`store.publish_fold`). That wants
+PyMOL, the app's scene importer and the app's own check, which the Mac's
+worker has and Modal's image does not, so only the Mac asks.
 
 And the variant evidence, where a worker asks for it (`evidence`), with the
 bakers that made the twenty's, unchanged: `impact_next` takes one queued AVI
@@ -33,8 +37,14 @@ What ends a request or a bake, and how the reader hears of it:
 - A stop by the reader who asked (`Stopped`) ends a scoring where it is. The
   service has already written it on the rows, so nothing more is. A model is
   made in seconds, as a record is, and like a record is not stopped.
-- A protein AlphaFold DB has no model of, or none sure enough to draw
-  (`Unmodelled`), has its structure track `refused`, with the sentence why.
+- A protein drawn from neither source -- no experimental entry passes, and
+  AlphaFold DB has no model of it, or none sure enough to draw
+  (`Unmodelled`) -- has its structure track `refused`, with the sentence why.
+  One that draws a model already keeps it.
+- A search for an experimental entry cut short at its bounds (`Unfinished`)
+  keeps how far it got and goes back on the queue without spending a try.
+  One whose bake was taken from it, or whose protein changed while its fold
+  was made (`store.Superseded`), writes nothing.
 - One of the AVI bake's own gates saying no (`Unplaced`: the exons do not
   pair, or the record's bases are not GRCh38's where GENCODE puts the gene)
   refuses its AVI track, and the ClinVar track with it: there is no map to
@@ -57,6 +67,7 @@ from typing import Callable, NamedTuple, Optional, Tuple
 
 from pipeline import paths, uniprot, upload_tracks
 from pipeline.resolver import store
+from pipeline.structure import pdb_policy
 from pipeline.resolver.resolve import (
     RESOLVER_VERSION, VARIANT_FLOOR, VARIANT_SHARE, Refused, resolve, target_of)
 from pipeline.resolver.scoring import score_with_esm
@@ -83,8 +94,32 @@ class Modelled(NamedTuple):
     provenance: dict
 
 
-# The model of a protein, from its target and its record.
-Model = Callable[[Target, bytes], Modelled]
+class Folded(NamedTuple):
+    """A protein's fold as its baker hands it over (`model_local.py`): the
+    model, which source it is from, and from an experimental entry its
+    `folding` track and the bake's audit; and what the search decided
+    (`fold_report.selection`, or `{"cached": id}`)."""
+
+    source: str                         # "pdb" or "alphafold"
+    model: Modelled
+    folding: Optional[bytes] = None
+    audit: Optional[bytes] = None
+    selection: Optional[dict] = None
+
+
+class FoldAsk(NamedTuple):
+    """What a fold is made for beside its target and record: the protein's row
+    (the app's check reads it as the service serves it) and what earlier
+    searches decided for it (`store.fold_prior`, with `refresh`)."""
+
+    protein: dict
+    prior: dict
+
+
+# The fold of a protein, from its target, its record and what was asked. An
+# AlphaFold model handed over bare (`Modelled`) is one whose search found
+# nothing, said by no selection.
+Model = Callable[[Target, bytes, FoldAsk], "Folded | Modelled"]
 
 # The AVI track's bytes, from a target and its record (`bake_impact.bake`).
 Avi = Callable[[Target, bytes], bytes]
@@ -96,10 +131,19 @@ ClinVar = Callable[[Target], bytes]
 STOPPED_FETCHING = "The worker was stopped while ClinVar's records were being fetched."
 
 # The fold page's words as every row carries them (`StructureChrome` in the
-# app), and the tints a model made on demand may name: pLDDT's four bands
-# (`alphafold.BANDS`) and its bridges.
+# app), and the tints a model made on demand may name, by its source: an
+# experimental entry's chains and its bridges, as the twenty name theirs, or
+# pLDDT's four bands (`alphafold.BANDS`) and its bridges.
 _CHROME = ("pdb", "modelled", "label", "count", "unit", "sentence", "semantics")
-_TINTS = frozenset({"plddtVeryHigh", "plddtConfident", "plddtLow", "plddtVeryLow", "cysteine"})
+_TINTS_BY_SOURCE = {
+    "pdb": frozenset({"mature1", "mature2", "mature3", "cysteine"}),
+    "alphafold": frozenset({"plddtVeryHigh", "plddtConfident", "plddtLow", "plddtVeryLow",
+                            "cysteine"}),
+}
+_TINTS = _TINTS_BY_SOURCE["alphafold"]
+# The kind a fold's animation is, and where its bake's audit is stored.
+_FOLDING_SCHEMA = 2
+_AUDIT_PREFIX = "fold_audit"
 
 # What the scorer prints every 25 residues (`score_protein.py`).
 _SCORED = re.compile(r"Scored (\d+)/(\d+) \(([\d.]+)s, [\d.]+ min left\)")
@@ -160,9 +204,23 @@ class Stopped(Exception):
 
 
 class Unmodelled(Exception):
-    """No model is drawn for this protein (`alphafold.Refused`): AlphaFold DB
-    has none, or none of this sequence, or none sure enough. The message is
-    the sentence the fold page shows."""
+    """No model is drawn for this protein: no experimental entry passes, and
+    AlphaFold DB has none, or none of this sequence, or none sure enough
+    (`alphafold.Refused`). The message is the sentence the fold page shows;
+    `selection` is what the search decided, where one was made."""
+
+    def __init__(self, reason: str, selection: Optional[dict] = None):
+        super().__init__(reason)
+        self.selection = selection
+
+
+class Unfinished(Exception):
+    """A search for an experimental entry reached its bounds before it decided
+    (`fold_job.choose`, `incomplete`). `selection` says how far it got."""
+
+    def __init__(self, selection: dict):
+        super().__init__("The search for an experimental structure goes on next cycle.")
+        self.selection = selection
 
 
 class Unplaced(Exception):
@@ -210,19 +268,30 @@ def stage(storage, kind: str, target: Target, payload: bytes) -> dict:
     }
 
 
-def model_job(target: Target, record: bytes) -> dict:
-    """What a model is made for (`alphafold.Job`), from a resolved protein's
-    target and its record: the protein the walk draws, its kept regions and
-    disulfides, and how far the model may differ from it, which is as far as
-    the resolver let the record differ from UniProt."""
+def model_job(target: Target, record: bytes, ask: Optional[FoldAsk] = None) -> dict:
+    """What a fold is made for (`model_local.py`), from a resolved protein's
+    target and its record: AlphaFold's `Job` (the protein the walk draws, its
+    kept regions and disulfides, and how far the model may differ from it,
+    which is as far as the resolver let the record differ from UniProt); and,
+    for an experimental entry, the protein's `Target` and its row as the app's
+    check reads it, and what earlier searches decided (`ask`). The record's
+    bytes go beside the job's file, as `record`."""
+    from pipeline.structure import experimental
+
     protein = json.loads(record)["protein"]["translation"]
-    return {
+    said = {
         "slug": target.slug, "accession": target.uniprot, "display": target.display,
         "protein": protein,
         "kept": [[region.start, region.end] for region in target.regions if region.kept],
         "disulfides": [list(pair) for pair in target.disulfides],
         "allowed": max(VARIANT_FLOOR, int(len(protein) * VARIANT_SHARE)),
+        "target": experimental.target_json(target),
+        "record": "record.json",
     }
+    if ask is not None:
+        said["row"] = experimental.served_row(ask.protein)
+        said["prior"] = ask.prior
+    return said
 
 
 def glb_nodes(payload: bytes) -> list:
@@ -233,6 +302,99 @@ def glb_nodes(payload: bytes) -> list:
     length = struct.unpack_from("<I", payload, 12)[0]
     document = json.loads(payload[20:20 + length])
     return [node.get("name") for node in document.get("nodes", []) if "mesh" in node]
+
+
+def _folding_provenance(target: Target, data, glb: bytes, chrome: dict, nodes: list) -> dict:
+    """A fold's `folding` track held to its model, as the app will hold it,
+    and what its row's provenance says (`upload_tracks.validate`'s, for the
+    twenty). The whole of `check_folding`, and the app's own check, held it in
+    the bake (`structure/experimental.py`); this is what a worker with no
+    numpy can see again: whose it is, the frame it names, and its chains.
+    Raises `Declined`."""
+    if not isinstance(data, dict):
+        raise Declined("the folding track is not an object")
+    if (data.get("slug"), data.get("gene"), data.get("uniprot")) != (
+            target.slug, target.gene, target.uniprot):
+        raise Declined("the folding track is another protein's")
+    if data.get("pdb") != chrome["pdb"] or data.get("schema_version") != _FOLDING_SCHEMA:
+        raise Declined("the folding track names another entry, or another schema")
+    if (data.get("frame") or {}).get("glb_sha256") != hashlib.sha256(glb).hexdigest():
+        raise Declined("the folding track was made in another model's frame")
+    chains = data.get("chains") or []
+    if [chain.get("node") for chain in chains] != [node for node in nodes if node != "bonds"]:
+        raise Declined("the folding track's chains are not the model's")
+    if bool(data.get("bridges")) != ("bonds" in nodes):
+        raise Declined("the folding track and the model disagree about bridges")
+    return {
+        "pdb": data["pdb"],
+        "chains": [{key: chain.get(key) for key in ("node", "pdb_chain", "offset", "first", "last")}
+                   for chain in chains],
+        "frame": data["frame"],
+        "secondary_structure": data.get("secondary_structure"),
+        "schema_version": data["schema_version"],
+        "built_by": data.get("built_by"),
+    }
+
+
+def stage_fold(storage, target: Target, folded: Folded) -> dict:
+    """Check a fold, store its objects, and return what `store.publish_fold`
+    writes for it.
+
+    The model is checked as `stage_structure` checks one, with the tints its
+    source may name. An experimental one's `folding` track is held to it
+    (`_folding_provenance`), and stored as the uploader stores the twenty's,
+    `folding/<slug>.<sha12>.json`; the bake's audit beside it,
+    `fold_audit/<slug>.<sha12>.json`, named in the structure track's
+    provenance as the `.glb` is. Every object is named by its own digest and
+    none is ever deleted. A fold that fails raises `Declined`, and nothing is
+    stored."""
+    source = folded.source
+    if source not in _TINTS_BY_SOURCE:
+        raise Declined(f"a fold from {source!r}, which no model is made from")
+    built = folded.model
+    folding_row = audit = None
+    uploads = []
+    provenance = dict(built.provenance)
+    if source == "pdb":
+        if folded.folding is None or folded.audit is None:
+            raise Declined("an experimental fold handed over without its folding track or audit")
+        try:
+            nodes = glb_nodes(built.glb)
+            data = json.loads(folded.folding)
+            said = json.loads(folded.audit)
+        except ValueError as exc:
+            raise Declined(str(exc)) from exc
+        chrome = built.chrome if isinstance(built.chrome, dict) else {}
+        if not isinstance(said, dict) or said.get("entry") != chrome.get("pdb"):
+            raise Declined("the audit is of another entry than the fold page names")
+        if provenance.get("source") != "PDB" or str(chrome.get("pdb", "")).startswith("AF-"):
+            raise Declined("an experimental fold whose provenance is not the PDB's")
+        folding_provenance = _folding_provenance(target, data, built.glb, chrome, nodes)
+        digest = hashlib.sha256(folded.folding).hexdigest()
+        folding_row = {
+            "slug": target.slug, "kind": "folding", "bucket": store.TRACKS_BUCKET,
+            "object_path": f"folding/{target.slug}.{digest[:12]}.json",
+            "bytes": len(folded.folding), "sha256": digest, "format": "json",
+            "provenance": folding_provenance,
+        }
+        audit_digest = hashlib.sha256(folded.audit).hexdigest()
+        audit = {"bucket": store.TRACKS_BUCKET,
+                 "path": f"{_AUDIT_PREFIX}/{target.slug}.{audit_digest[:12]}.json",
+                 "sha256": audit_digest, "bytes": len(folded.audit)}
+        provenance["audit"] = {key: audit[key] for key in ("path", "sha256", "bytes")}
+        uploads += [(store.TRACKS_BUCKET, folding_row["object_path"], folded.folding,
+                     "application/json"),
+                    (store.TRACKS_BUCKET, audit["path"], folded.audit, "application/json")]
+    elif not str((built.chrome or {}).get("pdb", "")).startswith("AF-"):
+        raise Declined("AlphaFold's model names another entry than AlphaFold DB's")
+    row, structure = _checked_structure(target, built._replace(provenance=provenance),
+                                        _TINTS_BY_SOURCE[source])
+    for path, payload, content_type in row.pop("_uploads"):
+        storage.put(row["bucket"], path, payload, content_type)
+    for bucket, path, payload, content_type in uploads:
+        storage.put(bucket, path, payload, content_type)
+    return {"source": source, "structure_row": row, "structure": structure,
+            "folding_row": folding_row, "audit": audit, "selection": folded.selection}
 
 
 def stage_structure(storage, target: Target, built: Modelled) -> Tuple[dict, dict]:
@@ -246,6 +408,16 @@ def stage_structure(storage, target: Target, built: Modelled) -> Tuple[dict, dic
     the row names in the model. A model that fails raises `Declined`, and
     nothing is stored.
     """
+    row, structure = _checked_structure(target, built, _TINTS)
+    for path, payload, content_type in row.pop("_uploads"):
+        storage.put(row["bucket"], path, payload, content_type)
+    return row, structure
+
+
+def _checked_structure(target: Target, built: Modelled, tints) -> Tuple[dict, dict]:
+    """A model held to what the app reads of it, and its track row (its two
+    objects under `_uploads`, not yet stored), and the row's `structure`
+    column. Raises `Declined`."""
     chrome, chains = built.chrome, built.chains
     try:
         nodes = glb_nodes(built.glb)
@@ -260,7 +432,7 @@ def stage_structure(storage, target: Target, built: Modelled) -> Tuple[dict, dic
                                      and all(isinstance(end, int) for end in span)))):
         raise Declined("the fold page's words are not the seven the app reads")
     if (not chains or any(not isinstance(chain, dict) or set(chain) != {"node", "tint"}
-                          or chain["tint"] not in _TINTS for chain in chains)):
+                          or chain["tint"] not in tints for chain in chains)):
         raise Declined("a chain names no tint the app has")
     if [chain["node"] for chain in chains] != nodes:
         raise Declined(f"the model's nodes are {nodes}, and its row names "
@@ -272,9 +444,7 @@ def stage_structure(storage, target: Target, built: Modelled) -> Tuple[dict, dic
 
     row, uploads = upload_tracks.structure_row(target.slug, built.glb, built.scene,
                                                built.provenance)
-    for path, payload, content_type in uploads:
-        storage.put(row["bucket"], path, payload, content_type)
-    return row, {"chrome": chrome, "chains": chains}
+    return {**row, "_uploads": uploads}, {"chrome": chrome, "chains": chains}
 
 
 def resolve_next(conn, storage, *, fetch_entry=uniprot.fetch_entry,
@@ -407,11 +577,21 @@ def score_next(conn, storage, *, score: Score = score_in_process) -> Optional[di
 
 
 def structure_next(conn, storage, *, model: Model) -> Optional[dict]:
-    """Bake the oldest queued structure track. None when there is none."""
+    """Make the oldest queued fold, and publish it. None when there is none.
+
+    The model is asked for an experimental entry first and AlphaFold DB's
+    model after (`model_local.py`), with what earlier searches decided for the
+    protein (`store.fold_prior`). A protein whose experimental fold stands for
+    its record, regions and rule (`store.pinned`) is not searched again unless
+    its bake asks to be (`refresh`): its bake is done, with nothing written.
+    What is made is published with its tracks and words in one transaction,
+    only while the bake is still this worker's and the protein as it was read
+    (`store.publish_fold`)."""
     job = store.claim_bake(conn, "structure")
     if job is None:
         return None
     outcome = {"id": job["id"], "slug": job["slug"]}
+    record_row = None
     try:
         protein = store.protein(conn, job["slug"])
         record_row = store.ready_track(conn, job["slug"], "record")
@@ -421,22 +601,48 @@ def structure_next(conn, storage, *, model: Model) -> Optional[dict]:
         if hashlib.sha256(record).hexdigest() != record_row["sha256"]:
             raise RuntimeError("The stored record does not match the sha256 its row carries.")
         target = target_of(protein)
-        track, structure = stage_structure(storage, target, model(target, record))
-        store.finish_structure(conn, job["id"], track, structure)
-        return {**outcome, "state": "ready"}
-    except (Refused, Unmodelled) as exc:
-        store.refuse_bake(conn, job["id"], job["slug"], "structure", _said(exc))
+        regions = store.regions_of(conn, job["slug"])
+        prior = {**store.fold_prior(conn, job["slug"]), "refresh": bool(job.get("refresh"))}
+        if not prior["refresh"] and store.pinned(prior, record_row["sha256"], regions,
+                                                 pdb_policy.POLICY_VERSION):
+            kept = store.keep_fold(conn, job)
+            return {**outcome, "state": "kept" if kept else "superseded"}
+        published = {"record_sha256": record_row["sha256"], "regions": regions,
+                     "policy": pdb_policy.POLICY_VERSION}
+        try:
+            made = model(target, record, FoldAsk(protein, prior))
+        except Unmodelled as exc:
+            store.publish_fold(conn, job, {**published, "source": "none", "reason": _said(exc),
+                                           "selection": exc.selection})
+            return {**outcome, "state": "refused", "reason": _said(exc)}
+        if isinstance(made, Modelled):
+            made = Folded("alphafold", made)
+        fold = stage_fold(storage, target, made)
+        generation = store.publish_fold(conn, job, {**fold, **published})
+        return {**outcome, "state": "ready", "source": made.source, "generation": generation}
+    except store.Superseded as exc:
+        return {**outcome, "state": "superseded", "reason": _said(exc)}
+    except Unfinished as exc:
+        try:
+            store.save_progress(conn, job, exc.selection, record_row["sha256"])
+        except store.Superseded as lost:
+            return {**outcome, "state": "superseded", "reason": _said(lost)}
+        return {**outcome, "state": "queued", "reason": _said(exc)}
+    except Refused as exc:
+        store.end_fold_bake(conn, job, error=_said(exc), requeue=False, reason=_said(exc))
         return {**outcome, "state": "refused", "reason": _said(exc)}
     except Exception as exc:  # noqa: BLE001
         if job["attempts"] < store.MAX_ATTEMPTS:
-            store.requeue_bake(conn, job["id"], _said(exc))
-            return {**outcome, "state": "queued", "reason": _said(exc)}
+            ended = store.end_fold_bake(conn, job, error=_said(exc), requeue=True)
+            return {**outcome, "state": "queued" if ended else "superseded",
+                    "reason": _said(exc)}
         # The fold page shows a refused track's reason, so it is a reader's
-        # sentence; what broke stays on the job, for whoever mends it.
-        reason = (f"AlphaFold's model could not be made: the bake broke each of the "
+        # sentence; what broke stays on the job, for whoever mends it. A
+        # protein that draws a model already keeps it.
+        reason = (f"The fold could not be made this time: its bake broke each of the "
                   f"{store.MAX_ATTEMPTS} times it was tried.")
-        store.refuse_bake(conn, job["id"], job["slug"], "structure", reason, error=_said(exc))
-        return {**outcome, "state": "refused", "reason": reason}
+        ended = store.end_fold_bake(conn, job, error=_said(exc), requeue=False, reason=reason)
+        return {**outcome, "state": "refused" if ended else "superseded", "reason": reason}
 
 
 # ------------------------------------------------------------ the evidence

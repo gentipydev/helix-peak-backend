@@ -137,6 +137,7 @@ def fake_model_python(folder: Path, body: str, check: int = 0, check_says: str =
 MAKES_A_MODEL = """
     import struct
     job = json.loads(job_file.read_text())
+    record = (job_file.parent / job["record"]).read_bytes()
     nodes = ["plddtVeryHigh", "bonds"]
     document = json.dumps({
         "asset": {"version": "2.0"}, "scenes": [{"nodes": [0, 1]}],
@@ -159,6 +160,12 @@ MAKES_A_MODEL = """
         "provenance": {"pdb": entry, "nodes": nodes, "entry": entry, "model_version": 6,
                        "span": [1, len(job["protein"])], "mean_plddt": 90.0, "sampling": 8},
     }))
+    # The whole search found no experimental entry: AlphaFold's, said so.
+    (out / "outcome.json").write_text(json.dumps({"made": "alphafold", "selection": {
+        "policy": 1, "inputs": "the-inputs-digest", "outcome": "none", "refused": [],
+        "search": {"query": "UniProt " + job["accession"], "release": "2026-10-07",
+                   "entities": 0, "sha256": "e3b0c442"},
+        "record_bytes": len(record)}}))
 """
 
 
@@ -1063,6 +1070,11 @@ def test_a_queue_that_cannot_be_read_is_one_line_with_no_credential(tmp_path):
 # ------------------------------------------------------------ the modeller
 
 A_RECORD = json.dumps({"gene": "INS", "protein": {"translation": "M" * 110}}).encode()
+# INS's row as the resolver writes it, as far as the app's check reads it.
+_A_ROW = {"slug": "ins", "display": "Insulin", "gene": "INS", "uniprot": "P01308",
+          "accession": "NG_007114.1", "summary": "A hormone.", "residues": 110, "exons": 3,
+          "chains": 2, "bridges": 1, "catalog_order": None, "chain_name": None,
+          "structure": None}
 
 
 def _modeller(tmp_path, body, stop=None, **check):
@@ -1071,7 +1083,8 @@ def _modeller(tmp_path, body, stop=None, **check):
     settings = make_settings(
         tmp_path, tmp_path / "no-esm-python",
         structure_python=fake_model_python(folder, body, **check),
-        dart=Path("/opt/dart-sdk/bin/dart"), app=tmp_path / "helix-peek")
+        dart=Path("/opt/dart-sdk/bin/dart"), flutter=Path("/opt/flutter/bin/flutter"),
+        app=tmp_path / "helix-peek")
     return local_worker.Modeller(settings, stop or threading.Event())
 
 
@@ -1090,9 +1103,11 @@ def test_this_worker_makes_models_unless_its_env_says_not(tmp_path):
         assert said.structures is False
     told = local_worker.load_settings(
         {**_FOUR, "RESOLVER_STRUCTURE_PYTHON": "/opt/bake/python", "RESOLVER_DART": "/opt/dart",
-         "RESOLVER_APP_DIR": "/src/app"}, tmp_path / "no.env", tmp_path)
-    assert (told.structure_python, told.dart, told.app) == \
-        (Path("/opt/bake/python"), Path("/opt/dart"), Path("/src/app"))
+         "RESOLVER_FLUTTER": "/opt/flutter/bin/flutter", "RESOLVER_APP_DIR": "/src/app"},
+        tmp_path / "no.env", tmp_path)
+    assert (told.structure_python, told.dart, told.flutter, told.app) == \
+        (Path("/opt/bake/python"), Path("/opt/dart"), Path("/opt/flutter/bin/flutter"),
+         Path("/src/app"))
     # A worker built by hand, as every test before this one builds it, makes none.
     assert make_settings(tmp_path, tmp_path / "python").structures is False
 
@@ -1109,6 +1124,17 @@ def test_dart_is_the_sdks_own_binary_where_a_flutter_checkout_has_one(tmp_path, 
     assert local_worker.default_dart(tmp_path / "elsewhere") == Path("dart")
 
 
+def test_flutter_is_the_home_checkouts_where_there_is_one(tmp_path, monkeypatch):
+    flutter = tmp_path / "flutter" / "bin" / "flutter"
+    flutter.parent.mkdir(parents=True)
+    flutter.write_text("")
+    assert local_worker.default_flutter(tmp_path) == flutter
+    monkeypatch.setattr(local_worker.shutil, "which", lambda name: "/usr/local/bin/flutter")
+    assert local_worker.default_flutter(tmp_path / "elsewhere") == Path("/usr/local/bin/flutter")
+    monkeypatch.setattr(local_worker.shutil, "which", lambda name: None)
+    assert local_worker.default_flutter(tmp_path / "elsewhere") == Path("flutter")
+
+
 def test_a_models_time_is_inside_the_reapers_patience_for_one():
     minutes, unit = store.STALE_STRUCTURE.split()
     assert unit == "minutes" and local_worker.MODEL_TIMEOUT < int(minutes) * 60
@@ -1119,16 +1145,23 @@ def test_the_modeller_hands_over_the_job_and_returns_the_model(tmp_path, monkeyp
     monkeypatch.setenv("SUPABASE_SERVICE_KEY", _FOUR["SUPABASE_SERVICE_KEY"])
     modeller = _modeller(tmp_path, MAKES_A_MODEL + """
     (out / "seen.json").write_text(json.dumps({
-        "started_with": sys.argv[1:8], "cwd": os.getcwd(), "job": job,
+        "started_with": sys.argv[1:10], "cwd": os.getcwd(), "job": job,
+        "record": record.decode(),
         "environment": {key: os.environ.get(key) for key in (
             "DATABASE_URL", "SUPABASE_SERVICE_KEY", "PYTHONUNBUFFERED")}}))
     (Path(os.environ["SEEN"])).write_text((out / "seen.json").read_text())
 """)
     monkeypatch.setenv("SEEN", str(tmp_path / "seen.json"))
+    ask = worker.FoldAsk(_A_ROW, {"none": None, "progress": None, "active": None,
+                                  "refresh": False})
     with caplog.at_level(logging.INFO, logger="resolver-worker"):
-        built = modeller(INS, A_RECORD)
+        folded = modeller(INS, A_RECORD, ask)
 
-    assert isinstance(built, worker.Modelled)
+    assert isinstance(folded, worker.Folded) and folded.source == "alphafold"
+    assert (folded.folding, folded.audit) == (None, None)
+    assert folded.selection["outcome"] == "none" and folded.selection["record_bytes"] == \
+        len(A_RECORD)
+    built = folded.model
     assert worker.glb_nodes(built.glb) == ["plddtVeryHigh", "bonds"]
     assert built.scene == b"a compiled scene"
     assert built.chrome["pdb"] == "AF-P01308-F1" and built.chrome["count"] == 110
@@ -1137,10 +1170,14 @@ def test_the_modeller_hands_over_the_job_and_returns_the_model(tmp_path, monkeyp
     seen = json.loads((tmp_path / "seen.json").read_text())
     assert seen["started_with"] == [
         "-u", "-m", "pipeline.resolver.model_local",
-        "--app", str(tmp_path / "helix-peek"), "--dart", "/opt/dart-sdk/bin/dart"]
+        "--app", str(tmp_path / "helix-peek"), "--dart", "/opt/dart-sdk/bin/dart",
+        "--flutter", "/opt/flutter/bin/flutter"]
     assert Path(seen["cwd"]) == BACKEND
-    # The job is the protein as its record and row have it (`worker.model_job`).
-    assert seen["job"] == worker.model_job(INS, A_RECORD)
+    # The job is the protein as its record and row have it (`worker.model_job`),
+    # with what earlier searches decided, and the record beside it.
+    assert seen["job"] == worker.model_job(INS, A_RECORD, ask)
+    assert seen["job"]["prior"] == ask.prior and seen["record"] == A_RECORD.decode()
+    assert seen["job"]["row"]["slug"] == "ins" and seen["job"]["target"]["slug"] == "ins"
     assert seen["job"]["kept"] == [[25, 54]] and seen["job"]["disulfides"] == [[31, 96]]
     # Public data in, files out: the baker is given neither credential.
     assert seen["environment"] == {
@@ -1163,11 +1200,88 @@ def test_no_model_for_a_protein_is_told_as_that_and_says_why(tmp_path):
         modeller(INS, A_RECORD)
     assert str(none.value) == ("AlphaFold DB has no model of proteins over 2,700 residues; "
                                "this one has 4,834.")
+    assert none.value.selection is None
+    # And with what the search decided, which is kept beside the refusal.
+    said = {"policy": 1, "inputs": "d", "outcome": "none", "refused": ["1ABC:A@1"]}
+    modeller = _modeller(tmp_path, f"""
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "refusal.txt").write_text("No model.")
+        (out / "outcome.json").write_text(json.dumps({{"made": None, "selection": {said!r}}}))
+        sys.exit(3)
+    """)
+    with pytest.raises(worker.Unmodelled) as none:
+        modeller(INS, A_RECORD)
+    assert (str(none.value), none.value.selection) == ("No model.", said)
+
+
+def test_a_search_cut_short_is_told_as_unfinished_with_how_far_it_got(tmp_path, caplog):
+    said = {"policy": 1, "inputs": "d", "outcome": "incomplete",
+            "search": {"sha256": "abc"}, "refused": ["1ABC:A@1", "2DEF:B@3"]}
+    modeller = _modeller(tmp_path, f"""
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "outcome.json").write_text(json.dumps(
+            {{"made": None, "unfinished": True, "selection": {said!r}}}))
+        sys.exit(4)
+    """)
+    with caplog.at_level(logging.INFO, logger="resolver-worker"):
+        with pytest.raises(worker.Unfinished) as unfinished:
+            modeller(INS, A_RECORD)
+    assert unfinished.value.selection == said
+    assert "goes on next cycle" in caplog.records[-1].getMessage()
+
+
+A_FOLDING = {"slug": "ins", "gene": "INS", "uniprot": "P01308", "pdb": "1ABC",
+             "schema_version": 2, "chains": [{"node": "chainA"}], "bridges": []}
+
+
+def test_an_experimental_fold_is_handed_over_with_its_track_and_audit(tmp_path, caplog):
+    modeller = _modeller(tmp_path, f"""
+        import struct
+        document = json.dumps({{"asset": {{"version": "2.0"}}, "scenes": [{{"nodes": [0]}}],
+                               "nodes": [{{"name": "chainA", "mesh": 0}}],
+                               "meshes": [{{"primitives": []}}]}}).encode()
+        document += b" " * (-len(document) % 4)
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "model.glb").write_bytes(struct.pack("<4sII", b"glTF", 2, 20 + len(document))
+                                        + struct.pack("<I4s", len(document), b"JSON") + document)
+        (out / "model.fsceneb").write_bytes(b"a compiled scene")
+        (out / "folding.json").write_text(json.dumps({A_FOLDING!r}))
+        (out / "audit.json").write_text(json.dumps({{"entry": "1ABC"}}))
+        (out / "described.json").write_text(json.dumps({{
+            "chrome": {{"pdb": "1ABC"}}, "chains": [{{"node": "chainA", "tint": "mature1"}}],
+            "provenance": {{"pdb": "1ABC", "entry": "1ABC", "source": "PDB",
+                            "method": ["X-RAY DIFFRACTION"], "resolution": 1.5,
+                            "chains": [{{"placed": 51}}], "sampling": 8}}}}))
+        (out / "outcome.json").write_text(json.dumps({{"made": "pdb", "selection": {{
+            "outcome": "chosen", "candidate": "1ABC:A@1"}}}}))
+    """)
+    with caplog.at_level(logging.INFO, logger="resolver-worker"):
+        folded = modeller(INS, A_RECORD)
+    assert folded.source == "pdb" and json.loads(folded.folding) == A_FOLDING
+    assert json.loads(folded.audit) == {"entry": "1ABC"}
+    assert folded.selection == {"outcome": "chosen", "candidate": "1ABC:A@1"}
+    assert caplog.records[-1].getMessage().startswith(
+        "ins: PDB 1ABC (X-RAY DIFFRACTION, 1.5 A), 1 chain(s), 51 residues placed, sampling 8, "
+        "scene 16 B, with its fold, ")
+    # An experimental fold with no track to animate it is no fold.
+    modeller = _modeller(tmp_path, """
+        out.mkdir(parents=True, exist_ok=True)
+        for name in ("model.glb", "model.fsceneb"):
+            (out / name).write_bytes(b"glTF")
+        (out / "described.json").write_text(json.dumps({"chrome": {}, "chains": [],
+                                                        "provenance": {}}))
+        (out / "outcome.json").write_text(json.dumps({"made": "pdb", "selection": {}}))
+    """)
+    with pytest.raises(RuntimeError, match="left no folding track or audit"):
+        modeller(INS, A_RECORD)
 
 
 @pytest.mark.parametrize("body, said", [
     ("sys.exit(0)", "The modeller exited with status 0 and wrote no model."),
+    ("out.mkdir(parents=True); (out / 'outcome.json').write_text('{\"made\": \"alphafold\"}')",
+     "The modeller exited with status 0 and wrote no model."),
     ("sys.exit(3)", "The modeller exited with status 3 and gave no reason."),
+    ("sys.exit(4)", "The modeller exited with status 4 and said nothing of its search."),
     ("sys.stderr.write('pymol failed:\\nSegmentation fault'); sys.exit(1)",
      "The modeller exited with status 1: pymol failed: Segmentation fault"),
     ("os.kill(os.getpid(), 9)", "The modeller was ended by signal 9 and said nothing."),
@@ -1176,7 +1290,8 @@ def test_a_modeller_that_ends_any_other_way_broke(tmp_path, body, said, spawned)
     modeller = _modeller(tmp_path, body)
     with pytest.raises(RuntimeError) as broke:
         modeller(INS, A_RECORD)
-    assert not isinstance(broke.value, worker.Unmodelled) and str(broke.value) == said
+    assert not isinstance(broke.value, (worker.Unmodelled, worker.Unfinished))
+    assert str(broke.value) == said
 
 
 def test_a_stop_ends_the_modeller_and_its_bake_can_go_back(tmp_path, spawned):
@@ -1258,57 +1373,226 @@ def test_a_modeller_that_can_start_is_ready_and_one_that_cannot_says_why(tmp_pat
         "The modeller could not be started: ")
 
 
-def test_the_model_driver_writes_what_the_bake_made_and_exits_0(tmp_path, monkeypatch):
-    alphafold = pytest.importorskip("pipeline.structure.alphafold")   # needs numpy
-    from pipeline.resolver import model_local
+def _no_entries():
+    """RCSB and UniProt as they answer for a protein the PDB holds nothing of."""
+    from types import SimpleNamespace
 
+    from pipeline.structure.test_fold_job import NOW, services
+
+    post, get, asked = services(ids=[])
+    entry = SimpleNamespace(body={"sequence": {"value": "M" * 110}, "features": []},
+                            release="2026_03")
+    return {"post": post, "get": get, "now": lambda: NOW,
+            "fetch_entry": lambda accession: entry, "pfam": lambda accession: ()}, asked
+
+
+def _driver_job(prior=None) -> dict:
+    """A job as the Modeller writes one (`worker.model_job`)."""
+    return worker.model_job(INS, A_RECORD, worker.FoldAsk(_A_ROW, prior or {"refresh": False}))
+
+
+def _alphafold(monkeypatch, *, refuse=None, broken=None):
+    alphafold = pytest.importorskip("pipeline.structure.alphafold")   # needs numpy
     asked = []
 
-    def build(job, workspace, app, dart):
+    def build(job, workspace, app, dart, **said):
         asked.append((job, workspace, app, dart))
+        if refuse:
+            raise alphafold.Refused(refuse)
+        if broken:
+            raise RuntimeError(broken)
         return alphafold.Built(b"glTF", b"scene", {"pdb": "AF-P01308-F1"},
                                [{"node": "plddtLow", "tint": "plddtLow"}], {"sampling": 8})
 
     monkeypatch.setattr(alphafold, "build", build)
-    job_file, out = tmp_path / "job.json", tmp_path / "out"
-    job_file.write_text(json.dumps(worker.model_job(INS, A_RECORD)))
-    assert model_local.main(
-        [str(job_file), str(out), "--app", "/src/app", "--dart", "/opt/dart"]) == 0
+    return alphafold, asked
 
+
+def test_the_model_driver_draws_alphafolds_model_where_the_pdb_has_none(tmp_path, monkeypatch):
+    from pipeline.resolver import model_local
+
+    alphafold, asked = _alphafold(monkeypatch)
+    services, searched = _no_entries()
+    out = tmp_path / "out"
+    assert model_local.make(_driver_job(), A_RECORD, out, Path("/src/app"), "/opt/dart",
+                            "/opt/flutter", **services) == 0
     job, workspace, app, dart = asked[0]
     assert job == alphafold.Job(slug="ins", accession="P01308", display="Insulin",
                                 protein="M" * 110, kept=((25, 54),), disulfides=((31, 96),),
                                 allowed=3)
-    assert (workspace, app, dart) == (out / "work", Path("/src/app"), "/opt/dart")
+    assert (workspace, app, dart) == (out / "alphafold", Path("/src/app"), "/opt/dart")
     assert (out / "model.glb").read_bytes() == b"glTF"
     assert (out / "model.fsceneb").read_bytes() == b"scene"
     assert json.loads((out / "described.json").read_text()) == {
         "chrome": {"pdb": "AF-P01308-F1"},
         "chains": [{"node": "plddtLow", "tint": "plddtLow"}], "provenance": {"sampling": 8}}
+    said = json.loads((out / "outcome.json").read_text())
+    # The PDB was searched, whole, first.
+    assert said["made"] == "alphafold" and searched.search == 1
+    assert (said["selection"]["outcome"], said["selection"]["search"]["entities"],
+            said["selection"]["policy"]) == ("none", 0, 1)
+    assert not (out / "folding.json").exists()
 
 
-def test_the_model_driver_writes_the_bakes_refusal_and_exits_3(tmp_path, monkeypatch):
-    alphafold = pytest.importorskip("pipeline.structure.alphafold")
+def test_a_search_that_found_nothing_lately_is_not_made_again(tmp_path, monkeypatch):
+    from pipeline.resolver import model_local
+    from pipeline.structure import experimental, fold_report
+
+    _alphafold(monkeypatch)
+    services, searched = _no_entries()
+    inputs, _ = experimental.inputs_for(INS, A_RECORD, fetch_entry=services["fetch_entry"],
+                                        pfam=services["pfam"])
+    none = {"id": 7, "policy": 1, "inputs": fold_report.inputs_digest(inputs), "entities": 0}
+    out = tmp_path / "cached"
+    assert model_local.make(_driver_job({"none": none, "refresh": False}), A_RECORD, out,
+                            Path("/src/app"), "/opt/dart", "/opt/flutter", **services) == 0
+    assert searched.search == 0
+    assert json.loads((out / "outcome.json").read_text()) == {
+        "made": "alphafold", "selection": {"cached": 7}}
+    # Asked to start afresh, or for other inputs, or under another rule, it searches.
+    for prior in ({"none": none, "refresh": True},
+                  {"none": {**none, "inputs": "other"}, "refresh": False},
+                  {"none": {**none, "policy": 2}, "refresh": False}):
+        services, searched = _no_entries()
+        assert model_local.make(_driver_job(prior), A_RECORD, tmp_path / "again",
+                                Path("/src/app"), "/opt/dart", "/opt/flutter", **services) == 0
+        assert searched.search == 1
+
+
+def test_the_model_driver_says_why_neither_source_has_a_model_and_exits_3(tmp_path, monkeypatch):
     from pipeline.resolver import model_local
 
-    def refuse(job, workspace, app, dart):
-        raise alphafold.Refused("AlphaFold DB holds no model of UniProt P01308.")
-
-    def broken(job, workspace, app, dart):
-        raise RuntimeError("the scene importer failed (255)")
-
-    job_file, out = tmp_path / "job.json", tmp_path / "out"
-    job_file.write_text(json.dumps(worker.model_job(INS, A_RECORD)))
-    said = [str(job_file), str(out), "--app", "/src/app", "--dart", "/opt/dart"]
-    monkeypatch.setattr(alphafold, "build", refuse)
-    assert model_local.main(said) == model_local.REFUSED == 3
-    assert (out / "refusal.txt").read_text() == "AlphaFold DB holds no model of UniProt P01308."
+    _alphafold(monkeypatch, refuse="AlphaFold DB holds no model of UniProt P01308.")
+    services, _ = _no_entries()
+    out = tmp_path / "out"
+    assert model_local.make(_driver_job(), A_RECORD, out, Path("/src/app"), "/opt/dart",
+                            "/opt/flutter", **services) == model_local.REFUSED == 3
+    assert (out / "refusal.txt").read_text() == (
+        "The PDB holds no experimental structure of it. AlphaFold DB holds no model of "
+        "UniProt P01308.")
+    assert json.loads((out / "outcome.json").read_text())["selection"]["outcome"] == "none"
     assert not (out / "model.glb").exists()
+    assert model_local.no_model(4, "AlphaFold's model is not confident here.") == (
+        "None of its experimental structures in the PDB passes the checks for drawing. "
+        "AlphaFold's model is not confident here.")
     # Anything else is the bake breaking, and is not a verdict on the protein.
-    monkeypatch.setattr(alphafold, "build", broken)
+    _alphafold(monkeypatch, broken="the scene importer failed (255)")
+    services, _ = _no_entries()
     with pytest.raises(RuntimeError, match="scene importer"):
-        model_local.main(said)
-    assert model_local.main(["--app", "/src/app", "--dart", "/opt/dart"]) == 2
+        model_local.make(_driver_job(), A_RECORD, tmp_path / "broke", Path("/src/app"),
+                         "/opt/dart", "/opt/flutter", **services)
+
+
+def _relaxin_job(prior=None) -> tuple:
+    """Relaxin, whose entries the fixtures hold: its job, record and services."""
+    from types import SimpleNamespace
+
+    from pipeline.structure import test_experimental as fixtures
+    from pipeline.structure.test_fold_job import NOW
+
+    job = {**worker.model_job(fixtures.RELAXIN, fixtures.RECORD), "row": fixtures.ROW,
+           "prior": prior or {"refresh": False}}
+    entry = SimpleNamespace(body=fixtures.UNIPROT, release="2026_03")
+    return job, fixtures.RECORD, {"now": lambda: NOW, "fetch_entry": lambda accession: entry,
+                                  "pfam": lambda accession: ()}
+
+
+def _baked(monkeypatch):
+    """The bake and the app's check, stood in for: each candidate baked is
+    said, and comes back as a fold."""
+    from pipeline.structure import experimental
+
+    drawn = []
+
+    def draw(self, candidate, examined, entry, entity):
+        drawn.append(candidate.entry)
+        return experimental.Built(
+            glb=b"glTF", scene=b"scene", folding=b'{"pdb": "' + examined.entry.encode() + b'"}',
+            chrome={"pdb": examined.entry}, chains=[{"node": "chainA", "tint": "mature1"}],
+            provenance={"pdb": examined.entry, "source": "PDB"}, folding_provenance={"pdb": 1},
+            working_copy="", audit={"entry": examined.entry}, measured={"scene_bytes": 5})
+
+    monkeypatch.setattr(experimental.Drawer, "__call__", draw)
+    return drawn
+
+
+def test_the_model_driver_writes_an_experimental_fold_and_exits_0(tmp_path, monkeypatch):
+    from pipeline.resolver import model_local
+    from pipeline.structure.test_fold_job import MV1, RLX, services
+
+    drawn = _baked(monkeypatch)
+    job, record, said = _relaxin_job()
+    post, get, _ = services(files={"6RLX": RLX, "2MV1": MV1})
+    out = tmp_path / "out"
+    assert model_local.make(job, record, out, Path("/src/app"), "/opt/dart", "/opt/flutter",
+                            post=post, get=get, **said) == 0
+    assert drawn == ["6RLX"]
+    assert (out / "model.glb").read_bytes() == b"glTF"
+    assert (out / "model.fsceneb").read_bytes() == b"scene"
+    assert json.loads((out / "folding.json").read_text()) == {"pdb": "6RLX"}
+    described = json.loads((out / "described.json").read_text())
+    assert described == {"chrome": {"pdb": "6RLX"},
+                         "chains": [{"node": "chainA", "tint": "mature1"}],
+                         "provenance": {"pdb": "6RLX", "source": "PDB"},
+                         "folding_provenance": {"pdb": 1}}
+    outcome = json.loads((out / "outcome.json").read_text())
+    assert outcome["made"] == "pdb" and outcome["measured"] == {"scene_bytes": 5}
+    assert (outcome["selection"]["outcome"], outcome["selection"]["candidate"]) == (
+        "chosen", "6RLX:B@26,A@162")
+    audit = json.loads((out / "audit.json").read_text())
+    assert audit["entry"] == "6RLX" and audit["selection"] == outcome["selection"]
+
+
+def test_a_search_cut_short_exits_4_and_the_next_goes_on_from_there(tmp_path, monkeypatch):
+    from pipeline.resolver import model_local
+    from pipeline.structure.test_fold_job import MV1, RLX_ELSEWHERE, services
+
+    drawn = _baked(monkeypatch)
+    job, record, said = _relaxin_job()
+    post, get, asked = services(files={"6RLX": RLX_ELSEWHERE, "2MV1": MV1})
+    out = tmp_path / "first"
+    assert model_local.make(job, record, out, Path("/src/app"), "/opt/dart", "/opt/flutter",
+                            post=post, get=get, limit=1, **said) == model_local.UNFINISHED == 4
+    selection = json.loads((out / "outcome.json").read_text())["selection"]
+    assert selection["outcome"] == "incomplete" and asked.files == ["6RLX"]
+    assert selection["refused"] and all(c.startswith("6RLX:") for c in selection["refused"])
+    assert not (out / "model.glb").exists() and drawn == []
+
+    # The next attempt skips what was refused, where the search finds the same entries.
+    progress = {"policy": 1, "inputs": selection["inputs"],
+                "search": selection["search"]["sha256"], "refused": selection["refused"]}
+    job, record, said = _relaxin_job({"progress": progress, "refresh": False})
+    post, get, asked = services(files={"6RLX": RLX_ELSEWHERE, "2MV1": MV1})
+    out = tmp_path / "second"
+    assert model_local.make(job, record, out, Path("/src/app"), "/opt/dart", "/opt/flutter",
+                            post=post, get=get, limit=1, **said) == 0
+    assert asked.files == ["2MV1"] and drawn == ["2MV1"]
+    outcome = json.loads((out / "outcome.json").read_text())
+    assert outcome["selection"]["resumed"] == len(progress["refused"])
+    # Where the PDB has moved on, it starts over.
+    job, record, said = _relaxin_job({"progress": {**progress, "search": "another"},
+                                      "refresh": False})
+    post, get, asked = services(files={"6RLX": RLX_ELSEWHERE, "2MV1": MV1})
+    assert model_local.make(job, record, tmp_path / "third", Path("/src/app"), "/opt/dart",
+                            "/opt/flutter", post=post, get=get, limit=1, **said) == 4
+    assert asked.files == ["6RLX"]
+
+
+def test_the_model_driver_reads_its_job_and_the_record_beside_it(tmp_path, monkeypatch):
+    from pipeline.resolver import model_local
+
+    seen = []
+    monkeypatch.setattr(model_local, "make", lambda job, record, out, app, dart, flutter:
+                        seen.append((job, record, out, app, dart, flutter)) or 0)
+    job = _driver_job()
+    (tmp_path / job["record"]).write_bytes(A_RECORD)
+    (tmp_path / "job.json").write_text(json.dumps(job))
+    assert model_local.main([str(tmp_path / "job.json"), str(tmp_path / "out"), "--app",
+                             "/src/app", "--dart", "/opt/dart", "--flutter", "/opt/flutter"]) == 0
+    assert seen == [(job, A_RECORD, tmp_path / "out", Path("/src/app"), "/opt/dart",
+                     "/opt/flutter")]
+    assert model_local.main(["--app", "/src/app", "--dart", "/opt/dart",
+                             "--flutter", "/opt/flutter"]) == 2
 
 
 def test_the_model_driver_imports_nothing_heavy_until_it_is_asked():
@@ -1319,6 +1603,8 @@ def test_the_model_driver_imports_nothing_heavy_until_it_is_asked():
     done = subprocess.run([sys.executable, "-c", code], cwd=BACKEND, capture_output=True, text=True)
     assert done.returncode == 0, done.stderr
     assert done.stdout.strip() == "3 []"
+    assert subprocess.run([sys.executable, "-c", code.replace("m.REFUSED", "m.UNFINISHED")],
+                          cwd=BACKEND, capture_output=True, text=True).stdout.strip() == "4 []"
 
 
 def test_a_model_can_be_made_here_or_the_check_says_why_not(tmp_path):
@@ -1329,11 +1615,15 @@ def test_a_model_can_be_made_here_or_the_check_says_why_not(tmp_path):
     from pipeline.structure import alphafold, bake
 
     dart = local_worker.default_dart(Path.home())
-    if not Path(bake.PYMOL).exists() or not dart.exists() or alphafold.importer_unready(CLIENT):
-        pytest.skip("needs PyMOL, a Dart SDK and the app's checkout")
-    assert model_local.check(CLIENT, str(dart)) == 0
+    flutter = local_worker.default_flutter(Path.home())
+    if (not Path(bake.PYMOL).exists() or not dart.exists() or not flutter.exists()
+            or alphafold.importer_unready(CLIENT)):
+        pytest.skip("needs PyMOL, a Dart SDK, Flutter and the app's checkout")
+    assert model_local.check(CLIENT, str(dart), str(flutter)) == 0
     # A checkout that is not the app's is said, before anything is run.
-    assert model_local.check(tmp_path, str(dart)) == 1
+    assert model_local.check(tmp_path, str(dart), str(flutter)) == 1
+    # And a Flutter that is not there to hold a fold to the app's rules.
+    assert model_local.check(CLIENT, str(dart), str(tmp_path / "no-flutter")) == 1
 
 
 # ------------------------------------------------------------ the evidence

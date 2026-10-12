@@ -15,7 +15,12 @@ reads it as the app does (LIVE_EXPECT=refused).
 Its model is checked as it stands: ready (the stored scene and the `.glb` it
 was compiled from, each to its digest, and the fold page's words and chains to
 the model), refused (the sentence why, and nothing on the row), or never asked
-for. A model still pending is not a finished build.
+for. A model still pending is not a finished build. A model from an
+experimental entry comes with its fold (`folding`), which is held to it: the
+track's own digest, the `.glb` its frame names being the model's, its chains
+the model's nodes, its bridges joining the record's cysteines, and the bake's
+audit beside it; one from AlphaFold DB has none. The fold the database records
+as drawn (`fold_generation`, 0012) is the one served.
 
 So are its AVI and ClinVar tracks: ready, each to its digest and then to
 `check_assets.py`'s own checks against the record (ClinVar's against AVI's
@@ -63,14 +68,18 @@ def hold(ok: bool, what: str) -> None:
         wrong.append(what)
 
 
-def structure(row: dict, track: dict) -> None:
-    """The protein's model, as far as it has got (`pipeline/structure/alphafold.py`)."""
+def structure(row: dict, tracks: dict, translation: str) -> None:
+    """The protein's model and its fold, as far as they have got
+    (`pipeline/structure/experimental.py`, `pipeline/structure/alphafold.py`)."""
+    track = tracks["structure"]
+    folding = tracks.get("folding") or {"state": "absent"}
     state, said = track["state"], track.get("provenance") or {}
     if state != "ready":
         print(f"  structure: {state}" + (f": {track['reason']}" if track.get("reason") else ""))
         hold(state in ("refused", "absent"), f"its model is not still on its way ({state})")
         hold(row["structure"] is None and row["chains"] == [],
              "no model, so no words or chains for one on the row")
+        hold(folding["state"] == "absent", "no model, so no fold to animate")
         return
 
     scene = fetch(track["url"])
@@ -81,22 +90,33 @@ def structure(row: dict, track: dict) -> None:
     hold(hashlib.sha256(glb).hexdigest() == said["glb"]["sha256"] and len(glb) == said["glb"]["bytes"],
          "the .glb beside it matches the sha256 and size its provenance names")
     chrome, chains = row["structure"], row["chains"]
-    print(f"  structure: {len(scene):,} bytes at {track['url'].rsplit('/', 2)[-2:]}, {said.get('entry')}"
-          f" v{said.get('model_version')}, span {said.get('span')}, mean pLDDT {said.get('mean_plddt')},"
-          f" shares {said.get('plddt_shares')}, sampling {said.get('sampling')},"
-          f" {said.get('representation')}, frame {said.get('frame')}")
+    print(f"  fold page: {chrome}")
+    print(f"  chains: {chains}")
+    hold(tuple(chrome or {}) == worker._CHROME, "the fold page's seven words")
+    if said.get("source") == "PDB":
+        experimental(row, said, glb, folding, translation)
+        tints = worker._TINTS_BY_SOURCE["pdb"]
+    else:
+        alphafold(row, said)
+        hold(folding["state"] == "absent", "AlphaFold's model is drawn still: no fold to animate")
+        tints = worker._TINTS_BY_SOURCE["alphafold"]
+    hold(worker.glb_nodes(glb) == [chain["node"] for chain in chains] == said.get("nodes")
+         and all(chain["tint"] in tints for chain in chains),
+         "every node the row names is in the model, with a tint the app has")
+
+
+def alphafold(row: dict, said: dict) -> None:
+    """AlphaFold DB's model, drawn over the mature span (`alphafold.py`)."""
+    chrome = row["structure"]
+    print(f"  structure: {said.get('entry')} v{said.get('model_version')}, span {said.get('span')},"
+          f" mean pLDDT {said.get('mean_plddt')}, shares {said.get('plddt_shares')},"
+          f" sampling {said.get('sampling')}, {said.get('representation')}, frame {said.get('frame')}")
     print(f"  structure: bridges {said.get('bridges')}, dropped {said.get('bridges_dropped')},"
           f" differences {said.get('sequence_differences')}, importer {said.get('importer')},"
           f" PyMOL {said.get('pymol')}")
-    print(f"  fold page: {chrome}")
-    print(f"  chains: {chains}")
     hold(said.get("source") == "AlphaFold DB" and said.get("licence") == "CC BY 4.0"
          and said.get("entry") == f"AF-{row['uniprot']}-F1" == (chrome or {}).get("pdb"),
          "AlphaFold DB's canonical entry for this protein, credited CC BY 4.0")
-    hold(tuple(chrome or {}) == worker._CHROME, "the fold page's seven words")
-    hold(worker.glb_nodes(glb) == [chain["node"] for chain in chains] == said.get("nodes")
-         and all(chain["tint"] in worker._TINTS for chain in chains),
-         "every node the row names is in the model, with a tint the app has")
     kept = [(r["start"], r["end"]) for r in row["regions"] if r["kept"]]
     span = [min(a for a, _ in kept), max(b for _, b in kept)] if kept else [1, row["facts"]["residues"]]
     hold(said.get("span") == span and chrome["count"] == span[1] - span[0] + 1
@@ -107,6 +127,59 @@ def structure(row: dict, track: dict) -> None:
          and len(said.get("bridges", [])) + len(said.get("bridges_dropped", [])) == len(row["disulfides"])
          and (("bonds" in said.get("nodes", [])) == bool(said.get("bridges"))),
          "its bridges are the row's, each drawn or accounted for")
+
+
+def experimental(row: dict, said: dict, glb: bytes, folding: dict, translation: str) -> None:
+    """An experimental entry chosen by rule, with its fold (`experimental.py`)."""
+    chrome = row["structure"]
+    print(f"  structure: PDB {said.get('entry')} ({', '.join(said.get('method') or [])},"
+          f" {said.get('resolution')}), model {said.get('model')}, revision {said.get('revision')},"
+          f" scope {said.get('scope')} {said.get('domains') or ''}, residues {said.get('residues')},"
+          f" sampling {said.get('sampling')}, {said.get('representation')},"
+          f" shape {said.get('secondary_structure')!r}, policy {said.get('policy')}")
+    print(f"  structure: chains {said.get('chains')}")
+    print(f"  structure: bridges {said.get('bridges')}, dropped {said.get('bridges_dropped')},"
+          f" differences {said.get('sequence_differences')}, importer {said.get('importer')},"
+          f" PyMOL {said.get('pymol')}, frame {said.get('frame')}")
+    hold(said.get("licence") == "CC0 1.0" and said.get("entry") == said.get("pdb")
+         == (chrome or {}).get("pdb") and not str(said.get("entry")).startswith("AF-"),
+         "an experimental PDB entry, the one the fold page names")
+    hold(all(translation[a - 1] == "C" and translation[b - 1] == "C"
+             for a, b in said.get("bridges", []))
+         and ("bonds" in said.get("nodes", [])) == bool(said.get("bridges")),
+         "its bridges join the record's own cysteines, and are drawn")
+    # The bake's audit, beside it.
+    audit = said.get("audit") or {}
+    base = folding.get("url") or ""
+    stored = fetch(base.rsplit("/folding/", 1)[0] + "/" + audit["path"]) if audit and base else b""
+    hold(bool(stored) and hashlib.sha256(stored).hexdigest() == audit.get("sha256")
+         and json.loads(stored).get("entry") == said.get("entry"),
+         "the bake's audit is stored beside it, at the digest its provenance names")
+    # Its fold, and the model it ends on.
+    if folding.get("state") != "ready":
+        hold(False, f"an experimental model has its fold ({folding.get('state')})")
+        return
+    payload = fetch(folding["url"])
+    hold(hashlib.sha256(payload).hexdigest() == folding["sha256"]
+         and len(payload) == folding["bytes"] and folding["format"] == "json",
+         "folding bytes match their sha256 and size")
+    track = json.loads(payload)
+    frame = track.get("frame") or {}
+    print(f"  folding: {len(payload):,} bytes, chains "
+          f"{[(c['node'], c['pdb_chain'], c['offset'], c['first'], c['last']) for c in track['chains']]},"
+          f" {len(track.get('bridges') or [])} bridge(s), {track.get('secondary_structure')!r}")
+    hold(frame.get("glb_sha256") == said["glb"]["sha256"]
+         == (folding.get("provenance") or {}).get("frame", {}).get("glb_sha256"),
+         "the fold's frame names the very model it ends on")
+    hold((track.get("slug"), track.get("gene"), track.get("uniprot"), track.get("pdb"))
+         == (row["slug"], row["gene"], row["uniprot"], said.get("entry")),
+         "the fold is this protein's, from this entry")
+    nodes = said.get("nodes") or []
+    hold([c["node"] for c in track["chains"]] == [n for n in nodes if n != "bonds"]
+         and bool(track.get("bridges")) == ("bonds" in nodes),
+         "its chains are the model's nodes, and its bridges the model's")
+    hold(all(r["aa"] == translation[r["n"] - 1] for c in track["chains"] for r in c["residues"]),
+         "every residue it lists is the record's own")
 
 
 def evidence(tracks: dict, record: dict, target) -> None:
@@ -188,10 +261,9 @@ def main(gene: str, device: str | None) -> int:
     hold(states.get("record") == "ready" and states.get("constraint") == "ready",
          f"record and constraint ready: {states}")
     hold(all(state == "absent" for kind, state in states.items()
-             if kind not in ("record", "constraint", "structure", "impact", "clinvar")),
+             if kind not in ("record", "constraint", "structure", "impact", "clinvar", "folding")),
          "every other track absent")
     hold(row["tracks"] == states, "the row's bare states agree with its track rows")
-    structure(row, tracks["structure"])
 
     # The stored bytes, held to the digests their rows carry.
     record_bytes = fetch(tracks["record"]["url"])
@@ -203,6 +275,7 @@ def main(gene: str, device: str | None) -> int:
     record = json.loads(record_bytes)
     constraint = json.loads(constraint_bytes)
     translation = record["protein"]["translation"]
+    structure(row, tracks, translation)
     print(f"  record: {len(record_bytes):,} bytes at {tracks['record']['url'].rsplit('/', 2)[-2:]},"
           f" gene {record['gene']}, {len(record['exons'])} exons, protein {len(translation)} aa")
     print(f"  record provenance: {tracks['record'].get('provenance')}")
@@ -269,12 +342,28 @@ def main(gene: str, device: str | None) -> int:
                 "select accession, slice_start, slice_end, slice_strand, transcript_id, protein_id, chain_name "
                 "from protein where slug = %s", (slug,)).fetchone()
             curated = conn.execute("select count(*) from protein where catalog_order is not null").fetchone()[0]
+            drawn = None
+            if conn.execute("select to_regclass('fold_generation') is not null").fetchone()[0]:
+                drawn = conn.execute(
+                    "select id, source, state, structure_track ->> 'sha256', "
+                    "folding_track ->> 'sha256', selection_id from fold_generation "
+                    "where slug = %s and active", (slug,)).fetchone()
+                search = conn.execute(
+                    "select outcome, candidate, entry, decided_at, expires_at from fold_selection "
+                    "where slug = %s order by decided_at desc, id desc limit 1", (slug,)).fetchone()
             aliases = conn.execute(
                 "select alias, kind from protein_alias where slug = %s order by kind, alias", (slug,)).fetchall()
     print(f"  protein row source: {where}")
     print(f"  request: {request}")
     print(f"  bake: {bake}")
     print(f"  structure bake: {model}")
+    if drawn is not None:
+        print(f"  fold drawn: generation {drawn[0]}, {drawn[1]} {drawn[2]}; latest search {search}")
+        folding_sha = (tracks.get("folding") or {}).get("sha256")
+        hold(drawn[3] == tracks["structure"].get("sha256") and drawn[4] == folding_sha,
+             "the fold the database records as drawn is the one served")
+        hold((drawn[1] == "pdb") == ((tracks.get("folding") or {}).get("state") == "ready"),
+             "an experimental fold, and only one, is animated")
     print(f"  evidence bakes: {evidence_bakes}")
     evidence(tracks, record, target_of(protein_row))
     print(f"  aliases: {aliases}")

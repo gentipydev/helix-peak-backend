@@ -9,7 +9,7 @@ against Supabase by `scripts/check_suggest.py`.
 
 import pytest
 
-from app import db
+from app import db, resolves
 
 
 def _row(uniprot="P01308", gene="INS", name="Insulin", length=110, buildable=True,
@@ -147,7 +147,7 @@ def test_a_protein_being_built_says_so_whatever_its_status(client, fake_pool):
     ]
     (asked,) = [params for flat, params in pool.statements
                 if flat.startswith("select lower(gene), 'building' from resolve_request")]
-    assert asked == {"genes": ["b2m", "ins", "insr", "tp53bp2"]}
+    assert asked == {"genes": ["b2m", "ins", "insr", "tp53bp2"], "hold": resolves.FOLD_HOLD}
 
 
 def test_a_protein_whose_scoring_was_stopped_says_so(client, fake_pool):

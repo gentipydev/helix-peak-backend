@@ -33,7 +33,7 @@ class FakeCursor:
 class FakePool:
     def __init__(self, protein=None, index=None, latest=None, today=0, queued=True,
                  failing=False, request_build=None, bake_build=None, ask=None, bake=None,
-                 resumable=False, stoppable=True, evidence=False):
+                 resumable=False, stoppable=True, evidence=False, fold=None):
         self.protein = protein
         self.index = index
         self.latest = latest
@@ -54,6 +54,10 @@ class FakePool:
         # and the proteins it was asked about.
         self.evidence = evidence
         self.evidence_read = []
+        # `_FOLD`'s row: the structure track's state, whether a bake of it is
+        # under way within the hold, and the seconds since the scoring ended.
+        self.fold = fold
+        self.fold_read = []
         self.inserted = []
         self.built = []
         self.written = []
@@ -91,6 +95,9 @@ class FakePool:
         if flat.startswith("select exists ( select 1 from bake_job"):
             self.evidence_read.append(params)
             return FakeCursor([(self.evidence,)])
+        if flat.startswith("select t.state, exists (select 1 from bake_job j"):
+            self.fold_read.append(params)
+            return FakeCursor([self.fold] if self.fold else [])
         if flat.startswith("select id, state, asker from resolve_request"):
             return FakeCursor([self.ask] if self.ask else [])
         if flat.startswith("select id, state, asker from bake_job"):
@@ -279,7 +286,7 @@ def test_a_read_of_a_resolved_protein_is_ready(client, pool):
 def _report(step, elapsed, **said):
     return {"step": step, "ahead": None, "scored": None, "residues": None, "left": None,
             "elapsed": elapsed, "transcript": None, "reason": None, "stopped": False,
-            "ran": None, **said}
+            "ran": None, "fold": None, **said}
 
 
 def test_a_new_ask_says_how_many_proteins_are_ahead_of_it(client, pool, woken):
@@ -377,6 +384,58 @@ def test_a_protein_with_no_evidence_under_way_reads_as_it_always_has(client, poo
     assert client.get("/proteins/resolve/BRCA1").json()["build"] == _report(
         "done", 905.0, scored=1863, residues=1863, transcript="NM_007294.4")
     assert fake.evidence_read == [("brca1",)]
+
+
+# ------------------------------------------------------------------- its fold
+
+
+def test_a_builds_fold_is_its_structure_tracks_state_and_none_where_none_was_asked(
+        client, pool):
+    done = _bake(job="done", done=1863, total=1863, elapsed=905.0, track="ready")
+    for state in ("ready", "refused"):
+        fake = pool(protein="brca1", index=BRCA1, bake_build=done, fold=(state, False, 30.0))
+        assert client.get("/proteins/resolve/BRCA1").json()["build"] == _report(
+            "done", 905.0, scored=1863, residues=1863, transcript="NM_007294.4", fold=state)
+        assert fake.fold_read == [(resolves.FOLD_HOLD, "brca1")]
+    # Built by a worker that makes no models, or before models were made.
+    for row in (None, ("absent", False, 30.0)):
+        pool(protein="brca1", index=BRCA1, bake_build=done, fold=row)
+        assert client.get("/proteins/resolve/BRCA1").json()["build"]["fold"] is None
+    # While its scores are being made, it is at them, its fold beside.
+    pool(protein="brca1", index=BRCA1, bake_build=_bake(job="queued", ahead=1),
+         fold=("pending", True, None))
+    assert client.get("/proteins/resolve/BRCA1").json()["build"] == _report(
+        "scoring", 60.0, ahead=1, transcript="NM_007294.4", fold="pending")
+
+
+def test_a_build_whose_first_fold_is_being_made_is_held_at_its_structure(client, pool):
+    done = _bake(job="done", done=1863, total=1863, elapsed=905.0, track="ready")
+    pool(protein="brca1", index=BRCA1, bake_build=done, fold=("pending", True, 40.0))
+    # Not done, and with no reason, which would end it; its clock runs on.
+    assert client.get("/proteins/resolve/BRCA1").json()["build"] == _report(
+        "structure", 945.0, transcript="NM_007294.4", fold="pending")
+    # Its scores declined: held all the same, and the reason said once it is made.
+    refused = _bake(job="failed", done=1863, total=1863, elapsed=910.0, track="refused",
+                    reason="The scores are not drawn.")
+    pool(protein="brca1", index=BRCA1, bake_build=refused, fold=("pending", True, 5.0))
+    assert client.get("/proteins/resolve/BRCA1").json()["build"] == _report(
+        "structure", 915.0, transcript="NM_007294.4", fold="pending")
+
+
+def test_a_build_is_held_for_its_fold_no_longer_than_the_hold(client, pool):
+    # No bake of it running, and none queued within the hold: no worker is
+    # making it, and the build opens; its fold page says a model is coming.
+    done = _bake(job="done", done=1863, total=1863, elapsed=905.0, track="ready")
+    pool(protein="brca1", index=BRCA1, bake_build=done, fold=("pending", False, 1500.0))
+    assert client.get("/proteins/resolve/BRCA1").json()["build"] == _report(
+        "done", 905.0, scored=1863, residues=1863, transcript="NM_007294.4", fold="pending")
+
+
+def test_a_stopped_build_is_never_held_for_its_fold(client, pool):
+    stopped = _bake(job="stopped", done=450, total=1863, elapsed=331.0, track="absent")
+    pool(protein="brca1", index=BRCA1, bake_build=stopped, fold=("pending", True, 10.0))
+    build = client.get("/proteins/resolve/BRCA1").json()["build"]
+    assert (build["step"], build["stopped"], build["fold"]) == ("scoring", True, "pending")
 
 
 def test_one_of_the_twenty_has_no_build(client, pool):

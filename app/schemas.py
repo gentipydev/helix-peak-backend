@@ -296,11 +296,17 @@ class BuildReport(BaseModel):
     makes before ESM-2; never with a reason, since it never ends a build),
     ``scoring`` (its ESM-2 track: waiting for the scorer, the model loading,
     or residues being scored), ``check`` (every residue scored, the alignment
-    gate and the upload left) or ``done``. A step that ended without its
-    result has ``reason``; a request the resolver declined says so in the
-    response's own ``state`` and ``reason`` instead. ``stopped`` says the
-    reader who asked ended it there. An app older than a step reads the
-    report as none (`BuildStep.fromWire`).
+    gate and the upload left), ``structure`` (its scores are over and its
+    first fold is still being made, for `resolves.FOLD_HOLD` at most; never
+    with a reason) or ``done``. A step that ended without its result has
+    ``reason``; a request the resolver declined says so in the response's own
+    ``state`` and ``reason`` instead. ``stopped`` says the reader who asked
+    ended it there. An app older than a step reads the report as none
+    (`BuildStep.fromWire`), and reads its ESM-2 track's state instead.
+
+    ``fold`` is its structure track's state where the worker makes models
+    (``pending``, ``ready`` or ``refused``), and null where none was asked
+    for.
 
     Every number is the database's, so a phone's clock never enters it.
     """
@@ -321,6 +327,7 @@ class BuildReport(BaseModel):
     stopped: bool = False
     # Seconds the scoring under way has run: what stopping it would give up.
     ran: Optional[float] = None
+    fold: Optional[str] = None
 
 
 class ResolveResponse(BaseModel):

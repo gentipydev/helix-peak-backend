@@ -24,7 +24,9 @@ there on a Mac, which makes the same two calls from a launchd agent
 ([below](#running-the-worker-on-a-mac-temporary)).
 
 The Mac's worker makes one thing more, between the two: the protein's fold,
-from AlphaFold DB's model ([below](#the-fold-alphafold-dbs-model)). Modal's
+from an experimental entry chosen by rule, with the fold animation the twenty
+play, and from AlphaFold DB's model only where a whole search finds none
+([below](#the-fold-an-experimental-entry-else-alphafold-dbs-model)). Modal's
 image cannot yet, so only the Mac's asks for it.
 
 ## What a protein resolved on demand is (resolver version 1)
@@ -82,10 +84,22 @@ disulfides (`test_resolve.py`).
 ESM-2 takes minutes (838 residues, 9 on the dev Mac), so `GET
 /proteins/resolve/{gene}` says how far a build has got as well as what it is
 (`build`, `BuildReport` in `app/schemas.py`): the step (`queued`, `record`,
-`evidence`, `scoring`, `check`, `done`), the proteins the worker takes first, the residues
-scored and of how many, the seconds the scorer estimates are left, the seconds
-since it was asked for, and the transcript the record was built from. A step
-that ended without its result carries the track's reason.
+`evidence`, `scoring`, `check`, `structure`, `done`), the proteins the worker
+takes first, the residues scored and of how many, the seconds the scorer
+estimates are left, the seconds since it was asked for, the transcript the
+record was built from, and its fold's state (`fold`: `pending`, `ready`,
+`refused`, or none where no model was asked for). A step that ended without
+its result carries the track's reason.
+
+`structure` holds a build whose scores are over while its first fold is still
+being made: a fold is made before the scoring, in seconds to a minute, so this
+is rare, and it lasts `resolves.FOLD_HOLD` (20 minutes) at most. A bake still
+queued after that is one no worker is making (models switched off, or the
+modeller unable to start), and the build opens without it, its fold page saying
+a model is on its way. A protein that draws a model already is never held
+while another is made for it (a backfill), and a stopped build is never held.
+An app older than the step reads the report as none, and opens the protein once
+its ESM-2 track is settled, as it did before.
 
 The scorer prints a line every 25 residues ("Scored 450/838 (283.3s, 4.1 min
 left)"). `worker.score_next` hands the scorer a `Report`, and the line reaches
@@ -96,7 +110,8 @@ counts only for the run that wrote it. A write that fails costs the bake
 nothing. The scorer itself is unchanged.
 
 `/proteins/suggest` marks a protein `building` while a request is queued or
-running or its constraint bake is not over. It is `ready` from the moment its
+running, its constraint bake is not over, or its build is held for its first
+fold. It is `ready` from the moment its
 row is written, and a walk opened before ESM-2 is done would keep the pending
 track until the app restarts, so the app watches it instead.
 
@@ -112,14 +127,17 @@ scorer (`worker.Stopped`). The protein opens without scores, suggest marks it
 asked. A record being written (seconds) cannot be stopped, and a stop that
 lands as the track is made is too late for it.
 
-## The fold: AlphaFold DB's model
+## The fold: an experimental entry, else AlphaFold DB's model
 
 A protein's fold page draws a model, and the twenty's are cut from entries
-chosen by hand. A protein resolved on demand is drawn from AlphaFold DB's
-(`pipeline/structure/alphafold.py`, whose README has the rules and their
-measurements): the mature span, coloured by pLDDT's four bands, with UniProt's
-disulfides where the model bears them out, and no model at all where the mean
-pLDDT over the span is under 50.
+chosen by hand, each with the fold animation that ends on it. A protein
+resolved on demand has its entry chosen by rule (policy 1,
+`pipeline/structure/pdb_policy.py`; the structure README has the rule, what it
+chose over 52 proteins, and the bake), and folds on its page as the twenty do.
+Only where a whole, successful search finds no entry that passes is it drawn
+from AlphaFold DB's model (`pipeline/structure/alphafold.py`), still, coloured
+by pLDDT, as before. A search cut short, or a service not answering, is never
+read as none.
 
 - **Queued with the scoring.** `store.write_resolution(..., structures=True)`
   puts the `structure` track `pending` behind a `bake_job` of its own, in the
@@ -128,35 +146,65 @@ pLDDT over the span is under 50.
   Mac's does, and Modal's does not, so a track is never left pending where
   nothing will bake it.
 - **Made before the scoring.** `worker.structure_next` claims it, and the Mac's
-  cycle runs it between resolving and scoring: about two seconds, so the fold
-  page is ready an hour before a long protein's ESM-2 track is.
+  cycle runs it between resolving and scoring. `model_local.py` (in the
+  structure bake's environment) searches the PDB, ranks every way of drawing
+  the protein, holds the best to its own file, and bakes it into the model and
+  its `folding` track from one working copy, by the twenty's own bakers; then
+  it holds the pair to the app's own check (`test/fold_bundle_check.dart`, run
+  from the app's checkout), which binds the fold to the model as the walk's
+  fold page will. A candidate that fails a documented rule gives way to the
+  next; a whole search with none left falls to AlphaFold DB's model. Seconds
+  to a minute (the dry run's 43: 5.6 s to 70 s, mTOR's 2,549 residues the
+  longest), so the fold page is ready long before a long protein's ESM-2
+  track is.
+- **Remembered between attempts** (`fold_selection`, 0012). A search that found
+  nothing for the same inputs under the same rule is not made again for 28
+  days (four PDB releases): AlphaFold DB's model is made straight away. A
+  search cut short at its bounds (eight entry files, three bakes an attempt)
+  keeps how far it got, goes back on the queue without spending a try, and
+  the next attempt goes on from there where the search finds the same
+  entries. An experimental fold that stands for the protein's record, regions
+  and rule is kept until a search is asked to start afresh
+  (`queue_structures.py --refresh`).
 - **Stored as the twenty's are.** The compiled `.fsceneb` in the `models`
   bucket as `structure/<slug>.<sha12>.fsceneb`, the `.glb` beside it and named
-  in the provenance (`upload_tracks.structure_row`, which is the uploader's
-  own branch). The row's provenance also says which AlphaFold entry and
-  version, the span, the mean pLDDT and each band's share, the bridges drawn
-  and dropped, the licence (CC BY 4.0), the sampling and the importer.
-- **Described on the protein's row.** `store.finish_structure` writes the row's
-  `structure` column, `{"chrome": ..., "chains": ...}` with the keys the
-  twenty's carry: the fold page's seven words, templated from the model's own
-  numbers, and a tint for each node. Only where `catalog_order is null`: it
-  raises rather than write on one of the twenty.
+  in the provenance (`upload_tracks.structure_row`, the uploader's own
+  branch); an experimental fold's `folding` track in `tracks` as
+  `folding/<slug>.<sha12>.json`, whose frame names that `.glb` by its digest;
+  and the bake's audit beside it, `fold_audit/<slug>.<sha12>.json`, named in
+  the structure track's provenance (the entry and its file's digest, the
+  record's, every candidate and why it was passed over, the residue map, the
+  tools). No object is ever deleted.
+- **Published whole, or not at all** (`store.publish_fold`). The row's
+  `structure` column (`{"chrome": ..., "chains": ...}`, the fold page's seven
+  words templated from the model's own numbers, and a tint for each node), the
+  structure track, the folding track (ready for an experimental fold, absent
+  for AlphaFold's), the generation that records them (`fold_generation`), the
+  search that chose them, and the bake done, in one transaction. It writes
+  only while the bake is still this worker's at the attempt it claimed (one
+  the reaper put back, or another worker took, writes nothing:
+  `store.Superseded`), only while the protein's stored record, regions and
+  disulfides are the ones the fold was made for, and never on one of the
+  twenty.
 - **Refused, with the sentence the fold page shows** (`worker.Unmodelled`):
-  "AlphaFold DB has no model of proteins over 2,700 residues; this one has
-  4,834.", no model of this accession, a model of another sequence, a mean
-  pLDDT under the gate (with the number and the span), or a model too large
-  to draw. Anything else (the API down, PyMOL or the importer breaking) is
-  tried three times, a cycle apart; then the track says only that the model
-  could not be made, and the job's `error` keeps what broke.
-- **Not stopped.** A reader's Stop ends the ESM-2 scoring. The model takes
-  seconds, as the gene record does, and is made all the same: a protein
-  stopped while scoring opens with its fold and without its scores.
-- **Not on the build card.** `GET /proteins/resolve/{gene}` reads the
-  `constraint` bake alone, so the service did not change.
+  where no experimental entry passes and AlphaFold DB has no model either, say
+  so, the PDB's part first ("The PDB holds no experimental structure of it.
+  AlphaFold DB has no model of proteins over 2,700 residues; this one has
+  4,834."). A protein that draws a model already keeps it. Anything else (a
+  service down, PyMOL, the importer or the app's check breaking) is tried
+  three times, a cycle apart; then a track with no model says "The fold could
+  not be made this time: its bake broke each of the 3 times it was tried.",
+  the job's `error` keeps what broke, and a model already drawn stays.
+- **Not stopped.** A reader's Stop ends the ESM-2 scoring. The fold is made all
+  the same: a protein stopped while scoring opens with its fold and without
+  its scores.
+- **On the build card** (`BuildReport.fold`, and the `structure` step above).
 
-`scripts/check_built.py` holds a built protein's model too: the scene and its
-`.glb` to their digests, the nodes to the row's chains, the span, the gate and
-the bridges; or, refused, the sentence why.
+`scripts/check_built.py` holds a built protein's fold too: the scene and its
+`.glb` to their digests, the nodes to the row's chains; for an experimental
+fold its `folding` track, the `.glb` its frame names, its chains and bridges,
+the audit beside it, and the generation the database records as drawn; for
+AlphaFold's, the span, the gate and the bridges; or, refused, the sentence why.
 
 ## The variant evidence: AVI and ClinVar
 
@@ -302,14 +350,20 @@ first (`impact_local.py --check`: the client, the key, the skill under `uv`,
 and one 1-base Atlas request), and claims no AVI bake while it could not.
 
 To make models it also needs the structure bake's environment
-(`pipeline/structure/venv`, and PyMOL: its README), and the app's checkout
-beside this one with a Flutter SDK's Dart, for the scene importer. It runs the
-bake there as a subprocess too (`model_local.py`), having first asked whether
-one could be made (`--check`: the packages, PyMOL, and the importer on a box).
-While it could not, no model is claimed, and the log says why each minute.
-The app's checkout is only read and run from: `dart run flutter_scene:import`,
-with the flutter_scene its `pubspec.lock` pins, which has to be the one every
-stored scene was compiled by.
+(`pipeline/structure/venv`, and PyMOL 3.1.0: its README), and the app's
+checkout beside this one with a Flutter SDK, for the scene importer and for the
+app's own check of a fold. It runs the bake there as a subprocess too
+(`model_local.py`), having first asked whether one could be made (`--check`:
+the packages, PyMOL and its version, the importer on a box, Flutter, and the
+app's `test/fold_bundle_check.dart`), and only once the database has 0012's
+tables. While it could not, no model is claimed, and the log says why each
+minute. The app's checkout is only read and run from: `dart run
+flutter_scene:import`, with the flutter_scene its `pubspec.lock` pins, which
+has to be the one every stored scene was compiled by, and `flutter test --no-pub
+test/fold_bundle_check.dart`, which writes the test's own build files under its
+`.dart_tool/` and `build/`, both ignored by git. Where someone's `flutter run` holds Flutter's start-up lock, the
+check waits for it, up to ten minutes; a check that does not finish is no
+verdict, and the bake is tried again.
 
 | `scripts/resolver_worker.sh` | |
 |---|---|
@@ -336,8 +390,8 @@ stored scene was compiled by.
   the models: `RESOLVER_STRUCTURES=0` makes none (no structure bake is queued
   or claimed, as on Modal), and `RESOLVER_STRUCTURE_PYTHON`, `RESOLVER_DART`
   (default: the SDK inside `~/flutter`, not `flutter/bin/dart`, which takes
-  Flutter's start-up lock) and `RESOLVER_APP_DIR` (`../helix-peek`) say where
-  its three tools are. For the evidence: `RESOLVER_EVIDENCE=0` makes none (none
+  Flutter's start-up lock), `RESOLVER_FLUTTER` (`~/flutter/bin/flutter`) and
+  `RESOLVER_APP_DIR` (`../helix-peek`) say where its four tools are. For the evidence: `RESOLVER_EVIDENCE=0` makes none (none
   queued, none claimed; any already queued waits, and so does its protein's
   scoring), and `RESOLVER_IMPACT_PYTHON` and `RESOLVER_UV` say where its two
   tools are.
@@ -380,8 +434,12 @@ track: sarcolipin, 31 residues, 5 s; beta-2-microglobulin, 119, 12 s; ANTXR1,
 838, 534 s, asked for from the app the same day. Scored again through the
 worker, B2M's stored record gives its stored track byte for byte.
 
-A model, from the modeller's start to its two stored objects: about two
-seconds at any length (OCA2's 838 residues, 2.0 s; a refusal, under one).
+A model, from the modeller's start to its stored objects: AlphaFold DB's,
+about two seconds at any length (OCA2's 838 residues, 2.0 s; a refusal, under
+one). An experimental one, search and all, measured over the dry run's 43 on
+2026-10-12: 5.6 s to 70 s, nine seconds for most; the bake 0.7 s to 8.4 s and
+the app's check about two seconds of that, after a first check that compiles
+the app's test (a minute or so, once after each change to the app).
 
 Those three grow with the square of the length. Carried on, which is an
 estimate and not a measurement, 1,000 residues is about 11 minutes, each
@@ -410,7 +468,8 @@ keep the models after the switch, one of:
   pins flutter_scene to `alphafold.FLUTTER_SCENE` for `dart run
   flutter_scene:import` to resolve; then `sweep(structures=True)` and a
   `structure` function that calls `worker.structure_all` with a baker that
-  wraps `alphafold.build`. An x86-64 PyMOL does not give this Mac's bytes
+  wraps `model_local.make` (which also wants Flutter and the app's checkout,
+  for the app's check of a fold). An x86-64 PyMOL does not give this Mac's bytes
   (`pipeline/structure/README.md`, "Re-baking on Windows"), which matters for
   nothing stored: no model made on demand is ever re-baked against a digest.
 - or leave the Mac's worker running beside Modal's. Whichever resolves a
@@ -458,20 +517,42 @@ update protein_track set state = 'pending', reason = null, updated_at = now()
 where slug = 'ttn' and kind = 'constraint' and state = 'refused';
 insert into bake_job (slug, kind) values ('ttn', 'constraint');
 
--- make the model of a protein built without one (built before the worker
--- made models, or by Modal), or again of one whose model was refused: a
--- Mac's worker takes it within a minute
-insert into protein_track (slug, kind, state, reason, format, provenance)
-values ('oca2', 'structure', 'pending', null, 'fsceneb', '{}')
-on conflict (slug, kind) do update
-set state = 'pending', reason = null, updated_at = now()
-where protein_track.state <> 'ready';
-insert into bake_job (slug, kind) values ('oca2', 'structure');
+-- what each protein built on demand draws now, and how its last search ended
+select g.slug, g.source, g.state, g.created_at, s.outcome, s.candidate, s.expires_at
+from fold_generation g
+left join lateral (select outcome, candidate, expires_at from fold_selection f
+                   where f.slug = g.slug order by decided_at desc, id desc limit 1) s on true
+where g.active order by g.created_at desc;
 ```
 
-A model already `ready` is left as it is by the first statement, and its row
-would then be replaced by the bake: its two stored objects are not deleted,
-and nothing points at them afterwards.
+Make the fold of proteins built without one (before the worker made models, or
+by Modal), or again (a backfill), without SQL by hand:
+
+```sh
+.venv/bin/python scripts/queue_structures.py --dry-run --all     # what it would queue; reads only
+.venv/bin/python scripts/queue_structures.py TTR PRL             # or --all
+.venv/bin/python scripts/queue_structures.py --refresh TTR       # search afresh, past what stands
+```
+
+One transaction a protein (`store.queue_structure`), one of the twenty refused.
+A model it draws stays drawn until the one that replaces it is published, the
+tracks and words together, and where nothing better can be drawn it keeps it;
+its build is never held. An experimental fold that stands for the same record,
+regions and rule is left as it is unless `--refresh`.
+
+Every fold published is a generation (`fold_generation`), and so is the one a
+protein drew before its first since 0012. Put one back, whole:
+
+```sh
+.venv/bin/python scripts/fold_rollback.py TTR --list       # its folds, newest first
+.venv/bin/python scripts/fold_rollback.py TTR              # the one before the fold drawn now
+.venv/bin/python scripts/fold_rollback.py TTR --to 7       # that one, back or forward
+```
+
+One transaction (`store.roll_back_fold`): the row's words, the structure track
+and the folding track as that generation wrote them (AlphaFold's has none, so
+it reads absent again). Refused while a structure bake for it is queued or
+running. An app reads it the next time the protein is opened.
 
 AVI and ClinVar for a protein built without them (before 2026-10-09, or by
 Modal), or again after a refusal, without SQL by hand:
@@ -485,8 +566,11 @@ One transaction a protein, a ready track left as it is, and one of the twenty
 refused. A protein opened while its evidence is pending keeps it missing until
 the app restarts, so queue it while nobody walks it.
 
-On a Mac, `scripts/resolver_worker.sh status` prints the counts by state, the
-last five requests and every bake still waiting, with its last error.
+On a Mac, `scripts/resolver_worker.sh status` prints the counts by state, what
+the proteins built on demand draw now and how their last searches ended
+(`folds  4 pdb ready, 2 alphafold ready, 1 none refused; searches 4 chosen,
+3 none`), the last five requests and every bake still waiting, with its last
+error.
 
 `.venv/bin/python scripts/dry_resolve.py GENE ...` shows what the resolver would
 build for a gene, and whether the upload gate takes its record, writing
@@ -517,10 +601,18 @@ script stands in for the scorer's environment and two lists for the queue.
 taken to a scored protein, a stop mid-score, a scorer that cannot start.
 
 The fold is tested the same three ways: `test_worker.py` holds the worker's
-gate on a model, `test_worker_pg.py` every statement from a queued model to a
-ready one, a refused one and a reaped one, and the service serving it, and
+gate on a model and on an experimental fold's track and audit,
+`test_worker_pg.py` every statement from a queued model to a ready one, a
+refused one and a reaped one, and the service serving it, and
 `test_local_worker.py` the modeller with a script in the place of the structure
-bake's interpreter. The bake itself is `pipeline/structure/test_alphafold.py`.
+bake's interpreter, and the model driver with the network stood in for.
+`test_fold_pg.py` holds publication: a bake taken from its worker and a
+protein changed mid-bake write nothing, a publication interrupted leaves the
+fold drawn before it whole, a curated row is untouched, a fold is put back and
+forward, a search cut short or finding nothing is remembered, a fold that
+stands is kept, a backfill keeps its model, the hold and its bound, and the two
+operator commands. The bake itself is `pipeline/structure/test_alphafold.py`
+and `test_experimental.py`.
 
 So is the evidence, with `test_impact_local.py` for the AVI bake's driver: its
 verdicts told from its failures, and the bake pointed at the worker's folders,
