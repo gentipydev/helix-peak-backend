@@ -1,7 +1,8 @@
 """Reading a PDB entry the way the structure bake exports it.
 
 One reading of `structures/<entry>.pdb`, shared by every baker that starts
-from the twenty entries: `bake.py` builds the bridges from it, and
+from the twenty entries, and of a later curated row's working copy
+(`structures/working/<slug>.pdb`, `source_of`): `bake.py` builds the bridges from it, and
 `verify_frame.py` audits the export frame with it. Each function here moved unchanged from the baker that
 wrote it first, so every caller reads the file exactly as it did before.
 
@@ -39,6 +40,68 @@ def pdb_path(structure: Structure) -> Path:
         with urllib.request.urlopen(url, timeout=120) as response:
             path.write_bytes(response.read())
     return path
+
+
+# A curated row added since the twenty is cut from a working copy of its entry
+# rather than from the entry's own file: the text `normalize.working_copy`
+# writes, which `scripts/draft_curated.py` stores here under the row's slug.
+# One PDB-format file in the record's numbering, one chain a node (A, B, C),
+# holding only what is drawn, so the readers above read it as they read an
+# entry. The twenty keep the legacy files they were baked from: re-cut from
+# working copies, their models would not be the same bytes.
+WORKING = STRUCTURES / "working"
+
+# What a working copy's first line says of it (`normalize.working_copy`).
+WORKING_COPY_MARK = "AS DRAWN: THE RECORD'S NUMBERING"
+
+# A working copy is drawn as an entry chosen by rule is (R5.4): the ribbon
+# stops at a gap the entry does not place, with no dashed loop across it.
+# Equal to `experimental.GAP_DASHES`, which a test holds it to.
+WORKING_COPY_DASHES = False
+
+
+def is_working_copy(path: Path) -> bool:
+    """Whether [path] is a working copy, by its own first line."""
+    with path.open(errors="replace") as text:
+        first = text.readline()
+    return first.startswith("REMARK   1 ") and WORKING_COPY_MARK in first
+
+
+def working_copy_of(target) -> Path | None:
+    """The row's stored working copy, or None where it has none (the twenty)."""
+    path = WORKING / f"{target.slug}.pdb"
+    if not path.exists():
+        return None
+    if not is_working_copy(path):
+        raise ValueError(f"{path}: not a working copy (its first line does not say "
+                         f"{WORKING_COPY_MARK!r})")
+    return path
+
+
+def source_of(target) -> Path:
+    """The file a curated row's model and fold are read from: its working copy,
+    else its entry's legacy file. Never fetched: every one is in the
+    repository, and a file of another numbering would be read as this one."""
+    copy = working_copy_of(target)
+    if copy is not None:
+        return copy
+    legacy = STRUCTURES / f"{target.structure.pdb}.pdb"
+    if not legacy.exists():
+        raise FileNotFoundError(
+            f"{target.slug}: no working copy at {WORKING / (target.slug + '.pdb')} and no "
+            f"legacy {legacy.name}; scripts/draft_curated.py stores a new row's working copy")
+    return legacy
+
+
+def export_source(target) -> tuple[Path | None, bool]:
+    """How the structure bake exports a curated row, as `bake.export`'s
+    [source] and [dashes]: (None, True), the entry's own file with PyMOL's
+    defaults, exactly as the twenty are baked, or a working copy and no dashes."""
+    copy = working_copy_of(target)
+    if copy is not None:
+        return copy, WORKING_COPY_DASHES
+    source_of(target)   # the legacy file is there, or this says why not
+    return None, True
 
 
 def atoms(path: Path) -> dict:

@@ -30,7 +30,7 @@ import numpy as np  # noqa: E402
 import trimesh  # noqa: E402
 
 from pipeline.paths import DATA  # noqa: E402
-from pipeline.structure.pdb import atoms, pdb_path, ssbonds  # noqa: E402
+from pipeline.structure.pdb import atoms, export_source, pdb_path, ssbonds  # noqa: E402
 from pipeline.targets import BY_SLUG, TARGETS, Structure, Target  # noqa: E402
 
 OUTPUT = HERE / "output"
@@ -262,8 +262,12 @@ def bake(target: Target) -> None:
         shutil.rmtree(workspace)
     workspace.mkdir(parents=True)
 
-    print(f"{target.slug} <- {structure.pdb}", flush=True)
-    origin, meshes = export(target, workspace)
+    # The twenty from their entries' own files, as they always were; a row
+    # added since from its working copy (`pdb.export_source`).
+    source, dashes = export_source(target)
+    print(f"{target.slug} <- {structure.pdb}"
+          + (f" (working copy {source.name})" if source is not None else ""), flush=True)
+    origin, meshes = export(target, workspace, source=source, dashes=dashes)
     scene = assemble(target.slug, meshes)
 
     staged = workspace / f"{target.slug}.glb"

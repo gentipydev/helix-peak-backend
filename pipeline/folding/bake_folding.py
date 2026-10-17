@@ -92,6 +92,7 @@ from pipeline.structure.pdb import (  # noqa: E402
     Residue,
     atoms,
     chain_residues,
+    export_source,
     pdb_path,
     secondary_structure,
     ssbonds,
@@ -141,6 +142,12 @@ _MATCHED = 1e-5
 FRAME_METHOD = ("the structure bake's own export origin and normalisation, re-run "
                 "and matched to the stored model vertex for vertex")
 
+# Where a curated row cut from a working copy (`pdb.export_source`) has its
+# helices and strands: the working copy's HELIX and SHEET records, which
+# `normalize.working_copy` wrote from the entry's file (PDBe's assignment, or
+# PyMOL's where the file names none), not the depositors' of a legacy file.
+WORKING_COPY_SHAPE = "HELIX and SHEET records of the working copy of {pdb}"
+
 
 @dataclass(frozen=True)
 class Frame:
@@ -156,15 +163,18 @@ def folding_asset(target: Target) -> str:
     return f"assets/folding/{target.slug}_folding.json"
 
 
-def structure_frame(target: Target, stored: dict[str, Mesh]) -> Frame:
+def structure_frame(target: Target, stored: dict[str, Mesh], *,
+                    source: Path | None = None, dashes: bool = True) -> Frame:
     """The frame the stored model was cut in, from the structure bake itself.
 
-    Needs PyMOL and trimesh: run it with the structure bake's environment.
+    [source] and [dashes] are what the model was exported with
+    (`pdb.export_source`); their defaults are the twenty's. Needs PyMOL and
+    trimesh: run it with the structure bake's environment.
     """
     from pipeline.structure import bake as structure_bake
 
     with tempfile.TemporaryDirectory() as work:
-        origin, meshes = structure_bake.export(target, Path(work))
+        origin, meshes = structure_bake.export(target, Path(work), source=source, dashes=dashes)
     centre, extent = structure_bake.normalisation(meshes)
     scale = 1.0 / extent.max()
     if list(meshes) != list(stored):
@@ -477,8 +487,22 @@ def bake(target: Target) -> dict:
             raise FileNotFoundError(
                 f"{path}: run `fetch_tracks.py --kind structure --kind record` first")
     glb = model_path.read_bytes()
-    frame = structure_frame(target, read_glb(glb))
-    track = payload(target, json.loads(record_path.read_bytes()), glb, frame)
+    # The twenty from their entries' own files, numbered as the entry numbers
+    # them; a row added since from its working copy, in the record's numbering.
+    source, dashes = export_source(target)
+    frame = structure_frame(target, read_glb(glb), source=source, dashes=dashes)
+    track = payload(target, json.loads(record_path.read_bytes()), glb, frame,
+                    entry=source, offset=None if source is None else 0)
+    if source is not None:
+        # A working copy's entry was chosen by rule, not for its geometry, so
+        # its ribbon is measured as the on-demand path measures one: a measure
+        # the folding check would turn down is not kept (`experimental`, whose
+        # code this calls rather than copies).
+        from pipeline.structure.experimental import _unmeasured
+        dropped = _unmeasured(track, glb)
+        if dropped:
+            print(f"  {target.slug}: {dropped} ribbon measure(s) not kept", flush=True)
+        track["secondary_structure"] = WORKING_COPY_SHAPE.format(pdb=target.structure.pdb)
     destination = DATA / folding_asset(target)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(encode(track))

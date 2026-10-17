@@ -20,7 +20,7 @@ if str(BACKEND) not in sys.path:
 from pipeline.paths import DATA  # noqa: E402
 from pipeline.structure import frame  # noqa: E402
 from pipeline.structure.glb import Mesh, read_glb  # noqa: E402
-from pipeline.structure.pdb import bridge_atoms, ca_atoms  # noqa: E402
+from pipeline.structure.pdb import bridge_atoms, ca_atoms, source_of  # noqa: E402
 from pipeline.targets import BY_SLUG, TARGETS  # noqa: E402
 
 
@@ -82,17 +82,19 @@ def test_insulin_comes_back_at_the_size_its_bake_logged():
 _BRIDGED = [t for t in TARGETS if t.structure.bonds]
 
 
-@pytest.mark.skipif(not all((DATA / t.structure_asset).exists() for t in _BRIDGED),
-                    reason="run fetch_tracks.py --kind structure first")
 @pytest.mark.parametrize("target", _BRIDGED, ids=lambda t: t.slug)
 def test_every_stored_bridge_is_read_where_the_bake_built_it(target):
     # `bridge_atoms` is the bake's own reading of the SSBOND records and atom
-    # lines, so its atoms land on the joints of the stored `bonds` node to
-    # float precision, and `model_frame` takes that exact answer.
+    # lines -- of the entry, or of a row's working copy -- so its atoms land on
+    # the joints of the stored `bonds` node to float precision, and
+    # `model_frame` takes that exact answer.
+    if not (DATA / target.structure_asset).exists():
+        pytest.skip("run fetch_tracks.py --kind structure first")
+    source = source_of(target)
     meshes = read_glb((DATA / target.structure_asset).read_bytes())
-    fit, method = frame.model_frame(target.structure, meshes)
+    fit, method = frame.model_frame(target.structure, meshes, source)
     assert method == "disulfide CB and SG atoms at the bridges' joints"
-    assert fit.atoms == 4 * len(bridge_atoms(target.structure))
+    assert fit.atoms == 4 * len(bridge_atoms(target.structure, source))
     assert fit.rms < 0.001
 
 

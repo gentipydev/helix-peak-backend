@@ -15,6 +15,7 @@ same one.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
@@ -116,15 +117,19 @@ def fit_bridges(bonds: Mesh, bridges: list[np.ndarray]) -> Fit | None:
     )
 
 
-def model_frame(structure: Structure, meshes: dict[str, Mesh]) -> tuple[Fit, str]:
+def model_frame(structure: Structure, meshes: dict[str, Mesh],
+                pdb: Path | None = None) -> tuple[Fit, str]:
     """The stored model's frame, and how it was found.
 
     Exact where the model has bridges to read the scale from; fitted to the
-    ribbon's CA atoms where it has none.
+    ribbon's CA atoms where it has none. [pdb] is the file the model was cut
+    from where that is not the entry's own (a row's working copy,
+    `pdb.source_of`).
     """
     vertices = np.vstack([m.positions for m in meshes.values()])
-    exact = fit_bridges(meshes["bonds"], bridge_atoms(structure)) if "bonds" in meshes else None
-    fit = exact or fit_size(vertices, ca_atoms(structure))
+    exact = (fit_bridges(meshes["bonds"], bridge_atoms(structure, pdb))
+             if "bonds" in meshes else None)
+    fit = exact or fit_size(vertices, ca_atoms(structure, pdb))
     method = ("disulfide CB and SG atoms at the bridges' joints" if exact
               else "exported CA atoms fitted to the ribbon")
     return fit, method

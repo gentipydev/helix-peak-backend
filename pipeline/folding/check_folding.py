@@ -39,11 +39,14 @@ For each target, the payload under `pipeline/data/assets/folding/`:
 - carries the model's bridges and no others: one per SSBOND pair in the
   exported chains where the model draws them, none where it does not, each a
   pair of ordered cysteines whose path starts and ends on their CA atoms,
-  with bonds of a cysteine's lengths, and whose CB and SG atoms are where the
-  stored `bonds` node's rods end.
+  with bonds of a cysteine's lengths (for a row cut from a working copy, its
+  sulfurs within 2.5 A, as an entry chosen by rule draws them), and whose CB
+  and SG atoms are where the stored `bonds` node's rods end.
 
-Exits 1 with the problems listed. Reads `pipeline/data/` and the entries in
-`pipeline/structure/structures/`.
+Exits 1 with the problems listed. Reads `pipeline/data/` and each row's file
+under `pipeline/structure/structures/`: the twenty's entries, and a later
+row's working copy (`working/<slug>.pdb`). `--target <slug>` checks one row
+(repeatable).
 """
 
 from __future__ import annotations
@@ -63,13 +66,20 @@ if str(BACKEND) not in sys.path:
 from pipeline.folding.bake_folding import (  # noqa: E402
     FOLDING_TARGETS,
     SCHEMA_VERSION,
+    WORKING_COPY_SHAPE,
     cartoon_of,
     folding_asset,
 )
 from pipeline.paths import DATA  # noqa: E402
 from pipeline.structure.frame import _nearest  # noqa: E402
 from pipeline.structure.glb import read_glb  # noqa: E402
-from pipeline.structure.pdb import chain_residues, pdb_path, ssbonds, substituted  # noqa: E402
+from pipeline.structure.pdb import (  # noqa: E402
+    chain_residues,
+    is_working_copy,
+    source_of,
+    ssbonds,
+    substituted,
+)
 from pipeline.targets import Target  # noqa: E402
 
 STATES = ("ordered", "disordered", "absent")
@@ -101,6 +111,29 @@ BONDS = ((1.53, 0.1), (1.81, 0.1), (2.05, 0.2))
 # the next, and a cap's centre is a vertex: every CB and SG of a bridge the
 # model draws is a vertex of it, to the track's rounding.
 _ON_ROD = 0.01
+
+
+def reading_of(target: Target, entry: Path | None = None,
+               reach: float | None = None) -> tuple[Path, float | None, str]:
+    """The file a track is held to, the reach its bridges are held to, and the
+    statement it must make of its helices and strands.
+
+    Given an [entry], as the on-demand path gives its working copy before it
+    names the entry's own chains, that file with [reach] as given and the
+    twenty's statement, which is what the bake wrote: exactly as before. With
+    none, the curated row's own file (`pdb.source_of`): the twenty's legacy
+    entry as it always was, or a row's working copy, whose bridges are drawn
+    by their sulfurs' reach (`normalize.BRIDGE_REACH`) and whose shape is the
+    working copy's (`bake_folding.WORKING_COPY_SHAPE`)."""
+    twenty = f"HELIX and SHEET records of {target.structure.pdb}"
+    if entry is not None:
+        return entry, reach, twenty
+    source = source_of(target)
+    if is_working_copy(source):
+        from pipeline.structure.normalize import BRIDGE_REACH
+        return (source, BRIDGE_REACH if reach is None else reach,
+                WORKING_COPY_SHAPE.format(pdb=target.structure.pdb))
+    return source, reach, twenty
 
 
 def record_of(target: Target) -> dict | None:
@@ -191,8 +224,7 @@ def problems_of(target: Target, track: dict | None = None, *, record: dict | Non
         return out + [f"{where}: chains {[(c.get('node'), c.get('pdb_chain')) for c in chains]}, "
                       f"the structure exports {wanted}"]
 
-    if entry is None:
-        entry = pdb_path(structure)
+    entry, reach, statement = reading_of(target, entry, reach)
     declared = substituted(entry)
     on_ribbon = ON_TUBE if structure.representation == "tube" else ON_RIBBON
     peptides = {(translation.find(p["translation"]) + 1,
@@ -318,7 +350,7 @@ def problems_of(target: Target, track: dict | None = None, *, record: dict | Non
                    f"the model is drawn as {cartoon_of(target)!r}")
     out += _bridge_problems(target, track, chains, meshes, length, centre, entry, reach)
 
-    if track.get("secondary_structure") != f"HELIX and SHEET records of {structure.pdb}":
+    if track.get("secondary_structure") != statement:
         out.append(f"{where}: secondary_structure is {track.get('secondary_structure')!r}")
     if not track.get("built_by"):
         out.append(f"{where}: says nothing of what built it")
@@ -379,13 +411,23 @@ def _bridge_problems(target: Target, track: dict, chains: list[dict], meshes: di
     return out
 
 
-def main() -> int:
-    found = [problem for target in FOLDING_TARGETS for problem in problems_of(target)]
+def main(arguments: list[str] | None = None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--target", action="append", default=None,
+                        help="one slug; repeatable. Default is every curated row.")
+    args = parser.parse_args(arguments)
+    unknown = sorted(set(args.target or []) - {t.slug for t in FOLDING_TARGETS})
+    if unknown:
+        parser.error(f"no such target: {unknown}")
+    chosen = [t for t in FOLDING_TARGETS if not args.target or t.slug in args.target]
+    found = [problem for target in chosen for problem in problems_of(target)]
     for problem in found:
         print(f"  {problem}", file=sys.stderr)
     total = sum((DATA / folding_asset(t)).stat().st_size
-                for t in FOLDING_TARGETS if (DATA / folding_asset(t)).exists())
-    print(f"{len(FOLDING_TARGETS)} folding tracks checked, {len(found)} problem(s), "
+                for t in chosen if (DATA / folding_asset(t)).exists())
+    print(f"{len(chosen)} folding tracks checked, {len(found)} problem(s), "
           f"{total:,} B", file=sys.stderr)
     return 1 if found else 0
 

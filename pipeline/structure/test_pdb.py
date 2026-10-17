@@ -18,6 +18,7 @@ from pipeline.structure.pdb import (  # noqa: E402
     chain_residues,
     inserted,
     secondary_structure,
+    source_of,
     substituted,
 )
 from pipeline.targets import BY_SLUG, TARGETS  # noqa: E402
@@ -69,13 +70,15 @@ def test_a_ligand_is_never_a_residue():
 
 
 def test_the_reading_agrees_with_the_bakes_own_ca_atoms():
-    # Every CA `ca_atoms` exports, and nothing else but a modified residue.
+    # Every CA `ca_atoms` exports, and nothing else but a modified residue,
+    # read from the file each row's model is cut from: an entry's own, or a
+    # row's working copy (where a modified residue is written as its parent).
     for target in TARGETS:
-        structure = target.structure
+        structure, source = target.structure, source_of(target)
         located = sum(1 for c in structure.chains
-                      for r in chain_residues(structure, c.pdb_chain) if r.ca is not None)
+                      for r in chain_residues(structure, c.pdb_chain, source) if r.ca is not None)
         modified = {"relaxin": 1, "amylase": 1}.get(target.slug, 0)
-        assert located == len(ca_atoms(structure)) + modified, target.slug
+        assert located == len(ca_atoms(structure, source)) + modified, target.slug
 
 
 def test_helices_and_strands_are_the_entrys_own():
