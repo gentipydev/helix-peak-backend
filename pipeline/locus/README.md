@@ -175,6 +175,15 @@ astray. The homes are general biology; a cell type found along nerves or in
 connective tissue everywhere, or in a tissue the consensus reading does not
 sample (the lacrimal gland, the conjunctiva), has none.
 
+The pairs' cell type names have no class from the Atlas, so each takes the
+class of its counterpart among the single cell types (`Spermatocytes` as
+`Late primary spermatocytes`); a qualifier (`Mitotic cells (Stomach)`) or a
+cluster's number (`Neutrophils_2`) is the bare name's. The table once held
+twenty of those names, and run over the
+Atlas's whole download (19,300 genes with an entry) the rule stopped on 860
+of them, at 29 names it lacked. It now has all 96 the pairs name in 25.1,
+and the rule takes a path for every one of the 19,300.
+
 The twenty paths, Protein Atlas 25.1:
 
 | protein | organ (from) | cell (from) | protein in the cell | secreted |

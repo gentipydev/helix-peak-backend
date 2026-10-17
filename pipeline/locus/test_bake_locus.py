@@ -352,6 +352,70 @@ def test_the_vocabularies_are_the_atlas_own():
     assert cell_types.cell_class("cDC") == "Blood and immune cells"
 
 
+# Every cell type the tissue cell type reading names in 25.1, read from the
+# Atlas's whole download (proteinatlas.json, 19,300 genes with an entry). A
+# path that went into one of the 29 the vocabulary lacked stopped the bake:
+# 860 genes, Spermatocytes alone 223 of them.
+PAIR_CELL_TYPES_25_1 = (
+    "Adipocytes (Breast)", "Adipocytes (Minor salivary gland)", "Adipocytes (Skin)",
+    "Adipocytes (Subcutaneous)", "Adipocytes (Visceral)", "Adipose progenitor cells",
+    "Adrenal cortex cells", "Adrenal medulla cells", "Alpha cells",
+    "Alveolar cells type 1", "Alveolar cells type 2", "Ascending Loop of Henle cells",
+    "B-cells (Lung)", "B-cells (Spleen)", "Beta cells", "Breast glandular cells",
+    "Breast glandular cells (progenitors)", "Breast myoepithelial cells", "Cardiomyocytes",
+    "Chief cells", "Cholangiocytes", "Colon enterocytes", "Colon enteroendocrine cells",
+    "Corticotropes", "Ductal cells", "Early spermatids", "Eccrine sweat gland cells",
+    "Endothelial cells", "Enteric glia cells", "Erythrocytes", "Erythroid cells",
+    "Exocrine glandular cells", "Fibroblasts", "Fibroblasts_1", "Fibroblasts_2",
+    "Gastric enteroendocrine cells", "Gastric mucous cells", "Gonadotropes",
+    "Hair cortex cells", "Hepatic stellate cells", "Hepatocytes",
+    "Inner root sheath cells", "Intercalated cells", "Keratinocyte (granular)",
+    "Keratinocyte (other)", "Kupffer cells", "Lactotropes", "Langerhans cells",
+    "Late spermatids", "Leydig cells", "Macrophages", "Mast cells", "Melanocytes",
+    "Mesothelial cells", "Minor salivary gland basal cells",
+    "Minor salivary gland ductal cells", "Minor salivary glandular cells",
+    "Mitotic cells (Adrenal gland)", "Mitotic cells (Colon)", "Mitotic cells (Heart)",
+    "Mitotic cells (Lung)", "Mitotic cells (Minor salivary gland)", "Mitotic cells (Skin)",
+    "Mitotic cells (Spleen)", "Mitotic cells (Stomach)", "Mitotic cells (Thyroid)",
+    "NK-cells (Liver)", "NK-cells (Lung)", "NK-cells (Spleen)", "Neutrophils",
+    "Neutrophils_1", "Neutrophils_2", "Outer root sheath cells", "Parafollicular cells",
+    "Parietal cells", "Peritubular cells", "Plasma cells", "Podocytes",
+    "Prostate basal glandular cells", "Prostate glandular cells", "Proximal tubular cells",
+    "Respiratory ciliated cells", "Sebaceous gland cells", "Sertoli cells",
+    "Sinusoid Endothelial cells", "Skeletal myocytes", "Smooth muscle cells",
+    "Somatotropes", "Spermatocytes", "Spermatogonia", "T-cells", "Thyroid glandular cells",
+    "Thyrotropes", "Undifferentiated cells (Pituitary gland)", "Urothelial cells",
+    "Vascular endothelial cells",
+)
+
+
+def test_every_cell_type_the_pairs_name_has_a_class():
+    assert len(PAIR_CELL_TYPES_25_1) == 96
+    lacking = [name for name in PAIR_CELL_TYPES_25_1 if cell_types.cell_class(name) is None]
+    assert lacking == []
+
+
+@pytest.mark.parametrize("name, kind", [
+    # A cluster's number is the cell type's.
+    ("Neutrophils_2", "Blood and immune cells"),
+    ("Fibroblasts_1", "Mesenchymal cells"),
+    # Each as its counterpart among the single cell types.
+    ("Spermatocytes", "Germ cells"),
+    ("Proximal tubular cells", "Specialized epithelial cells"),
+    ("Keratinocyte (granular)", "Squamous epithelial cells"),
+    ("Undifferentiated cells (Pituitary gland)", "Stem and proliferating cells"),
+])
+def test_a_pair_cell_type_takes_its_counterpart_class(name, kind):
+    assert cell_types.cell_class(name) == kind
+
+
+def test_a_path_into_a_pair_cell_type_the_vocabulary_once_lacked():
+    path = bake_locus.path_of(_reading(
+        tissues=["testis"], pairs=[("Testis", "Spermatocytes")]))
+    assert (path["tissue"], path["cell_type"], path["cell_class"]) == (
+        "testis", "Spermatocytes", "Germ cells")
+
+
 @pytest.mark.parametrize("damage, finding", [
     (lambda t: t["path"].update(cell_type="Pancreatic islet cells"), "the rule takes"),
     (lambda t: t.pop("path"), "no path"),

@@ -13,7 +13,10 @@ kind of cell, never where it lives, so this module says, once for every gene:
   lacrimal gland, the conjunctiva), has no home;
 - `PAIR_CELL_CLASSES`: the class of a cell type the tissue cell type reading
   names that the single cell vocabulary does not (`Beta cells`,
-  `Skeletal myocytes`);
+  `Skeletal myocytes`): every one of the 96 names that reading uses for
+  25.1, each in the class of its counterpart in the single cell vocabulary
+  (`Spermatocytes` as `Late primary spermatocytes`), since the Atlas gives
+  the pairs' names no class of their own;
 - `ANUCLEATE`: the two cell types with no nucleus, and the cell that still
   has one, where it is found;
 - `SUBCELLULAR` and `SECRETOME`: the Atlas's words for where in a cell a
@@ -229,6 +232,35 @@ PAIR_CELL_CLASSES = {
     "Adipose progenitor cells": _ME,
     "Endothelial cells": _EN,
     "Mitotic cells": _ST,
+    # Each as its counterpart among the single cell types: the kidney's as
+    # its tubule and duct cells, the stomach's as its foveolar and chief
+    # cells, the gut's hormone cells as neuroendocrine cells, the minor
+    # salivary gland's as the salivary gland's, keratinocytes of the skin
+    # and of the hair follicle as suprabasal keratinocytes.
+    "Spermatocytes": _GE,
+    "Peritubular cells": _ME,
+    "Proximal tubular cells": _SP,
+    "Ascending Loop of Henle cells": _SP,
+    "Intercalated cells": _SP,
+    "Keratinocyte": _SQ,
+    "Hair cortex cells": _SQ,
+    "Inner root sheath cells": _SQ,
+    "Outer root sheath cells": _SQ,
+    "Sebaceous gland cells": _GL,
+    "Langerhans cells": _BL,
+    "Prostate glandular cells": _GL,
+    "Prostate basal glandular cells": _SP,
+    "Gastric mucous cells": _GL,
+    "Chief cells": _GL,
+    "Gastric enteroendocrine cells": _E,
+    "Colon enteroendocrine cells": _E,
+    "Parafollicular cells": _E,
+    "Enteric glia cells": _G,
+    "Ductal cells": _SP,
+    "Minor salivary gland ductal cells": _SP,
+    "Minor salivary gland basal cells": _SP,
+    "Sinusoid Endothelial cells": _EN,
+    "Undifferentiated cells": _ST,
 }
 
 # The cell types with no nucleus, and the cell that still has one: red cells
@@ -271,6 +303,8 @@ _BY_FOLD = {name.casefold(): name for name in CELL_TYPES}
 _PAIR_BY_FOLD = {name.casefold(): name for name in PAIR_CELL_CLASSES}
 # A pair's cell type can name its tissue after it: `Mitotic cells (Stomach)`.
 _QUALIFIER = re.compile(r"\s*\([^)]*\)$")
+# Or carry the number of one of its clusters: `Neutrophils_2` is neutrophils.
+_CLUSTER = re.compile(r"_\d+$")
 
 
 def single(name: str) -> str | None:
@@ -287,7 +321,7 @@ def homes(name: str) -> tuple[str, ...]:
 def cell_class(name: str) -> str | None:
     """The class of a cell type either reading names, or None for a name
     neither vocabulary has."""
-    bare = _QUALIFIER.sub("", name.strip())
+    bare = _CLUSTER.sub("", _QUALIFIER.sub("", name.strip()))
     found = single(name) or single(bare)
     if found:
         return CELL_TYPES[found][0]
