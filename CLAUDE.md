@@ -32,6 +32,11 @@ A stored track's digest is the `sha256` on its row (`GET /protein/{slug}/tracks`
 4. check_assets compares bytes only for `record`. For other kinds, compare the re-baked
    file's sha256 with that kind's `sha256` on `/protein/{slug}/tracks`. For `structure`,
    the row's digest is the compiled `.fsceneb`, so compare the `.glb` with `provenance.glb.sha256`.
+   `python pipeline/fetch_tracks.py --check` does all of it and writes nothing; run the
+   re-bake in a scratch `HELIXPEEK_DATA` (a copy of `pipeline/data/`) and the folding
+   bake before the structure bake, whose stored model it matches its frame to.
+   `upload_tracks.py --kind structure --dry-run --against <service>` holds the scenes
+   compiled from the re-baked models to the stored ones.
 
 Don't run `fetch_tracks.py` between re-bake and compare: it overwrites any file whose digest
 differs from storage. A mismatch means the refactor changed data. Stop; never upload to fix it.

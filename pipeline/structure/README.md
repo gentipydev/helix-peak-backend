@@ -1,7 +1,7 @@
 # Baking `assets/models/*.glb`
 
-Everything here exists to regenerate twenty files: the folds the structure page
-renders. It is offline, run by hand, and run once per protein. The `.glb`s it
+Everything here exists to regenerate the curated rows' models: the folds the
+structure page renders. It is offline, run by hand, and run once per protein. The `.glb`s it
 writes land under `pipeline/data/assets/models/`; storage keeps each one beside
 the `.fsceneb` compiled from it, which is what the app fetches.
 
@@ -25,25 +25,30 @@ pipeline/structure/venv/bin/pip install -r pipeline/structure/requirements.txt
 pipeline/structure/venv/bin/python pipeline/structure/bake.py --all   # from the repo root
 ```
 
-Entries are downloaded from RCSB into `structures/` on first use and kept.
+Every curated row's model is cut from a file in the repository, never fetched
+by a bake (`pdb.source_of`): the twenty from their entries' own legacy files,
+`structures/<ENTRY>.pdb`, and a row added since from a working copy of its
+entry, `structures/working/<slug>.pdb` ([below](#curated-rows-cut-from-a-working-copy)).
 Each bake writes its intermediates to `output/<slug>/` — the generated `.pml`,
 one `.obj` per chain — and copies the finished model into
 `pipeline/data/assets/models/`. `output/` and `venv/` are gitignored.
 
 The app ships no model. It fetches a compiled `.fsceneb` from the `models`
 bucket, and the `.glb` it was compiled from is stored beside it, named in the
-structure row's provenance. Nothing compiles the twenty's by hand, so
-`upload_tracks.py --kind structure` refuses every target: their scenes are the
-ones the app's build hook compiled while it still shipped them. A scene is
-compiled now by flutter_scene's own importer, from the app's checkout:
+structure row's provenance. `upload_tracks.py --kind structure` compiles each
+scene on the way up (`compiled_scene`), as the worker compiles a model made on
+demand: with flutter_scene's own importer, from the app's checkout, which is
+what this runs:
 
 ```sh
 cd ../helix-peek && dart run flutter_scene:import -i model.glb -o model.fsceneb
 ```
 
-Run on insulin's stored `.glb` it gives the stored `.fsceneb` byte for byte.
-The container is versioned, so the importer has to be the flutter_scene the
-stored scenes were compiled by (0.23.0, `alphafold.FLUTTER_SCENE`).
+Run on the twenty's stored `.glb`s it gives their stored `.fsceneb`s byte for
+byte (2026-10-17: `upload_tracks.py --kind structure --dry-run --against` the
+service, twenty of twenty the same). The container is versioned, so the
+importer has to be the flutter_scene the stored scenes were compiled by
+(0.23.0, `alphafold.FLUTTER_SCENE`).
 
 ## Which entry, and why
 
@@ -82,6 +87,38 @@ alternatives, is in `docs/protein-verification.md`.
 
 The node names are the contract with `structure_view.dart`, which looks them up
 to assign a material each. Renaming them here takes their colours off there.
+
+## Curated rows cut from a working copy
+
+A row added to the curated list since the twenty is drafted from its gene by
+`scripts/draft_curated.py`: its entry chosen by the on-demand path's rule
+(policy 1, [below](#experimental-entries-for-proteins-built-on-demand)), baked
+and passed by the app's own check of a fold, as a protein built on demand's
+is. What that bake was made from is stored as the row's file:
+
+- `structures/working/<slug>.pdb`, the working copy (`normalize.working_copy`):
+  one PDB-format text in the record's numbering, one chain a node (`A` to `C`,
+  which the row's `Chain`s name), holding only what is drawn, its first line
+  saying so. The twenty's own readers read it as they read an entry.
+- `structures/working/<slug>.json`, where it came from: the entry, its model,
+  the policy, the entry's own chains and authors' numbering, and the digests of
+  the record, model, scene and fold the app's check passed.
+
+`bake.py` and `../folding/bake_folding.py` cut such a row from its working
+copy (`pdb.export_source`), with no dashed loop across a gap (R5.4,
+`experimental.GAP_DASHES`); its fold is numbered as the record, its ribbon
+pruned as the on-demand path prunes one, and its shape named as the working
+copy's. `check_bundle.py` then holds the row to what the draft passed: the
+`.glb` baked here has the digest the sidecar records, and the app's own check
+(`test/fold_bundle_check.dart`) passes it with the curated row, the fold and
+the scene compiled from it. `../bake_curated.py` runs all of it in order.
+
+The twenty are not re-cut from working copies: theirs would not be the same
+bytes (insulin's and relaxin's chains come out in another order, bridges in
+another, the depositors' helices and strands give way to PDBe's, alternate
+locations and modified residues are read otherwise, and the fidelity gate
+refuses EPO and somatotropin). Their legacy files stay, and they bake to the
+digests their rows carry, the proof re-run on 2026-10-17.
 
 ## Five things PyMOL does that the script works around
 

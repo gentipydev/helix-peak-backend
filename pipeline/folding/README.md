@@ -214,3 +214,25 @@ otherwise `null`); `secondary_structure` says whose assignment it is (PDBe's
 DSSP, or PyMOL's `dss`), and `built_by` the baker. The app reads none of the
 four.
 
+
+## For a curated row cut from a working copy
+
+A row added to the curated list since the twenty has a `targets.py` row and a
+working copy of its entry in the repository, `structure/structures/working/<slug>.pdb`
+(`structure/README.md`). The bake and the check find it themselves
+(`structure/pdb.source_of`), and read it as the on-demand path does:
+
+- `bake_folding.py --target <slug>` matches the frame against the stored model
+  as for the twenty, re-exporting from the working copy with no dashed loops;
+  passes `entry=<working copy>, offset=0`; leaves out each ribbon measure the
+  check would turn down (`experimental._unmeasured`); and names the shape
+  "HELIX and SHEET records of the working copy of <ENTRY>" (`WORKING_COPY_SHAPE`).
+- `check_folding.py` (and `problems_of` with no file given, as the uploader
+  calls it) holds such a track to its working copy, its bridges by their
+  sulfurs' reach (2.5 Å) and its shape by that statement (`reading_of`). A file
+  given, as the on-demand path gives its copy, is read exactly as before.
+
+The track keeps the working copy's chain letters and offset 0, which the row's
+`Chain`s name and the check reads by; the entry's own chains and numbering are
+in the working copy's sidecar. None of the twenty's tracks changed: re-baked
+after this, all twenty equal the digests their rows carry (2026-10-17).

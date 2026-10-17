@@ -68,8 +68,14 @@ set -a && . ./.env && set +a
 `--all` re-fetches every record from NCBI as it is today; `--target` leaves the
 others byte for byte. The uploader validates before it writes, stores plain
 bytes at `<kind>/<slug>.<sha12>.<ext>` with immutable caching, and deletes an
-object only once no row points at it. `--kind structure` refuses until Phase 9
-compiles `.fsceneb` containers in a worker.
+object only once no row points at it. `--kind structure` compiles each model's
+`.fsceneb` with the app's own importer on the way up, as the worker does, and
+uploads both. A target it refuses makes the run exit 1.
+
+[`bake_curated.py`](bake_curated.py) `--target <slug>` runs every bake above for
+one row, in order and each in its own environment, then the checks; `--dry-run`
+prints the commands and `--from <step>` resumes. It bakes a row whose record is
+already served only with `--rebake`.
 
 Rough costs on an M-series laptop: records under a minute; structures about a
 minute; scores about eighty-five minutes for all twenty, forty-five of them
@@ -108,12 +114,38 @@ say so, until `fetch_tracks.py` has filled `pipeline/data/`.
 ## Adding a protein
 
 Read [the pipeline rules](../../helix-peek/docs/protein-pipeline-rules.md)
-first: they are what the first ten had to be corrected to agree on. Check the
-gene against its record before writing anything --
-[protein-verification.md](../../helix-peek/docs/protein-verification.md) is how
-the second ten were checked. Then add a row to `targets.py` and one to
-`curated/catalog.json`, bake with `--target <slug>`, run `check_assets.py`,
-upload, and seed.
+first: they are what the first ten had to be corrected to agree on. A batch is
+a list of genes and the words a person writes for them:
+
+1. **Draft.** `scripts/draft_curated.py --out <dir> GENE=slug[@ENTRY] ...`
+   resolves each gene as the resolver does, chooses and bakes its fold as a
+   protein built on demand's is (passing the app's own check), stores the
+   working copy its model is cut from (`structure/structures/working/`), and
+   writes the `targets.py` row and the `curated/catalog.json` entry it derives.
+2. **Verify.** Check each gene against its record before keeping its row:
+   span, exons, neighbouring genes, processing, structure.
+   [protein-verification.md](../../helix-peek/docs/protein-verification.md) is
+   how the second ten and the third were checked; add a section for the batch.
+3. **Write.** Settle what the draft marks `# HAND:` (R3.3, R3.4) and write
+   every word it marks `DRAFT:` by hand (R4.5); `check_assets.py` and
+   `seed_catalog.py` refuse a row still drafted. The catalog's facts follow the
+   record (`check_assets.check_facts`).
+4. **Bake.** `NCBI_EMAIL=... .venv/bin/python pipeline/bake_curated.py --target
+   <slug>` for each, then `check_assets.py`, `pytest`, and
+   `fetch_tracks.py --check` (every other row's files as stored).
+5. **Try the app on it.** `pipeline/sync_fixtures.py --from local --target ...`
+   writes the rows and their tracks into the app's test fixtures as they will
+   be served; the app's `flutter test` then walks them. A failing walk test is
+   a row to fix.
+6. **Seed, then upload.** `seed_catalog.py --target ...` (`--dry-run` first)
+   writes the rows, and only then can `upload_tracks.py --kind <kind> --target
+   ...` (each kind, `--dry-run` first) write their tracks: a track row names its
+   protein's. The seed refuses a row over a protein built on demand.
+7. **Check it live.** `seed_catalog.py --check`, `check_assets.py --against
+   <service>`, and the app's `live_backend_check.dart`.
+8. **The app's fixtures.** `pipeline/sync_fixtures.py --target ...` from the
+   service must find the local run's files unchanged; commit them in the app.
+   Its golden pages are made on the x86 host.
 
 That is how a protein joins the curated list. Any other reviewed human protein
 with a MANE Select transcript can be resolved on demand instead, with no row
