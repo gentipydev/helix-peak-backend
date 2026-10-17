@@ -25,6 +25,17 @@ deleted once its row no longer points at it.
 
 **Validated before it is written**, the same order `record_cache` uses: a
 payload that would fail on the way out never becomes a row that says `ready`.
+A target refused for that is said and makes the run exit 1, after the others.
+
+**A structure is compiled on the way**: the `.glb` the bake made goes up with
+the `.fsceneb` the app loads, compiled by the app's own importer
+(`alphafold.compile_scene`, the flutter_scene the app's checkout pins), as the
+worker compiles a model made on demand. `--app` names the checkout and
+`--dart` the Dart that runs the importer.
+
+`--against <service>` (with `--dry-run`) says, for each track planned, whether
+the service already serves exactly those bytes: the proof that a re-bake, or
+the compiler, makes what is stored.
 """
 
 from __future__ import annotations
@@ -44,14 +55,8 @@ if str(BACKEND) not in sys.path:
 
 from pipeline import check_assets  # noqa: E402
 from pipeline.impact.check_explanations import validate as validate_explanations  # noqa: E402
-from pipeline.paths import DATA  # noqa: E402
+from pipeline.paths import CLIENT, DATA  # noqa: E402
 from pipeline.targets import TARGETS  # noqa: E402
-
-# Where flutter_scene's build hook wrote the compiled scenes while the app still
-# compiled its own folds. Nothing writes it now, so `--kind structure` refuses
-# every target by hand. A model made on demand is compiled by the resolver's
-# worker (`structure/alphafold.py`) and stored through `structure_row`.
-SCENES = DATA / "flutter_scene_generated"
 
 MODELS_BUCKET = "models"
 
@@ -59,23 +64,46 @@ MODELS_BUCKET = "models"
 CACHE_CONTROL = "public, max-age=31536000, immutable"
 
 
-def scene_of(target) -> Path | None:
-    """The compiled `.fsceneb` for this protein, off `hook/build.dart`'s manifest.
+def compiled_scene(glb: Path, app: Path, dart: Path) -> bytes:
+    """The `.fsceneb` the app loads, compiled from [glb] by the app's own
+    importer, as the worker compiles a model made on demand. Raises
+    RuntimeError where no scene can be compiled from that checkout."""
+    import tempfile
 
-    Read from the manifest rather than globbed, because the file name carries a
-    content hash the manifest is the only record of -- and because a scene that
-    is on disk but not in the manifest is a leftover from an earlier bake, not
-    something this build would load.
-    """
-    manifest = SCENES / "manifest.json"
-    if not manifest.exists():
-        return None
-    entries = json.loads(manifest.read_text()).get("entries", [])
-    wanted = f"assets/models/{target.slug}"
-    for entry in entries:
-        if entry.get("id") == wanted:
-            return SCENES / entry["file"]
-    return None
+    from pipeline.structure import alphafold
+
+    unready = alphafold.importer_unready(app)
+    if unready:
+        raise RuntimeError(unready)
+    with tempfile.TemporaryDirectory() as work:
+        return alphafold.compile_scene(glb, Path(work) / "model.fsceneb", app, str(dart))
+
+
+def default_dart() -> Path:
+    """The Dart the worker runs the importer with (`local_worker.default_dart`),
+    unless `RESOLVER_DART` names another, as it does for the worker."""
+    from pipeline.resolver.local_worker import default_dart as worker_dart
+
+    named = os.environ.get("RESOLVER_DART")
+    return Path(named) if named else worker_dart(Path.home())
+
+
+def served_as(service: str, row: dict) -> str:
+    """Whether [service] already serves exactly this row's bytes: `same`,
+    `differs`, or why it cannot say."""
+    url = f"{service.rstrip('/')}/protein/{row['slug']}/tracks"
+    try:
+        with urllib.request.urlopen(url, timeout=120) as response:
+            live = json.loads(response.read()).get(row["kind"]) or {}
+    except urllib.error.HTTPError as exc:
+        return f"not served ({exc.code})"
+    if live.get("state") != "ready":
+        return f"not ready ({live.get('state')})"
+    same = live.get("sha256") == row["sha256"]
+    if row["kind"] == "structure":
+        glb = (row["provenance"].get("glb") or {}).get("sha256")
+        same = same and ((live.get("provenance") or {}).get("glb") or {}).get("sha256") == glb
+    return "same" if same else "differs"
 
 
 def asset_of(kind: str, target) -> Path | None:
@@ -307,7 +335,15 @@ def main() -> int:
         "folding", "locus"])
     parser.add_argument("--target", action="append", default=None)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--app", type=Path, default=CLIENT,
+                        help=f"the app's checkout, whose importer compiles a scene (default {CLIENT})")
+    parser.add_argument("--dart", type=Path, default=None,
+                        help="the Dart that runs it (default: the worker's, or $RESOLVER_DART)")
+    parser.add_argument("--against", default=None, metavar="SERVICE",
+                        help="with --dry-run: whether the service already serves these bytes")
     arguments = parser.parse_args()
+    if arguments.against and not arguments.dry_run:
+        parser.error("--against compares a dry run with what is served; add --dry-run")
 
     kind = arguments.kind
     wanted = set(arguments.target) if arguments.target else None
@@ -315,7 +351,10 @@ def main() -> int:
         "structure": (MODELS_BUCKET, "glb", "model/gltf-binary"),
     }.get(kind, ("tracks", "json", "application/json"))
 
-    planned = []
+    unknown = sorted((wanted or set()) - {t.slug for t in TARGETS})
+    if unknown:
+        raise SystemExit(f"no such target: {unknown}")
+    planned, refused = [], []
     for target in TARGETS:
         if wanted and target.slug not in wanted:
             continue
@@ -327,6 +366,7 @@ def main() -> int:
             provenance = validate(kind, target, payload)
         except (ValueError, KeyError) as exc:
             print(f"  {target.slug}: REFUSED -- {exc}", file=sys.stderr)
+            refused.append(target.slug)
             continue
         digest = hashlib.sha256(payload).hexdigest()
         uploads = [(f"{kind}/{target.slug}.{digest[:12]}.{suffix}",
@@ -338,12 +378,14 @@ def main() -> int:
             "provenance": provenance,
         }
         if kind == "structure":
-            scene = scene_of(target)
-            if scene is None or not scene.exists():
-                print(f"  {target.slug}: REFUSED -- no compiled scene; "
-                      f"run the build hook first", file=sys.stderr)
+            try:
+                scene = compiled_scene(path, arguments.app, arguments.dart or default_dart())
+            except (RuntimeError, OSError) as exc:
+                print(f"  {target.slug}: REFUSED -- no scene could be compiled: {exc}",
+                      file=sys.stderr)
+                refused.append(target.slug)
                 continue
-            row, uploads = structure_row(target.slug, payload, scene.read_bytes(), provenance)
+            row, uploads = structure_row(target.slug, payload, scene, provenance)
         row["_uploads"] = uploads
         planned.append(row)
 
@@ -351,11 +393,15 @@ def main() -> int:
     for row in planned:
         for path, payload, _ in row["_uploads"]:
             print(f"  {row['slug']:<16} {len(payload):>10,} B  {path}")
+        if arguments.against:
+            print(f"  {row['slug']:<16} {served_as(arguments.against, row)} "
+                  f"as {arguments.against}")
     objects = sum(len(row["_uploads"]) for row in planned)
-    print(f"\n{len(planned)} track(s), {objects} object(s), {total / 1e6:.2f} MB",
+    print(f"\n{len(planned)} track(s), {objects} object(s), {total / 1e6:.2f} MB"
+          + (f"; {len(refused)} refused: {', '.join(refused)}" if refused else ""),
           file=sys.stderr)
     if arguments.dry_run:
-        return 0
+        return 1 if refused else 0
 
     url, key = os.environ.get("SUPABASE_URL"), os.environ.get("SUPABASE_SERVICE_KEY")
     database = os.environ.get("DATABASE_URL")
@@ -391,8 +437,10 @@ def main() -> int:
     storage.delete(bucket, superseded)
     if superseded:
         print(f"  removed {len(superseded)} superseded object(s)", file=sys.stderr)
-    print(f"{len(planned)} {kind} track(s) ready", file=sys.stderr)
-    return 0
+    print(f"{len(planned)} {kind} track(s) ready"
+          + (f"; {len(refused)} refused: {', '.join(refused)}" if refused else ""),
+          file=sys.stderr)
+    return 1 if refused else 0
 
 
 if __name__ == "__main__":
