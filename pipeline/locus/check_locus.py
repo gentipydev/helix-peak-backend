@@ -261,11 +261,21 @@ def problems_of(target: Target, track: dict | None = None) -> list[str]:
     return out
 
 
-def main() -> int:
-    found = [problem for target in LOCUS_TARGETS for problem in problems_of(target)]
+def main(arguments: list[str] | None = None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--target", action="append", default=None,
+                        help="one slug; repeatable. Default is every curated row.")
+    args = parser.parse_args(arguments)
+    unknown = sorted(set(args.target or []) - {t.slug for t in LOCUS_TARGETS})
+    if unknown:
+        parser.error(f"no such target: {unknown}")
+    chosen = [t for t in LOCUS_TARGETS if not args.target or t.slug in args.target]
+    found = [problem for target in chosen for problem in problems_of(target)]
     for problem in found:
         print(f"  {problem}", file=sys.stderr)
-    print(f"{len(LOCUS_TARGETS)} locus tracks checked, {len(found)} problem(s)",
+    print(f"{len(chosen)} locus tracks checked, {len(found)} problem(s)",
           file=sys.stderr)
     return 1 if found else 0
 

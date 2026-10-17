@@ -8,6 +8,7 @@ record was rebuilt still parses, still loads, and quietly stops colouring the
 page it is for.
 
     python3 pipeline/check_assets.py
+    python3 pipeline/check_assets.py --target phospholamban      # one row; repeatable
     python3 pipeline/check_assets.py --against https://helix-peak-backend.onrender.com
 
 The offline checks read the files under `pipeline/data/` (`paths.DATA`): a
@@ -44,6 +45,10 @@ from pipeline.paths import CURATED, DATA  # noqa: E402
 from pipeline.targets import TARGETS, Target, partition  # noqa: E402
 
 problems: list[str] = []
+
+# What `scripts/draft_curated.py` puts before every word it drafts, for a
+# person to replace: a row still saying it is never checked out, seeded or served.
+DRAFT = "DRAFT:"
 
 
 def fail(message: str) -> None:
@@ -464,6 +469,43 @@ def check(target: Target, catalog: dict[str, dict]) -> None:
             f"{where}: the curated row paints {sorted(row['chains'])}, "
             f"{model_path.name} holds {sorted(nodes)}"
         )
+    check_words(where, row)
+    check_facts(where, target, mock, row)
+
+
+def drafted(row: dict) -> list[str]:
+    """Each field of a curated row still holding a drafted word."""
+    chrome = row.get("chrome") or {}
+    said = {"display": row.get("display"), "summary": row.get("summary"),
+            "chain": row.get("chain"), "label": chrome.get("label"),
+            "sentence": chrome.get("sentence"), "semantics": chrome.get("semantics")}
+    return [field for field, text in said.items()
+            if isinstance(text, str) and text.strip().startswith(DRAFT)]
+
+
+def check_words(where: str, row: dict) -> None:
+    """A curated row's words are a person's: none still says it was drafted."""
+    for field in drafted(row):
+        fail(f"{where}: {field} is still drafted ({DRAFT}); write it by hand")
+
+
+def check_facts(where: str, target: Target, mock: dict, row: dict) -> None:
+    """The card's four facts are the record's and the table's, as the walk
+    derives them: residues translated, exons, the chains the record names
+    (one where it names none) and the table's disulfides. And the row names a
+    chain exactly where the record names no peptide to name it by."""
+    peptides = mock.get("peptides") or []
+    derived = {
+        "residues": len(mock["protein"]["translation"]),
+        "exons": len(mock["exons"]),
+        "chains": max(1, len(peptides)),
+        "bridges": len(target.disulfides),
+    }
+    if row["facts"] != derived:
+        fail(f"{where}: the curated row's facts are {row['facts']}, the record gives {derived}")
+    if (row.get("chain") is None) != bool(peptides):
+        fail(f"{where}: the curated row names a chain {row.get('chain')!r} where the record "
+             f"names {len(peptides)} peptide(s); a chain is named exactly where it names none")
 
 
 def check_clinvar(target: Target, mock: dict, clinical: dict) -> None:
@@ -675,9 +717,19 @@ if __name__ == "__main__":
         "--offline", action="store_true",
         help="skip the service check even when --against is given",
     )
+    parser.add_argument(
+        "--target", action="append", default=None,
+        help="one slug, checked offline; repeatable. Default is every curated row.",
+    )
     arguments = parser.parse_args()
 
     catalog = curated_catalog()
+    unknown = sorted(set(arguments.target or []) - {t.slug for t in TARGETS})
+    if unknown:
+        parser.error(f"no such target: {unknown}")
+    if arguments.target and arguments.against and not arguments.offline:
+        parser.error("--target is for the offline checks; --against checks every row served")
+    chosen = [t for t in TARGETS if not arguments.target or t.slug in arguments.target]
 
     if arguments.against and not arguments.offline:
         check_against(arguments.against, catalog)
@@ -694,7 +746,7 @@ if __name__ == "__main__":
     if extra:
         fail(f"curated/catalog.json has rows with no bake: {sorted(extra)}")
 
-    for target in TARGETS:
+    for target in chosen:
         check(target, catalog)
         attribution = DATA / f"assets/impact_explanations/{target.slug}.json"
         included = catalog.get(target.slug, {}).get("impact_explanations", False)
@@ -722,7 +774,7 @@ if __name__ == "__main__":
 
     total = sum(
         (DATA / path).stat().st_size
-        for t in TARGETS
+        for t in chosen
         for path in (
             [t.mock_asset]
             + ([t.constraint_asset] if t.scored else [])
@@ -734,11 +786,11 @@ if __name__ == "__main__":
     # The models, as the bake left them. Not what a phone downloads -- the
     # `.fsceneb` compiled from each of these is about 29% of its size, and it
     # lives in storage now rather than anywhere this script can measure.
-    models = sum((DATA / t.structure_asset).stat().st_size for t in TARGETS)
-    scored = sum(1 for t in TARGETS if t.scored)
-    tracked = sum(1 for t in TARGETS if t.impact_scored)
+    models = sum((DATA / t.structure_asset).stat().st_size for t in chosen)
+    scored = sum(1 for t in chosen if t.scored)
+    tracked = sum(1 for t in chosen if t.impact_scored)
     print(
-        f"{len(TARGETS)} targets check out, {scored} scored and "
+        f"{len(chosen)} targets check out, {scored} scored and "
         f"{tracked} with an impact track. "
         f"{total / 1e6:.2f} MB of records and tracks, "
         f"{models / 1e6:.2f} MB of baked models. None of it ships."

@@ -373,8 +373,9 @@ def main(gene: str, device: str | None) -> int:
     hold(request is not None and request[0] == "done" and request[2] == 1, "request done by resolver version 1")
     hold(bake is not None and bake[0] == "done", "constraint bake done")
     catalog = get("/catalog")
-    hold(len(catalog["proteins"]) == 20 and curated == 20
-         and slug not in {p["slug"] for p in catalog["proteins"]}, "/catalog is still the twenty")
+    hold(len(catalog["proteins"]) == curated and catalog.get("next") is None
+         and slug not in {p["slug"] for p in catalog["proteins"]},
+         f"/catalog is every curated row ({curated}), and not this one")
     suggestions = get(f"/proteins/suggest?q={gene}")["suggestions"]
     mine = [s for s in suggestions if s["gene"] == gene]
     hold(bool(mine) and mine[0]["status"] == "ready" and mine[0]["slug"] == slug,

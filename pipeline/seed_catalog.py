@@ -14,6 +14,11 @@ service still agrees with both, field for field.
 
 A real run upserts the protein rows and replaces their aliases. It only inserts
 track rows that are not there, so it never undoes an upload.
+
+It refuses, before writing anything: a row whose words are still drafted
+(`DRAFT:`, `scripts/draft_curated.py`), and a row that would take the place of
+a protein built on demand -- its slug held by a resolved row, or its gene by
+another slug -- which only the user can decide to replace.
 """
 
 from __future__ import annotations
@@ -57,6 +62,21 @@ def curated_rows() -> dict[str, dict]:
             "impact_explanations": "impact_explanations" in protein.get("tracks", []),
         }
     return rows
+
+
+# What `scripts/draft_curated.py` puts before a word it drafts
+# (`check_assets.DRAFT`): a person writes every one before a row is seeded.
+DRAFT = "DRAFT:"
+
+
+def drafted_fields(curated: dict) -> list[str]:
+    """The fields of a curated row (as `curated_rows` reads it) still drafted."""
+    chrome = curated.get("chrome") or {}
+    said = {"display": curated.get("display"), "summary": curated.get("summary"),
+            "chain": curated.get("chain"), "label": chrome.get("label"),
+            "sentence": chrome.get("sentence"), "semantics": chrome.get("semantics")}
+    return [field for field, text in said.items()
+            if isinstance(text, str) and text.strip().startswith(DRAFT)]
 
 
 # --- building the rows ------------------------------------------------------
@@ -209,12 +229,37 @@ on conflict (slug, kind) do nothing
 """
 
 
+def conflicts(rows: list[tuple[dict, list[tuple[str, str]], list[dict]]], conn) -> list[str]:
+    """Each live row these would take the place of that is not a curated row of
+    the same slug: a protein built on demand under the slug (whose upsert would
+    write over it), or the gene under another slug (which `unique (gene,
+    taxon_id)` refuses, rolling the whole seed back)."""
+    slugs = [protein["slug"] for protein, _, _ in rows]
+    genes = {protein["gene"]: protein["slug"] for protein, _, _ in rows}
+    found = conn.execute(
+        "select slug, gene, catalog_order, resolver_version from protein "
+        "where slug = any(%s) or (gene = any(%s) and taxon_id = 9606)",
+        (slugs, list(genes)),
+    ).fetchall()
+    out = []
+    for slug, gene, order, version in found:
+        if slug in slugs and (order is None or (version or 0) > 0):
+            out.append(f"{slug}: the live row is a protein built on demand "
+                       f"(resolver version {version}); a curated row would write over it")
+        elif gene in genes and slug != genes[gene]:
+            out.append(f"{genes[gene]}: {gene} is already served as {slug!r}")
+    return out
+
+
 def write(rows: list[tuple[dict, list[tuple[str, str]], list[dict]]], url: str) -> None:
     import psycopg
     from psycopg.types.json import Jsonb
 
     jsonb = ("regions", "disulfides", "structure", "provenance")
     with psycopg.connect(url) as conn:
+        found = conflicts(rows, conn)
+        if found:
+            raise SystemExit("refused, nothing written:\n  " + "\n  ".join(found))
         with conn.cursor() as cur:
             for protein, aliases, tracks in rows:
                 payload = dict(protein)
@@ -249,6 +294,7 @@ def check(rows: list[tuple[dict, list[tuple[str, str]], list[dict]]], url: str) 
 
     differences: list[str] = []
     with psycopg.connect(url, prepare_threshold=None) as conn:
+        differences += conflicts(rows, conn)
         for protein, aliases, _ in rows:
             slug = protein["slug"]
             live = conn.execute(
@@ -299,6 +345,9 @@ def main() -> int:
     if extra:
         raise SystemExit(f"curated/catalog.json rows with no targets.py row: {extra}")
 
+    unknown = sorted((wanted or set()) - {t.slug for t in TARGETS})
+    if unknown:
+        raise SystemExit(f"no such target: {unknown}")
     rows = []
     for target in TARGETS:
         if wanted and target.slug not in wanted:
@@ -306,6 +355,12 @@ def main() -> int:
         row = curated[target.slug]
         rows.append((protein_row(target, row), _aliases(target, row),
                      track_rows(target, row)))
+
+    drafted = [f"{protein['slug']}.{field}" for protein, _, _ in rows
+               for field in drafted_fields(curated[protein["slug"]])]
+    if drafted and not args.dry_run:
+        raise SystemExit(f"refused, nothing written: words still drafted ({DRAFT}) in "
+                         f"{', '.join(drafted)}")
 
     if args.dry_run:
         print(json.dumps(
@@ -316,6 +371,9 @@ def main() -> int:
         print(f"\n{len(rows)} proteins, "
               f"{sum(len(a) for _, a, _ in rows)} aliases, "
               f"{sum(len(t) for _, _, t in rows)} track rows", file=sys.stderr)
+        if drafted:
+            print(f"words still drafted, which a real run refuses: {', '.join(drafted)}",
+                  file=sys.stderr)
         return 0
 
     url = os.environ.get("DATABASE_URL")
