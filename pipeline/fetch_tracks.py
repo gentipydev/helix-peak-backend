@@ -18,6 +18,14 @@ already on disk with the right digest is not fetched again.
 client checkout's six asset directories has to equal the stored object its row
 names, byte for byte. It is the gate Phase 4 runs before the client stops
 bundling those files.
+
+`--check` writes nothing either: every file here against the digest its row
+names (a structure's `.glb` against `provenance.glb.sha256`), so a re-bake can
+be held to what is stored without touching it. A curated row the service does
+not hold yet (one added and not seeded) is said, and is not a failure.
+
+    python3 pipeline/fetch_tracks.py --check
+    python3 pipeline/fetch_tracks.py --check --target insulin --kind structure
 """
 
 from __future__ import annotations
@@ -99,6 +107,12 @@ def stored_objects(service: str, target: Target) -> dict[str, tuple[str, str]]:
     return found
 
 
+def unseeded(exc: Exception) -> bool:
+    """Whether the service answered that it has no such protein: a curated row
+    added to the tables and not seeded yet, which holds nothing to fetch."""
+    return isinstance(exc, urllib.error.HTTPError) and exc.code == 404
+
+
 def fetch(service: str, targets: list[Target], kinds: tuple[str, ...]) -> int:
     fetched = kept = failed = 0
     total = 0
@@ -106,6 +120,9 @@ def fetch(service: str, targets: list[Target], kinds: tuple[str, ...]) -> int:
         try:
             objects = stored_objects(service, target)
         except (urllib.error.URLError, OSError, ValueError) as exc:
+            if unseeded(exc):
+                print(f"  {target.slug}: not in the catalog yet", file=sys.stderr)
+                continue
             print(f"  {target.slug}: could not read its tracks: {exc}", file=sys.stderr)
             failed += 1
             continue
@@ -140,6 +157,40 @@ def fetch(service: str, targets: list[Target], kinds: tuple[str, ...]) -> int:
     return 1 if failed else 0
 
 
+def check(service: str, targets: list[Target], kinds: tuple[str, ...]) -> int:
+    """Every local file of [targets] against the digest its row names. Writes
+    nothing. Exits 1 on a file that differs or is missing, or a protein whose
+    rows cannot be read; one not in the catalog yet is said and passed by."""
+    same = differ = missing = failed = 0
+    for target in targets:
+        try:
+            objects = stored_objects(service, target)
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            if unseeded(exc):
+                print(f"  {target.slug}: not in the catalog yet", file=sys.stderr)
+                continue
+            print(f"  {target.slug}: could not read its tracks: {exc}", file=sys.stderr)
+            failed += 1
+            continue
+        for kind in kinds:
+            if kind not in objects:
+                continue
+            _, digest = objects[kind]
+            path = DATA / asset_path(kind, target)
+            if not path.exists():
+                print(f"  {target.slug} {kind}: no local file ({path.relative_to(DATA)})",
+                      file=sys.stderr)
+                missing += 1
+            elif hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+                print(f"  {target.slug} {kind}: differs from its row's sha256", file=sys.stderr)
+                differ += 1
+            else:
+                same += 1
+    print(f"{same} the same as stored, {differ} differ, {missing} missing, {failed} unread",
+          file=sys.stderr)
+    return 1 if differ or missing or failed else 0
+
+
 def verify_client(service: str, client: Path) -> int:
     """Every client asset file against the stored object its row names."""
     mismatched: list[str] = []
@@ -147,7 +198,14 @@ def verify_client(service: str, client: Path) -> int:
     checked = 0
     stored: dict[str, str] = {}
     for target in TARGETS:
-        for kind, (_, digest) in stored_objects(service, target).items():
+        try:
+            held = stored_objects(service, target)
+        except urllib.error.HTTPError as exc:
+            if not unseeded(exc):
+                raise
+            print(f"  {target.slug}: not in the catalog yet", file=sys.stderr)
+            continue
+        for kind, (_, digest) in held.items():
             stored[asset_path(kind, target)] = digest
     # A client checkout keeps them under `assets/`; its test fixtures, from
     # Phase 4 on, keep the same six directories at their own root.
@@ -190,6 +248,8 @@ def main() -> int:
     parser.add_argument("--verify-client", nargs="?", const=str(CLIENT), default=None,
                         metavar="CLIENT", help=f"compare a client checkout instead "
                                                f"(default {CLIENT})")
+    parser.add_argument("--check", action="store_true",
+                        help="hold the local files to their rows' digests; write nothing")
     args = parser.parse_args()
 
     if args.verify_client is not None:
@@ -199,6 +259,8 @@ def main() -> int:
     if unknown:
         raise SystemExit(f"no such target: {sorted(unknown)}")
     targets = [t for t in TARGETS if not wanted or t.slug in wanted]
+    if args.check:
+        return check(args.service, targets, tuple(args.kind or KINDS))
     return fetch(args.service, targets, tuple(args.kind or KINDS))
 
 
