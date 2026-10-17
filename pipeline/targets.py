@@ -1,4 +1,4 @@
-"""The twenty curated proteins, and everything the bakers need to know.
+"""The curated proteins, and everything the bakers need to know.
 
 One row per protein, read by every tool under `pipeline/`: the gene record
 builder, the ESM-2 constraint scorer, the impact and ClinVar bakes and the

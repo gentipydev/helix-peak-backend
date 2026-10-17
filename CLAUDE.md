@@ -15,7 +15,9 @@ Baker CODE may be shared and refactored. The DATA SHAPE may not change:
 - New data is a new track kind: its own `protein_track` rows, objects and provenance.
 
 The data shape holds while all of these hold: re-baked tracks match the stored sha256;
-`pipeline/seed_catalog.py --check` diffs clean; `/catalog` returns exactly twenty.
+`pipeline/seed_catalog.py --check` diffs clean; `/catalog` returns every curated row
+(`targets.py`'s, in `catalog_order`). The curated list grows: a protein is added to it
+with a new row in `targets.py` and `curated/catalog.json` (the user's decision of 2026-10-17).
 
 ### The proof that makes a baker refactor safe: re-bake, compare sha256
 
@@ -160,7 +162,7 @@ things follow for anyone working in this checkout:
    upserts the row as `ready`. A protein with no row reads `absent`.
 5. `pipeline/fetch_tracks.py`: `KINDS` and `asset_path`.
 6. A verification script for the new payload. Checks on existing kinds do not change.
-7. Done: pytest green, `seed_catalog.py --check` clean, `/catalog` still twenty, existing
+7. Done: pytest green, `seed_catalog.py --check` clean, `/catalog` still every curated row, existing
    sha256 unchanged. Upload only when asked, with `--dry-run` first.
 8. The client skips kinds it cannot classify (`TrackKind.fromWire`), so no installed app breaks.
 

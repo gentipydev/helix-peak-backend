@@ -1,4 +1,4 @@
-"""Seed the Supabase catalog from the two tables the twenty are curated in.
+"""Seed the Supabase catalog from the two tables the curated proteins are written in.
 
 Run by hand. `targets.py` holds the coordinates, regions and disulfides;
 `curated/catalog.json` holds the prose, the facts and the chain tints -- what

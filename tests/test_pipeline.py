@@ -4,7 +4,7 @@
 HANDOFF-ONDEMAND.md. Nothing under `app/` imports it yet, so these hold the
 package to the two things the move promised: it imports from the repository
 root on the service's own Python, and the curated rows it seeds from are the
-twenty `targets.py` bakes.
+rows `targets.py` bakes.
 """
 
 import copy
@@ -32,7 +32,7 @@ def test_the_tools_import_from_the_repository_root(module):
     importlib.import_module(module)
 
 
-def test_the_curated_rows_are_the_twenty_targets():
+def test_the_curated_rows_are_the_targets():
     curated = seed_catalog.curated_rows()
     assert sorted(curated) == sorted(t.slug for t in TARGETS)
     assert sorted(row["order"] for row in curated.values()) == list(range(len(TARGETS)))

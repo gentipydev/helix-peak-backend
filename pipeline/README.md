@@ -8,7 +8,7 @@ and ESM-2 scorer, unchanged, on Modal (or on a Mac until it is deployed there)
 for a protein a reader asks for that the catalog does not list. The web service
 never imports any of it.
 
-One table drives the twenty curated proteins: [`targets.py`](targets.py). A row
+One table drives the curated proteins: [`targets.py`](targets.py). A row
 says where the gene comes from, which regions and disulfides the precursor has,
 which chains of which PDB entry the fold is cut from, and whether it is scored.
 The rows' hand-written prose -- display name, summary, chain name, facts, chain
@@ -38,7 +38,7 @@ The tracks the app reads are the objects in Supabase Storage, named by the
 `protein_track` rows. To have files to work on, bring them back:
 
 ```sh
-python3 pipeline/fetch_tracks.py            # all twenty, every family, sha256-verified
+python3 pipeline/fetch_tracks.py            # every curated protein, every family, sha256-verified
 python3 pipeline/check_assets.py            # the tracks against each other and the tables
 python3 pipeline/check_assets.py --against https://helix-peak-backend.onrender.com
 ```

@@ -7,7 +7,7 @@ and the AVI map, the constraint and impact tests hold stored tracks to their
 gates -- so this writes storage's copy into `pipeline/data/`, in the `assets/...`
 layout `targets.py` names, verified against the sha256 each row carries.
 
-    python3 pipeline/fetch_tracks.py                       # all twenty, every family
+    python3 pipeline/fetch_tracks.py                       # every curated protein, every family
     python3 pipeline/fetch_tracks.py --target insulin --kind constraint
     python3 pipeline/fetch_tracks.py --verify-client ../helix-peek
 
@@ -184,7 +184,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--service", default=SERVICE, help=f"default {SERVICE}")
     parser.add_argument("--target", action="append", default=None,
-                        help="one slug; repeatable. Default is all twenty.")
+                        help="one slug; repeatable. Default is every curated protein.")
     parser.add_argument("--kind", action="append", choices=KINDS, default=None,
                         help="one family; repeatable. Default is every family.")
     parser.add_argument("--verify-client", nargs="?", const=str(CLIENT), default=None,
