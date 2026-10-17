@@ -446,6 +446,7 @@ def check(target: Target, catalog: dict[str, dict]) -> None:
     for field, mine in (
         ("gene", target.gene),
         ("uniprot", target.uniprot),
+        ("display", target.display),
         ("pdb", target.structure.pdb),
     ):
         if row.get(field) != mine:
