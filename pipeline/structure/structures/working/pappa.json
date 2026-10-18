@@ -1,0 +1,211 @@
+{
+ "entry": "8HGG",
+ "model": "1",
+ "method": [
+  "ELECTRON MICROSCOPY"
+ ],
+ "resolution": 3.64,
+ "revision": "1.1",
+ "file": {
+  "url": "https://www.ebi.ac.uk/pdbe/entry-files/download/8hgg_updated.cif",
+  "sha256": "8bca31507824ecf5b1a49a388e792e5cde9f9c3ac886c43ea6249600cbdb0cc6"
+ },
+ "policy": 1,
+ "candidate": "8HGG:C@1",
+ "scope": "product",
+ "domains": [],
+ "chains": [
+  {
+   "node": "chainA",
+   "product": "Pappalysin-1",
+   "entity": "8HGG_2",
+   "asym": "C",
+   "auth": "C",
+   "first": 82,
+   "last": 1627,
+   "placed": 1484,
+   "offset": 80
+  }
+ ],
+ "bridges": [
+  [
+   144,
+   235
+  ],
+  [
+   327,
+   587
+  ],
+  [
+   332,
+   657
+  ],
+  [
+   414,
+   428
+  ],
+  [
+   424,
+   440
+  ],
+  [
+   457,
+   473
+  ],
+  [
+   474,
+   485
+  ],
+  [
+   583,
+   622
+  ],
+  [
+   612,
+   643
+  ],
+  [
+   710,
+   881
+  ],
+  [
+   713,
+   878
+  ],
+  [
+   753,
+   835
+  ],
+  [
+   775,
+   781
+  ],
+  [
+   947,
+   975
+  ],
+  [
+   960,
+   971
+  ],
+  [
+   983,
+   990
+  ],
+  [
+   999,
+   1011
+  ],
+  [
+   1036,
+   1070
+  ],
+  [
+   1051,
+   1139
+  ],
+  [
+   1215,
+   1269
+  ],
+  [
+   1227,
+   1238
+  ],
+  [
+   1242,
+   1280
+  ],
+  [
+   1285,
+   1329
+  ],
+  [
+   1300,
+   1310
+  ],
+  [
+   1314,
+   1342
+  ],
+  [
+   1346,
+   1399
+  ],
+  [
+   1362,
+   1373
+  ],
+  [
+   1377,
+   1410
+  ],
+  [
+   1415,
+   1458
+  ],
+  [
+   1428,
+   1438
+  ],
+  [
+   1492,
+   1502
+  ],
+  [
+   1506,
+   1554
+  ],
+  [
+   1558,
+   1576
+  ],
+  [
+   1567,
+   1583
+  ],
+  [
+   1584,
+   1608
+  ],
+  [
+   1600,
+   1606
+  ]
+ ],
+ "bridges_dropped": [],
+ "secondary_structure": "DSSP in the entry's file from PDBe (struct_conf, struct_sheet_range)",
+ "representation": "cartoon",
+ "sampling": 1,
+ "residues": {
+  "ordered": 1484,
+  "disordered": 62,
+  "absent": 0
+ },
+ "sequence_differences": 0,
+ "sha256": {
+  "record": "f25014bc939eb4dacc2d5e43b444a7f0c1125b5d37a383938efc0835ed60a9a5",
+  "translation": "d0a4254dee583de46136595f1585f13dfc46dc8319eb2f70f13413134583b3da",
+  "working_copy": "eb848f7d049c4b623d532ea11153d1851b0b91b1e8ce6cba44a089adb092c640",
+  "glb": "df598a77c2ea6d75f2fb2c7018f9c9158af4cba53d1da31df5461dd285d6162f",
+  "scene": "fac7e075b5e3a1bc43af7b2d99f2fca4c9aa8d056258e65f719e4ea2ad6bc575",
+  "folding": "a51a7e78db88c444c8a53b66f3c2ad550683226153d52df3575534cb9a436db6"
+ },
+ "measured": {
+  "bake_seconds": 1.99,
+  "check_seconds": 2.57,
+  "glb_bytes": 2134088,
+  "scene_bytes": 653304,
+  "folding_bytes": 206833,
+  "vertices": 69048,
+  "residues": 1546,
+  "bridges": 36,
+  "rings": 1776,
+  "bind_ms": 105,
+  "frames_ms": 251,
+  "slowest_frame_us": 3257,
+  "largest_step": 0.8753140095304583,
+  "largest_nudge": 0.12184738961326502
+ },
+ "drafted_by": "scripts/draft_curated.py"
+}

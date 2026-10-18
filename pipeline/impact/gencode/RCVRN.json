@@ -1,0 +1,109 @@
+{
+  "cds": [
+    {
+      "end": 9905180,
+      "start": 9904799,
+      "width": 382
+    },
+    {
+      "end": 9901100,
+      "start": 9900988,
+      "width": 113
+    },
+    {
+      "end": 9898204,
+      "start": 9898097,
+      "width": 108
+    }
+  ],
+  "chromosome": "chr17",
+  "end": 9905271,
+  "exons": [
+    {
+      "acceptor": 9905271,
+      "chromosome": "chr17",
+      "donor": 9904799,
+      "end": 9905271,
+      "exon_number": 1,
+      "overlaps_variant": false,
+      "start": 9904799,
+      "strand": "-",
+      "width": 473
+    },
+    {
+      "acceptor": 9901100,
+      "chromosome": "chr17",
+      "donor": 9900988,
+      "end": 9901100,
+      "exon_number": 2,
+      "overlaps_variant": false,
+      "start": 9900988,
+      "strand": "-",
+      "width": 113
+    },
+    {
+      "acceptor": 9898204,
+      "chromosome": "chr17",
+      "donor": 9896319,
+      "end": 9898204,
+      "exon_number": 3,
+      "overlaps_variant": false,
+      "start": 9896319,
+      "strand": "-",
+      "width": 1886
+    }
+  ],
+  "gene_id": "ENSG00000109047.8",
+  "gene_name": "RCVRN",
+  "is_mane_select": true,
+  "junctions": [
+    {
+      "atlas_url": null,
+      "downstream_exon": 2,
+      "intron_length": 3698,
+      "junction_end": 9904799,
+      "junction_start": 9901100,
+      "junction_str": "9901100:9904799",
+      "score_id": null,
+      "type": "Canonical Intron 1",
+      "upstream_exon": 1
+    },
+    {
+      "atlas_url": null,
+      "downstream_exon": 3,
+      "intron_length": 2783,
+      "junction_end": 9900988,
+      "junction_start": 9898204,
+      "junction_str": "9898204:9900988",
+      "score_id": null,
+      "type": "Canonical Intron 2",
+      "upstream_exon": 2
+    },
+    {
+      "downstream_exon": 3,
+      "intron_length": 6594,
+      "junction_end": 9904799,
+      "junction_start": 9898204,
+      "junction_str": "9898204:9904799",
+      "type": "Exon 2 Skipping",
+      "upstream_exon": 1
+    }
+  ],
+  "num_exons": 3,
+  "start": 9896319,
+  "strand": "-",
+  "transcript_id": "ENST00000226193.6",
+  "transcript_type": "protein_coding",
+  "utr": [
+    {
+      "end": 9905271,
+      "start": 9905180,
+      "width": 92
+    },
+    {
+      "end": 9898097,
+      "start": 9896319,
+      "width": 1779
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+{
+ "entry": "1ZLL",
+ "model": "9",
+ "method": [
+  "SOLUTION NMR"
+ ],
+ "resolution": null,
+ "revision": "1.4",
+ "file": {
+  "url": "https://www.ebi.ac.uk/pdbe/entry-files/download/1zll_updated.cif",
+  "sha256": "990ef92c904089d4117af7502f8a2a4c35732ce20994a274794dabd12873aa93"
+ },
+ "policy": 1,
+ "candidate": "1ZLL:A@1",
+ "scope": "product",
+ "domains": [],
+ "chains": [
+  {
+   "node": "chainA",
+   "product": "Phospholamban",
+   "entity": "1ZLL_1",
+   "asym": "A",
+   "auth": "A",
+   "first": 1,
+   "last": 52,
+   "placed": 52,
+   "offset": 0
+  }
+ ],
+ "bridges": [],
+ "bridges_dropped": [],
+ "secondary_structure": "DSSP in the entry's file from PDBe (struct_conf, struct_sheet_range)",
+ "representation": "cartoon",
+ "sampling": 8,
+ "residues": {
+  "ordered": 52,
+  "disordered": 0,
+  "absent": 0
+ },
+ "sequence_differences": 0,
+ "sha256": {
+  "record": "323ec3426cd115075593c93d425a44eb88287a99d5b09d362ca25f04c5063fd4",
+  "translation": "21d7f0ac5629cc69b13a5fb2069568dd1d88d7b89d549adc91de5dbd51e92508",
+  "working_copy": "497a087c98e3f6f510e32c7179b39a80b3563db971bd54e83ae908b93add8e05",
+  "glb": "bef4ba308c1739a6dd93f01c3f3e5277268658a0ec9a8685520b15bbb11558f1",
+  "scene": "d74589d3ad5a8a26fa43aa94e117305ca9e03c6042569e7baf83c7c5ceb0b636",
+  "folding": "f524ca3a1cc48e815e82d292f6c6aef0e1174ff505f421aebdfb9a5c2c0c36e0"
+ },
+ "measured": {
+  "bake_seconds": 0.9,
+  "check_seconds": 2.1,
+  "glb_bytes": 622936,
+  "scene_bytes": 185000,
+  "folding_bytes": 9170,
+  "vertices": 22212,
+  "residues": 52,
+  "bridges": 0,
+  "rings": 413,
+  "bind_ms": 45,
+  "frames_ms": 49,
+  "slowest_frame_us": 2858,
+  "largest_step": 0.7279315000706171,
+  "largest_nudge": 0.0
+ },
+ "drafted_by": "scripts/draft_curated.py"
+}

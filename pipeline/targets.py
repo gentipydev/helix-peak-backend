@@ -607,6 +607,250 @@ TARGETS: tuple[Target, ...] = (
             bonds=True,
         ),
     ),
+    # The third ten (2026-10-17), each landing in a cell type the twenty do not
+    # reach. Drafted from the gene by `scripts/draft_curated.py` -- the source,
+    # regions and disulfides as the resolver derives them, the fold an entry
+    # chosen by policy 1 and passed by the app's own check -- then checked
+    # against the record as the second ten were (docs/protein-verification.md).
+    # Each model is cut from the working copy of its entry under
+    # `structure/structures/working/`, in the record's numbering: the chain
+    # letters below are the working copy's.
+    Target(
+        slug="phospholamban", gene="PLN", uniprot="P26678", aa=52,
+        display="Phospholamban",
+        # Inside an intron of CEP85L, on the other strand: the exact `/gene`
+        # match leaves CEP85L out.
+        source=Source("NG_009082"),
+        cleaved=False, chain_label="Phospholamban",
+        # ESM-2's alignment gate turns its 52 residues down (the model prefers
+        # the residue there over its neighbour 40.0% and 46.7% of the time,
+        # under the half the gate asks): drawn unscored, the user's choice of
+        # 2026-10-17. SLN's case on demand.
+        scored=False,
+        regions=(
+            Region("Phospholamban", "", 1, 52),
+        ),
+        structure=Structure(
+            # One chain of the NMR pentamer.
+            pdb="1ZLL",
+            chains=(Chain("chainA", "A"),),
+            bonds=False,
+        ),
+    ),
+    Target(
+        slug="s100b", gene="S100B", uniprot="P04271", aa=92,
+        display="S100B",
+        # No RefSeqGene: the span MANE puts the transcript on, as the resolver
+        # reads it. Minus strand.
+        source=Source("NC_000021.9", 46_598_604, 46_605_082,
+                      protein_id="NP_006263.1", transcript_id="NM_006272.3"),
+        cleaved=False, chain_label="Protein S100-B",
+        regions=(
+            Region("Initiator methionine", "Met", 1, 1, kept=False),
+            Region("Protein S100-B", "", 2, 92),
+        ),
+        structure=Structure(
+            # One chain of the calcium-bound pair.
+            pdb="5D7F",
+            chains=(Chain("chainA", "A"),),
+            bonds=False,
+        ),
+    ),
+    Target(
+        slug="hcgbeta", gene="CGB3", uniprot="P0DN86", aa=165,
+        display="hCG (beta subunit)",
+        # CGB3, CGB5 and CGB8 make this same protein; the slice is CGB3's alone,
+        # as amylase's is AMY1A's.
+        source=Source("NC_000019.10", 49_022_869, 49_024_333,
+                      protein_id="NP_000728.1", transcript_id="NM_000737.5"),
+        cleaved=True, chain_label="Choriogonadotropin subunit beta 3",
+        regions=(
+            Region("Signal peptide", "S", 1, 20, kept=False),
+            Region("Choriogonadotropin subunit beta 3", "", 21, 165),
+        ),
+        disulfides=((29, 77), (43, 92), (46, 130), (54, 108), (58, 110), (113, 120)),
+        structure=Structure(
+            # The beta chain alone: the alpha chain beside it in the entry is
+            # CGA's, and the receptor and G protein are not this gene's either.
+            pdb="7FIG",
+            chains=(Chain("chainA", "A"),),
+            bonds=True,
+        ),
+    ),
+    Target(
+        slug="ppbp", gene="PPBP", uniprot="P02775", aa=128,
+        display="PPBP (CXCL7)",
+        # No RefSeqGene: the span MANE puts the transcript on. Minus strand.
+        # Platelet factor 4, which this row takes the place of, failed the AVI
+        # bake's biology check (the user's choice of 2026-10-17).
+        source=Source("NC_000004.12", 73_986_439, 73_988_190,
+                      protein_id="NP_002695.1", transcript_id="NM_002704.3"),
+        cleaved=True, chain_label="Platelet basic protein",
+        # The record names four of what the chain is cut into -- CTAP-III,
+        # beta-thromboglobulin and two thrombocidins -- one inside another:
+        # alternatives, so the walk stops at the precursor (R3.4), as for
+        # glucagon and APP. Its proprotein is the record's own.
+        mature_peptides=False,
+        regions=(
+            Region("Signal peptide", "S", 1, 34, kept=False),
+            Region("Platelet basic protein", "", 35, 128),
+        ),
+        disulfides=((63, 89), (65, 105)),
+        structure=Structure(
+            # CTAP-III, 44-128, the one chain of its entry.
+            pdb="1F9P",
+            chains=(Chain("chainA", "A"),),
+            bonds=True,
+        ),
+    ),
+    Target(
+        slug="pappa", gene="PAPPA", uniprot="Q13219", aa=1627,
+        display="PAPP-A",
+        # 248,531 bases: past the page budget, so its introns are shortened.
+        source=Source("NC_000009.12", 116_153_791, 116_402_321,
+                      protein_id="NP_002572.2", transcript_id="NM_002581.5"),
+        cleaved=True, chain_label="Pappalysin-1",
+        # The record names the signal peptide and the chain, 82-1627, and not
+        # UniProt's propeptide between them, 23-81: the walk draws it as the
+        # N-terminal extension (R3.6), as the prion protein's GPI-anchor signal
+        # is drawn as the C-terminal one. What the signal peptide leaves is
+        # named here.
+        proprotein="pro-PAPP-A",
+        regions=(
+            Region("Signal peptide", "S", 1, 22, kept=False),
+            Region("Propeptide", "Pro", 23, 81, kept=False),
+            Region("Pappalysin-1", "", 82, 1627),
+        ),
+        disulfides=(
+            (144, 235), (327, 622), (332, 657), (414, 428), (424, 440), (457, 473),
+            (474, 485), (583, 600), (587, 612), (710, 878), (713, 881), (753, 835),
+            (775, 781), (947, 975), (960, 971), (983, 990), (999, 1011), (1036, 1070),
+            (1051, 1139), (1192, 1205), (1215, 1269), (1227, 1238), (1242, 1280),
+            (1285, 1329), (1300, 1310), (1314, 1342), (1346, 1399), (1362, 1373),
+            (1377, 1410), (1415, 1458), (1428, 1438), (1442, 1471), (1478, 1539),
+            (1492, 1502), (1506, 1554), (1558, 1576),
+        ),
+        structure=Structure(
+            # Chain C of the 2:2 complex with proMBP. Its twin, chain D, narrowly
+            # fails the app's check: one ring 1.503 from its own stretch of
+            # chain, where 1.5 is allowed.
+            pdb="8HGG", sampling=1,
+            chains=(Chain("chainA", "A"),),
+            bonds=True,
+        ),
+    ),
+    Target(
+        slug="cystatinb", gene="CSTB", uniprot="P04080", aa=98,
+        display="Cystatin B",
+        source=Source("NG_011545"),
+        cleaved=False, chain_label="Cystatin-B",
+        regions=(
+            Region("Cystatin-B", "", 1, 98),
+        ),
+        structure=Structure(
+            # One of the crystal's ten chains, each the compact cystatin fold.
+            pdb="4N6V",
+            chains=(Chain("chainA", "A"),),
+            bonds=False,
+        ),
+    ),
+    Target(
+        slug="tyrp1", gene="TYRP1", uniprot="P17643", aa=537,
+        display="TYRP1",
+        source=Source("NG_011705"),
+        cleaved=True, chain_label="5,6-dihydroxyindole-2-carboxylic acid oxidase",
+        regions=(
+            Region("Signal peptide", "S", 1, 24, kept=False),
+            Region("5,6-dihydroxyindole-2-carboxylic acid oxidase", "", 25, 537),
+        ),
+        disulfides=((30, 41), (42, 65), (56, 99), (101, 110), (113, 122), (258, 261),
+                    (290, 303)),
+        structure=Structure(
+            # The part inside the melanosome, 25-471: the crystal held no more.
+            pdb="9EY8", sampling=2,
+            chains=(Chain("chainA", "A"),),
+            bonds=True,
+        ),
+    ),
+    Target(
+        slug="recoverin", gene="RCVRN", uniprot="P35243", aa=200,
+        display="Recoverin",
+        source=Source("NC_000017.11", 9_896_320, 9_905_271,
+                      protein_id="NP_002894.1", transcript_id="NM_002903.3"),
+        cleaved=False, chain_label="Recoverin",
+        regions=(
+            Region("Initiator methionine", "Met", 1, 1, kept=False),
+            Region("Recoverin", "", 2, 200),
+        ),
+        structure=Structure(
+            pdb="2D8N", sampling=5,
+            chains=(Chain("chainA", "A"),),
+            bonds=False,
+        ),
+    ),
+    Target(
+        slug="thyroglobulin", gene="TG", uniprot="P01266", aa=2768,
+        display="Thyroglobulin",
+        # 267,942 bases: past the page budget, so its introns are shortened.
+        # SLA and three smaller genes lie inside its introns; the exact `/gene`
+        # match leaves them out.
+        source=Source("NG_015832"),
+        cleaved=True, chain_label="Thyroglobulin",
+        regions=(
+            Region("Signal peptide", "S", 1, 19, kept=False),
+            Region("Thyroglobulin", "", 20, 2768),
+        ),
+        disulfides=(
+            (34, 52), (63, 70), (72, 92), (96, 120), (131, 138), (140, 160), (164, 183),
+            (194, 235), (237, 297), (301, 319), (330, 336), (338, 358), (364, 620),
+            (408, 608), (631, 636), (638, 658), (662, 687), (698, 703), (705, 726),
+            (730, 763), (774, 898), (900, 921), (925, 1031), (1042, 1049), (1051, 1073),
+            (1077, 1108), (1126, 1145), (1149, 1169), (1181, 1188), (1190, 1210),
+            (1215, 1264), (1231, 1245), (1306, 1356), (1331, 1347), (1440, 1459),
+            (1462, 1473), (1476, 1490), (1493, 1510), (1514, 1523), (1543, 1565),
+            (1603, 1627), (1607, 1613), (1639, 1662), (1724, 1749), (1728, 1734),
+            (1733, 1835), (1760, 1777), (1893, 1919), (1897, 1904), (1928, 1939),
+            (1996, 2024), (2000, 2006), (2005, 2076), (2035, 2048), (2130, 2154),
+            (2134, 2140), (2163, 2172), (2264, 2281), (2442, 2453), (2591, 2715),
+        ),
+        structure=Structure(
+            # One chain of the dimer.
+            pdb="7B75", sampling=1,
+            chains=(Chain("chainA", "A"),),
+            bonds=True,
+        ),
+    ),
+    Target(
+        slug="uromodulin", gene="UMOD", uniprot="P07911", aa=640,
+        display="Uromodulin",
+        source=Source("NG_008151"),
+        cleaved=True, chain_label="Uromodulin",
+        # The record names two chains, 25-614 and the secreted form 25-587, one
+        # inside the other: alternatives, which one page of disjoint chains
+        # cannot draw, so the walk stops at the precursor (R3.4). 615-640 is the
+        # GPI-anchor signal (UniProt: GPI-anchor amidated Ser614), as the prion
+        # protein's 231-253 is.
+        mature_peptides=False,
+        regions=(
+            Region("Signal peptide", "S", 1, 24, kept=False),
+            Region("Uromodulin", "", 25, 614),
+            Region("GPI-anchor signal", "GPI", 615, 640, kept=False),
+        ),
+        disulfides=(
+            (32, 41), (35, 50), (52, 63), (69, 83), (77, 92), (94, 106), (112, 126),
+            (120, 135), (137, 148), (150, 161), (155, 170), (174, 267), (195, 282),
+            (217, 255), (223, 287), (248, 256), (297, 306), (300, 315), (317, 347),
+            (335, 425), (366, 389), (506, 566), (527, 582), (571, 578),
+        ),
+        structure=Structure(
+            # The ZP domain, 329-580, from filaments purified from urine. The
+            # entry ranked first, 6TQL (292-584), fails the app's check of its
+            # fold (the user's choice of 2026-10-17).
+            pdb="9NU1", residues=(329, 580), sampling=4,
+            chains=(Chain("chainA", "A"),),
+            bonds=True,
+        ),
+    ),
 )
 
 BY_SLUG = {t.slug: t for t in TARGETS}

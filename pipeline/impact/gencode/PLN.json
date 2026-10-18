@@ -1,0 +1,73 @@
+{
+  "cds": [
+    {
+      "end": 118559077,
+      "start": 118558921,
+      "width": 157
+    }
+  ],
+  "chromosome": "chr6",
+  "end": 118561716,
+  "exons": [
+    {
+      "acceptor": 118548295,
+      "chromosome": "chr6",
+      "donor": 118548392,
+      "end": 118548392,
+      "exon_number": 1,
+      "overlaps_variant": false,
+      "start": 118548295,
+      "strand": "+",
+      "width": 98
+    },
+    {
+      "acceptor": 118558824,
+      "chromosome": "chr6",
+      "donor": 118561716,
+      "end": 118561716,
+      "exon_number": 2,
+      "overlaps_variant": false,
+      "start": 118558824,
+      "strand": "+",
+      "width": 2893
+    }
+  ],
+  "gene_id": "ENSG00000198523.6",
+  "gene_name": "PLN",
+  "is_mane_select": true,
+  "junctions": [
+    {
+      "atlas_url": null,
+      "downstream_exon": 2,
+      "intron_length": 10431,
+      "junction_end": 118558824,
+      "junction_start": 118548392,
+      "junction_str": "118548392:118558824",
+      "score_id": null,
+      "type": "Canonical Intron 1",
+      "upstream_exon": 1
+    }
+  ],
+  "num_exons": 2,
+  "start": 118548295,
+  "strand": "+",
+  "transcript_id": "ENST00000357525.6",
+  "transcript_type": "protein_coding",
+  "utr": [
+    {
+      "end": 118548392,
+      "start": 118548295,
+      "width": 98
+    },
+    {
+      "end": 118558921,
+      "start": 118558824,
+      "width": 98
+    },
+    {
+      "end": 118561716,
+      "start": 118559077,
+      "width": 2640
+    }
+  ]
+}

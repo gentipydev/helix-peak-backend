@@ -1,0 +1,66 @@
+{
+ "entry": "2D8N",
+ "model": "1",
+ "method": [
+  "X-RAY DIFFRACTION"
+ ],
+ "resolution": 2.2,
+ "revision": "1.3",
+ "file": {
+  "url": "https://www.ebi.ac.uk/pdbe/entry-files/download/2d8n_updated.cif",
+  "sha256": "0541315098ace34a448d3b0578af486acad6e4a04d51f18bce63ac53681b865a"
+ },
+ "policy": 1,
+ "candidate": "2D8N:A@1",
+ "scope": "product",
+ "domains": [],
+ "chains": [
+  {
+   "node": "chainA",
+   "product": "Recoverin",
+   "entity": "2D8N_1",
+   "asym": "A",
+   "auth": "A",
+   "first": 2,
+   "last": 200,
+   "placed": 196,
+   "offset": 0
+  }
+ ],
+ "bridges": [],
+ "bridges_dropped": [],
+ "secondary_structure": "DSSP in the entry's file from PDBe (struct_conf, struct_sheet_range)",
+ "representation": "cartoon",
+ "sampling": 5,
+ "residues": {
+  "ordered": 196,
+  "disordered": 3,
+  "absent": 0
+ },
+ "sequence_differences": 0,
+ "sha256": {
+  "record": "2bcc84dca18627581bd1aae545a0cc07665d99b92d23a77818dcb57c24af9e2a",
+  "translation": "b1e32d1390deb67302b2af2512d8370a79774ba59512ba819bfec1efa2229895",
+  "working_copy": "a3d40822ffee89806c551cbaef816e6842e946c5ab1d7a75018e3ede078ef702",
+  "glb": "0494a25b90c5d964616509564fc2bcfde1ca47ebe76dbe733e38a5d8f2fb64fd",
+  "scene": "52c3edd04a6c7c1f11e111c0f963f4d9ce76a4617458bef964263db3f4c1e6b1",
+  "folding": "6148ebf5c9a2fe1d569468231014924a1a7af060e945b1441b1c9ea74d39cc78"
+ },
+ "measured": {
+  "bake_seconds": 1.09,
+  "check_seconds": 2.3,
+  "glb_bytes": 1346352,
+  "scene_bytes": 385168,
+  "folding_bytes": 28916,
+  "vertices": 48048,
+  "residues": 199,
+  "bridges": 0,
+  "rings": 1008,
+  "bind_ms": 74,
+  "frames_ms": 176,
+  "slowest_frame_us": 5676,
+  "largest_step": 0.5668158473097042,
+  "largest_nudge": 0.0
+ },
+ "drafted_by": "scripts/draft_curated.py"
+}

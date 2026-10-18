@@ -1,0 +1,91 @@
+{
+ "entry": "7FIG",
+ "model": "1",
+ "method": [
+  "ELECTRON MICROSCOPY"
+ ],
+ "resolution": 3.9,
+ "revision": "1.2",
+ "file": {
+  "url": "https://www.ebi.ac.uk/pdbe/entry-files/download/7fig_updated.cif",
+  "sha256": "e7a43fbe72d939646f9d267409b6419611fbf327a638bf97e7e071cb19d0247a"
+ },
+ "policy": 1,
+ "candidate": "7FIG:G@1",
+ "scope": "product",
+ "domains": [],
+ "chains": [
+  {
+   "node": "chainA",
+   "product": "Choriogonadotropin subunit beta 3",
+   "entity": "7FIG_7",
+   "asym": "G",
+   "auth": "Y",
+   "first": 21,
+   "last": 165,
+   "placed": 110,
+   "offset": 20
+  }
+ ],
+ "bridges": [
+  [
+   29,
+   77
+  ],
+  [
+   43,
+   92
+  ],
+  [
+   46,
+   130
+  ],
+  [
+   54,
+   108
+  ],
+  [
+   58,
+   110
+  ],
+  [
+   113,
+   120
+  ]
+ ],
+ "bridges_dropped": [],
+ "secondary_structure": "DSSP in the entry's file from PDBe (struct_conf, struct_sheet_range)",
+ "representation": "cartoon",
+ "sampling": 8,
+ "residues": {
+  "ordered": 110,
+  "disordered": 35,
+  "absent": 0
+ },
+ "sequence_differences": 0,
+ "sha256": {
+  "record": "f1147f5cf089c832c347480b70b7a6fcebb3817b85c7eeb46118a77134afdccf",
+  "translation": "70afb5629af6fc2d42d52d5827c84c757ab5cd857d1fa37063103e2e3012266e",
+  "working_copy": "f3e7d3518fdd30e7dc70a488d4267f5424465d0efe594de991de2f6f10b9d9ba",
+  "glb": "c148b4cd8d676e4a8c338a842cfb733476be80a62b221f926d0892ae87653858",
+  "scene": "6cb30784c59c9034e444600d3c9c225f4cabd5f509043337b80b0a56f72ce614",
+  "folding": "3e00dd1351f2fc5d2a3852d2fe4eed0cccf72dd7b8ad37b7d1153cb219c5dbae"
+ },
+ "measured": {
+  "bake_seconds": 0.83,
+  "check_seconds": 2.08,
+  "glb_bytes": 840792,
+  "scene_bytes": 249952,
+  "folding_bytes": 20685,
+  "vertices": 28782,
+  "residues": 145,
+  "bridges": 6,
+  "rings": 888,
+  "bind_ms": 56,
+  "frames_ms": 116,
+  "slowest_frame_us": 1589,
+  "largest_step": 0.28708706317003335,
+  "largest_nudge": 0.0
+ },
+ "drafted_by": "scripts/draft_curated.py"
+}

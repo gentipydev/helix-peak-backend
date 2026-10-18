@@ -1,0 +1,109 @@
+{
+  "cds": [
+    {
+      "end": 49023971,
+      "start": 49023956,
+      "width": 16
+    },
+    {
+      "end": 49023603,
+      "start": 49023435,
+      "width": 169
+    },
+    {
+      "end": 49023200,
+      "start": 49022888,
+      "width": 313
+    }
+  ],
+  "chromosome": "chr19",
+  "end": 49024333,
+  "exons": [
+    {
+      "acceptor": 49024333,
+      "chromosome": "chr19",
+      "donor": 49023956,
+      "end": 49024333,
+      "exon_number": 1,
+      "overlaps_variant": false,
+      "start": 49023956,
+      "strand": "-",
+      "width": 378
+    },
+    {
+      "acceptor": 49023603,
+      "chromosome": "chr19",
+      "donor": 49023435,
+      "end": 49023603,
+      "exon_number": 2,
+      "overlaps_variant": false,
+      "start": 49023435,
+      "strand": "-",
+      "width": 169
+    },
+    {
+      "acceptor": 49023200,
+      "chromosome": "chr19",
+      "donor": 49022868,
+      "end": 49023200,
+      "exon_number": 3,
+      "overlaps_variant": false,
+      "start": 49022868,
+      "strand": "-",
+      "width": 333
+    }
+  ],
+  "gene_id": "ENSG00000104827.12",
+  "gene_name": "CGB3",
+  "is_mane_select": true,
+  "junctions": [
+    {
+      "atlas_url": null,
+      "downstream_exon": 2,
+      "intron_length": 352,
+      "junction_end": 49023956,
+      "junction_start": 49023603,
+      "junction_str": "49023603:49023956",
+      "score_id": null,
+      "type": "Canonical Intron 1",
+      "upstream_exon": 1
+    },
+    {
+      "atlas_url": null,
+      "downstream_exon": 3,
+      "intron_length": 234,
+      "junction_end": 49023435,
+      "junction_start": 49023200,
+      "junction_str": "49023200:49023435",
+      "score_id": null,
+      "type": "Canonical Intron 2",
+      "upstream_exon": 2
+    },
+    {
+      "downstream_exon": 3,
+      "intron_length": 755,
+      "junction_end": 49023956,
+      "junction_start": 49023200,
+      "junction_str": "49023200:49023956",
+      "type": "Exon 2 Skipping",
+      "upstream_exon": 1
+    }
+  ],
+  "num_exons": 3,
+  "start": 49022868,
+  "strand": "-",
+  "transcript_id": "ENST00000357383.4",
+  "transcript_type": "protein_coding",
+  "utr": [
+    {
+      "end": 49024333,
+      "start": 49023971,
+      "width": 363
+    },
+    {
+      "end": 49022888,
+      "start": 49022868,
+      "width": 21
+    }
+  ]
+}

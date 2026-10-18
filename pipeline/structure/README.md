@@ -52,7 +52,7 @@ importer has to be the flutter_scene the stored scenes were compiled by
 
 ## Which entry, and why
 
-All experimental, for the twenty. AlphaFold is not used for any of them:
+All experimental, for every curated row: the twenty chosen by hand, the rows added since by policy 1 and cut from their working copies. AlphaFold is not used for any of them:
 `AF-P01308` predicts insulin's 110-residue *preproprotein* — the third page's
 molecule, not this one — at a mean pLDDT of 52.9 with 51% of residues below 50,
 which would draw a coil of low-confidence loops exactly where the reader has
@@ -81,6 +81,16 @@ been promised a hormone. (Over insulin's mature span the mean is 48.0, and
 | sod1 | `2C9V` | 1.07 | A→`chainA` | one chain of the dimer; numbered from Ala2 |
 | amylase | `1SMD` | 1.60 | A→`chainA` | wild type; its neighbours in the PDB are point mutants |
 | prion | `4KML` | 1.50 | A→`chainA` | the folded domain, 117-225; its nanobody (chain B) is not exported |
+| phospholamban | `1ZLL` | NMR | A→`chainA` | working copy; one chain of the unphosphorylated pentamer |
+| s100b | `5D7F` | 1.30 | A→`chainA` | working copy; one chain of the calcium-bound pair; its RAGE peptide is not exported |
+| hcgbeta | `7FIG` | cryo-EM | Y→`chainA` | working copy; hCG's beta chain on its receptor; the alpha chain is CGA's |
+| ppbp | `1F9P` | 1.93 | A→`chainA` | working copy; CTAP-III, 44-128, the one chain of its entry |
+| pappa | `8HGG` | cryo-EM | C→`chainA` | working copy; one PAPP-A chain of the 2:2 complex with proMBP; sampling 1 |
+| cystatinb | `4N6V` | 1.80 | 2→`chainA` | working copy; one of the crystal's ten chains |
+| tyrp1 | `9EY8` | 2.20 | AA→`chainA` | working copy; the part inside the melanosome, 25-471; sampling 2 |
+| recoverin | `2D8N` | 2.20 | A→`chainA` | working copy; a selenomethionine crystal, drawn as Met; sampling 5 |
+| thyroglobulin | `7B75` | cryo-EM | A→`chainA` | working copy; one chain of the dimer; sampling 1, the largest scene (1.17 MB) |
+| uromodulin | `9NU1` | cryo-EM | A 329-580→`chainA` | working copy; the ZP domain; 6TQL (292-584), ranked first, fails the app's check |
 
 Every deviation from UniProt in these entries, and why each was chosen over the
 alternatives, is in `docs/protein-verification.md`.

@@ -1,0 +1,95 @@
+{
+ "entry": "9EY8",
+ "model": "1",
+ "method": [
+  "X-RAY DIFFRACTION"
+ ],
+ "resolution": 2.2,
+ "revision": "1.2",
+ "file": {
+  "url": "https://www.ebi.ac.uk/pdbe/entry-files/download/9ey8_updated.cif",
+  "sha256": "d686d7c459068b51ab7dbb78a578c2bc92898902720998877b577b9338b4a8ac"
+ },
+ "policy": 1,
+ "candidate": "9EY8:A@25",
+ "scope": "product",
+ "domains": [],
+ "chains": [
+  {
+   "node": "chainA",
+   "product": "5,6-dihydroxyindole-2-carboxylic acid oxidase",
+   "entity": "9EY8_1",
+   "asym": "A",
+   "auth": "AA",
+   "first": 25,
+   "last": 537,
+   "placed": 447,
+   "offset": 0
+  }
+ ],
+ "bridges": [
+  [
+   30,
+   41
+  ],
+  [
+   42,
+   65
+  ],
+  [
+   56,
+   99
+  ],
+  [
+   101,
+   110
+  ],
+  [
+   113,
+   122
+  ],
+  [
+   258,
+   261
+  ],
+  [
+   290,
+   303
+  ]
+ ],
+ "bridges_dropped": [],
+ "secondary_structure": "DSSP in the entry's file from PDBe (struct_conf, struct_sheet_range)",
+ "representation": "cartoon",
+ "sampling": 2,
+ "residues": {
+  "ordered": 447,
+  "disordered": 0,
+  "absent": 66
+ },
+ "sequence_differences": 0,
+ "sha256": {
+  "record": "a67597f563a73fbb0930f5ec0dcb999ba691df83b8bdd7bcc38d52c1c63472eb",
+  "translation": "cac94fc8fece18eeaae90406471bd1af7c6b436c8b9513bfc998c869a5060a29",
+  "working_copy": "b960e6117915a81bd06c61f1eeaa8397609974d1b81494d0d0cbd7cf55a95198",
+  "glb": "aaeb574c370cdd90a15a7cf7ab8ea34c04315a01fe69a99957011640311b527e",
+  "scene": "93a4432b0f1a2b7795439111bc697652652278ae80c8d147fac3fc920a204e54",
+  "folding": "4601258855ae4c71677341efb44173425469b7280c05259b5464f9d14777cd21"
+ },
+ "measured": {
+  "bake_seconds": 1.12,
+  "check_seconds": 2.16,
+  "glb_bytes": 1209316,
+  "scene_bytes": 358104,
+  "folding_bytes": 63509,
+  "vertices": 41746,
+  "residues": 447,
+  "bridges": 7,
+  "rings": 960,
+  "bind_ms": 73,
+  "frames_ms": 121,
+  "slowest_frame_us": 2045,
+  "largest_step": 0.7444849428311844,
+  "largest_nudge": 0.0
+ },
+ "drafted_by": "scripts/draft_curated.py"
+}

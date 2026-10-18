@@ -1,0 +1,85 @@
+{
+ "entry": "9NU1",
+ "model": "1",
+ "method": [
+  "ELECTRON MICROSCOPY"
+ ],
+ "resolution": 3.6,
+ "revision": "1.1",
+ "file": {
+  "url": "https://www.ebi.ac.uk/pdbe/entry-files/download/9nu1_updated.cif",
+  "sha256": "5a41170e8cbe983124ce80f2a7d1d3cfae79aaef972b8f72659e2bdc276f6df6"
+ },
+ "policy": 1,
+ "candidate": "9NU1:A@1:domain",
+ "scope": "domain",
+ "domains": [
+  "ZP"
+ ],
+ "chains": [
+  {
+   "node": "chainA",
+   "product": "Uromodulin",
+   "entity": "9NU1_1",
+   "asym": "A",
+   "auth": "A",
+   "first": 329,
+   "last": 580,
+   "placed": 252,
+   "offset": 0
+  }
+ ],
+ "bridges": [
+  [
+   335,
+   425
+  ],
+  [
+   366,
+   389
+  ],
+  [
+   506,
+   566
+  ],
+  [
+   571,
+   578
+  ]
+ ],
+ "bridges_dropped": [],
+ "secondary_structure": "DSSP in the entry's file from PDBe (struct_conf, struct_sheet_range)",
+ "representation": "cartoon",
+ "sampling": 4,
+ "residues": {
+  "ordered": 252,
+  "disordered": 0,
+  "absent": 0
+ },
+ "sequence_differences": 0,
+ "sha256": {
+  "record": "3e838b7db36c92eff602b8d68e4d8b4cf74232ec7046f5f8cacb4c7b838eadd7",
+  "translation": "bee97673b68df73fe88ece607a8f5ab89b8f86422231b4965431b9535bca8be6",
+  "working_copy": "1d8ab69d3cefceb973b81b764acec554406255aa8ef6ba241dda0f14fe63876b",
+  "glb": "6b146d8c463c28f205e390d284950d56fac55031da831920d614b008b1f41cd0",
+  "scene": "02fd1b976674e74a3f9e210d31c43b52cd58a7bcb1dbcc5f6228e02f862f8df6",
+  "folding": "a25d5a15eaa171dd2a479a60f52cca1acbee0806a37a62454339e3e0ac82393a"
+ },
+ "measured": {
+  "bake_seconds": 0.76,
+  "check_seconds": 2.21,
+  "glb_bytes": 999860,
+  "scene_bytes": 289912,
+  "folding_bytes": 36029,
+  "vertices": 34858,
+  "residues": 252,
+  "bridges": 4,
+  "rings": 1069,
+  "bind_ms": 59,
+  "frames_ms": 117,
+  "slowest_frame_us": 1833,
+  "largest_step": 0.7600865307684586,
+  "largest_nudge": 0.0
+ },
+ "drafted_by": "scripts/draft_curated.py"
+}

@@ -1,0 +1,109 @@
+{
+  "cds": [
+    {
+      "end": 46602415,
+      "start": 46602277,
+      "width": 139
+    },
+    {
+      "end": 46599503,
+      "start": 46599365,
+      "width": 139
+    }
+  ],
+  "chromosome": "chr21",
+  "end": 46605082,
+  "exons": [
+    {
+      "acceptor": 46605082,
+      "chromosome": "chr21",
+      "donor": 46605012,
+      "end": 46605082,
+      "exon_number": 1,
+      "overlaps_variant": false,
+      "start": 46605012,
+      "strand": "-",
+      "width": 71
+    },
+    {
+      "acceptor": 46602416,
+      "chromosome": "chr21",
+      "donor": 46602277,
+      "end": 46602416,
+      "exon_number": 2,
+      "overlaps_variant": false,
+      "start": 46602277,
+      "strand": "-",
+      "width": 140
+    },
+    {
+      "acceptor": 46599503,
+      "chromosome": "chr21",
+      "donor": 46598603,
+      "end": 46599503,
+      "exon_number": 3,
+      "overlaps_variant": false,
+      "start": 46598603,
+      "strand": "-",
+      "width": 901
+    }
+  ],
+  "gene_id": "ENSG00000160307.10",
+  "gene_name": "S100B",
+  "is_mane_select": true,
+  "junctions": [
+    {
+      "atlas_url": null,
+      "downstream_exon": 2,
+      "intron_length": 2595,
+      "junction_end": 46605012,
+      "junction_start": 46602416,
+      "junction_str": "46602416:46605012",
+      "score_id": null,
+      "type": "Canonical Intron 1",
+      "upstream_exon": 1
+    },
+    {
+      "atlas_url": null,
+      "downstream_exon": 3,
+      "intron_length": 2773,
+      "junction_end": 46602277,
+      "junction_start": 46599503,
+      "junction_str": "46599503:46602277",
+      "score_id": null,
+      "type": "Canonical Intron 2",
+      "upstream_exon": 2
+    },
+    {
+      "downstream_exon": 3,
+      "intron_length": 5508,
+      "junction_end": 46605012,
+      "junction_start": 46599503,
+      "junction_str": "46599503:46605012",
+      "type": "Exon 2 Skipping",
+      "upstream_exon": 1
+    }
+  ],
+  "num_exons": 3,
+  "start": 46598603,
+  "strand": "-",
+  "transcript_id": "ENST00000291700.9",
+  "transcript_type": "protein_coding",
+  "utr": [
+    {
+      "end": 46605082,
+      "start": 46605012,
+      "width": 71
+    },
+    {
+      "end": 46602416,
+      "start": 46602415,
+      "width": 2
+    },
+    {
+      "end": 46599365,
+      "start": 46598603,
+      "width": 763
+    }
+  ]
+}

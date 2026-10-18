@@ -1,0 +1,75 @@
+{
+ "entry": "1F9P",
+ "model": "1",
+ "method": [
+  "X-RAY DIFFRACTION"
+ ],
+ "resolution": 1.93,
+ "revision": "1.4",
+ "file": {
+  "url": "https://www.ebi.ac.uk/pdbe/entry-files/download/1f9p_updated.cif",
+  "sha256": "8ebc644d61910e6200aff5c2b8b95711904b9881558646393eadae5a7b17d78f"
+ },
+ "policy": 1,
+ "candidate": "1F9P:A@44",
+ "scope": "product",
+ "domains": [],
+ "chains": [
+  {
+   "node": "chainA",
+   "product": "Platelet basic protein",
+   "entity": "1F9P_1",
+   "asym": "A",
+   "auth": "A",
+   "first": 35,
+   "last": 128,
+   "placed": 81,
+   "offset": 38
+  }
+ ],
+ "bridges": [
+  [
+   63,
+   89
+  ],
+  [
+   65,
+   105
+  ]
+ ],
+ "bridges_dropped": [],
+ "secondary_structure": "DSSP in the entry's file from PDBe (struct_conf, struct_sheet_range)",
+ "representation": "cartoon",
+ "sampling": 8,
+ "residues": {
+  "ordered": 81,
+  "disordered": 4,
+  "absent": 9
+ },
+ "sequence_differences": 0,
+ "sha256": {
+  "record": "c9f78600870a55ca59a43a1fb0e7d2ce2fa69bcb5770911b5fa3b8c41e59a7da",
+  "translation": "019670853f8043a1e1623f4ad2f80a006aa84490eeb22f18f005d6507d235e82",
+  "working_copy": "421c24bdd30533d009102f6daa597b759bae385559caf691fcb7685bacb21255",
+  "glb": "54783a0ee443f2a2123209db8dac6ba010a6e9674e8291a934d3938aaf0dc6fa",
+  "scene": "dee4a5de957c2efb807007e31fc7afa286f7bce1ec2270343a346a33bedd5a10",
+  "folding": "8013bc177dfa8cf810d3273c6cdcb094b7b488c1f7fbe7a7e6cbc7320c1feeda"
+ },
+ "measured": {
+  "bake_seconds": 1.01,
+  "check_seconds": 2.4,
+  "glb_bytes": 725828,
+  "scene_bytes": 217800,
+  "folding_bytes": 13372,
+  "vertices": 25466,
+  "residues": 85,
+  "bridges": 2,
+  "rings": 656,
+  "bind_ms": 48,
+  "frames_ms": 74,
+  "slowest_frame_us": 871,
+  "largest_step": 0.25607536462803404,
+  "largest_nudge": 0.0
+ },
+ "drafted_by": "scripts/draft_curated.py"
+}

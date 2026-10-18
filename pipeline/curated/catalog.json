@@ -808,6 +808,402 @@
         "impact",
         "structure"
       ]
+    },
+    {
+      "slug": "phospholamban",
+      "catalog_order": 20,
+      "display": "Phospholamban",
+      "gene": "PLN",
+      "uniprot": "P26678",
+      "accession": "NG_009082",
+      "summary": "Restrains the calcium pump of heart muscle, until adrenaline releases it.",
+      "chain": "phospholamban",
+      "facts": {
+        "residues": 52,
+        "exons": 2,
+        "chains": 1,
+        "bridges": 0
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        }
+      ],
+      "structure": {
+        "pdb": "1ZLL",
+        "modelled": null,
+        "label": "the subunit",
+        "count": 52,
+        "unit": "residues",
+        "sentence": "One chain of five. A long helix crosses the membrane, a short one lies outside.",
+        "semantics": "One phospholamban chain from its pentamer, solved by NMR: a short helix in the cytoplasm and a long one that crosses the membrane. The other four chains are not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "s100b",
+      "catalog_order": 21,
+      "display": "S100B",
+      "gene": "S100B",
+      "uniprot": "P04271",
+      "accession": "NC_000021.9",
+      "summary": "A calcium sensor of glial cells. Its level in blood marks brain injury and melanoma.",
+      "chain": "S100B",
+      "facts": {
+        "residues": 92,
+        "exons": 3,
+        "chains": 1,
+        "bridges": 0
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        }
+      ],
+      "structure": {
+        "pdb": "5D7F",
+        "modelled": null,
+        "label": "the subunit",
+        "count": 91,
+        "unit": "residues",
+        "sentence": "One chain of the pair, its two EF-hands holding calcium.",
+        "semantics": "One S100B chain from the calcium-bound pair, solved with a peptide of its receptor RAGE: four helices folded into two EF-hands. The other chain, its calcium and the peptide are not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "hcgbeta",
+      "catalog_order": 22,
+      "display": "hCG (beta subunit)",
+      "gene": "CGB3",
+      "uniprot": "P0DN86",
+      "accession": "NC_000019.10",
+      "summary": "Made by the placenta to keep the corpus luteum alive. The pregnancy test detects it.",
+      "chain": null,
+      "facts": {
+        "residues": 165,
+        "exons": 3,
+        "chains": 1,
+        "bridges": 6
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "7FIG",
+        "modelled": null,
+        "label": "the subunit",
+        "count": 145,
+        "unit": "residues",
+        "sentence": "hCG is two chains: this one, and the alpha it shares with LH, FSH and TSH.",
+        "semantics": "The beta chain of hCG as it binds its receptor, solved by cryo-EM with the receptor, the alpha chain and a G protein, none of which are drawn. Six disulfide bridges hold it; its disordered C-terminal tail is not placed. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "ppbp",
+      "catalog_order": 23,
+      "display": "PPBP (CXCL7)",
+      "gene": "PPBP",
+      "uniprot": "P02775",
+      "accession": "NC_000004.12",
+      "summary": "Stored in platelets, cut into CTAP-III, beta-thromboglobulin and the chemokine NAP-2.",
+      "chain": "pro-platelet basic protein",
+      "facts": {
+        "residues": 128,
+        "exons": 3,
+        "chains": 1,
+        "bridges": 2
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "1F9P",
+        "modelled": null,
+        "label": "the chemokine",
+        "count": 94,
+        "unit": "residues",
+        "sentence": "CTAP-III, one of the forms it is cut into: a sheet, a helix, two bridges.",
+        "semantics": "CTAP-III, residues 44 to 128, one of the forms the chain is cut into, solved by X-ray at 1.93 Å: a sheet and a C-terminal helix, with two disulfide bridges. 81 of the 94 residues after the signal peptide are placed; the polyvinylsulfonate it was solved with is not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "pappa",
+      "catalog_order": 24,
+      "display": "PAPP-A",
+      "gene": "PAPPA",
+      "uniprot": "Q13219",
+      "accession": "NC_000009.12",
+      "summary": "Releases IGF by cleaving IGFBP-4 and -5. Measured in first-trimester screening.",
+      "chain": null,
+      "facts": {
+        "residues": 1627,
+        "exons": 22,
+        "chains": 1,
+        "bridges": 36
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "8HGG",
+        "modelled": null,
+        "label": "the subunit",
+        "count": 1546,
+        "unit": "residues",
+        "sentence": "One chain of two, as it circulates in pregnancy bound to proMBP.",
+        "semantics": "One PAPP-A chain from its pregnancy form, two PAPP-A chains bound to two of proMBP, solved by cryo-EM at 3.6 Å. 1,484 of its 1,546 residues are placed, with 36 disulfide bridges. Its zinc and the other three chains are not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "cystatinb",
+      "catalog_order": 25,
+      "display": "Cystatin B",
+      "gene": "CSTB",
+      "uniprot": "P04080",
+      "accession": "NG_011545",
+      "summary": "Blocks cathepsins inside cells. Losing it causes Unverricht–Lundborg epilepsy.",
+      "chain": "cystatin B",
+      "facts": {
+        "residues": 98,
+        "exons": 3,
+        "chains": 1,
+        "bridges": 0
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        }
+      ],
+      "structure": {
+        "pdb": "4N6V",
+        "modelled": null,
+        "label": "the inhibitor",
+        "count": 98,
+        "unit": "residues",
+        "sentence": "The cystatin fold: a five-stranded sheet wrapped round one long helix.",
+        "semantics": "One cystatin B chain, solved by X-ray at 1.8 Å: a long helix held in a curved sheet of five strands. 91 of its 98 residues are placed; the crystal's other nine chains are not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "tyrp1",
+      "catalog_order": 26,
+      "display": "TYRP1",
+      "gene": "TYRP1",
+      "uniprot": "P17643",
+      "accession": "NG_011705",
+      "summary": "Helps melanocytes make the dark pigment eumelanin. Faults in it cause albinism, OCA3.",
+      "chain": null,
+      "facts": {
+        "residues": 537,
+        "exons": 8,
+        "chains": 1,
+        "bridges": 7
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "9EY8",
+        "modelled": null,
+        "label": "the enzyme",
+        "count": 513,
+        "unit": "residues",
+        "sentence": "The part inside the melanosome; its membrane helix and tail are not drawn.",
+        "semantics": "The part of TYRP1 inside the melanosome, solved by X-ray at 2.2 Å, with seven disulfide bridges. Its zinc ions, sugars and the tyrosine analogue it was solved with are not drawn, nor its membrane helix and tail, residues 472 to 537, which the crystal did not hold. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "recoverin",
+      "catalog_order": 27,
+      "display": "Recoverin",
+      "gene": "RCVRN",
+      "uniprot": "P35243",
+      "accession": "NC_000017.11",
+      "summary": "A calcium sensor in rods and cones. It sets how fast lit rhodopsin is shut off.",
+      "chain": "recoverin",
+      "facts": {
+        "residues": 200,
+        "exons": 3,
+        "chains": 1,
+        "bridges": 0
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        }
+      ],
+      "structure": {
+        "pdb": "2D8N",
+        "modelled": null,
+        "label": "the sensor",
+        "count": 199,
+        "unit": "residues",
+        "sentence": "Two lobes of two EF-hands each; two of the four bind calcium.",
+        "semantics": "Recoverin, solved by X-ray at 2.2 Å: its helices folded into four EF-hands, two to a lobe. 196 of its 199 residues are placed. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "thyroglobulin",
+      "catalog_order": 28,
+      "display": "Thyroglobulin",
+      "gene": "TG",
+      "uniprot": "P01266",
+      "accession": "NG_015832",
+      "summary": "The scaffold T4 and T3 are made on. Stored in the thyroid as colloid.",
+      "chain": null,
+      "facts": {
+        "residues": 2768,
+        "exons": 48,
+        "chains": 1,
+        "bridges": 60
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "7B75",
+        "modelled": null,
+        "label": "the subunit",
+        "count": 2749,
+        "unit": "residues",
+        "sentence": "One chain of the dimer: a string of repeats and a cholinesterase-like end.",
+        "semantics": "One chain of the thyroglobulin dimer, solved by cryo-EM at 3.2 Å: a string of repeated domains ending in a cholinesterase-like one, with 57 disulfide bridges. 2,483 of its 2,749 residues are placed; its sugars and the other chain are not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "uromodulin",
+      "catalog_order": 29,
+      "display": "Uromodulin",
+      "gene": "UMOD",
+      "uniprot": "P07911",
+      "accession": "NG_008151",
+      "summary": "Made in the kidney and shed into urine, where its filaments trap bacteria.",
+      "chain": "uromodulin",
+      "facts": {
+        "residues": 640,
+        "exons": 11,
+        "chains": 1,
+        "bridges": 24
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "9NU1",
+        "modelled": [
+          329,
+          580
+        ],
+        "label": "the ZP domain",
+        "count": 252,
+        "unit": "residues",
+        "sentence": "The ZP domain, which joins chains into filaments. The rest is not drawn.",
+        "semantics": "The ZP domain of uromodulin, residues 329 to 580, from filaments purified from urine and solved by cryo-EM at 3.6 Å, with four disulfide bridges. The rest of the chain, the filament's other chains and its sugars are not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
     }
   ]
 }

@@ -1,0 +1,295 @@
+{
+ "entry": "7B75",
+ "model": "1",
+ "method": [
+  "ELECTRON MICROSCOPY"
+ ],
+ "resolution": 3.2,
+ "revision": "1.2",
+ "file": {
+  "url": "https://www.ebi.ac.uk/pdbe/entry-files/download/7b75_updated.cif",
+  "sha256": "18e027769d72168a62a5e4d4f2af4447645b77a4f0c06d47216d09948c7109ad"
+ },
+ "policy": 1,
+ "candidate": "7B75:A@1",
+ "scope": "product",
+ "domains": [],
+ "chains": [
+  {
+   "node": "chainA",
+   "product": "Thyroglobulin",
+   "entity": "7B75_1",
+   "asym": "A",
+   "auth": "A",
+   "first": 20,
+   "last": 2768,
+   "placed": 2483,
+   "offset": 0
+  }
+ ],
+ "bridges": [
+  [
+   34,
+   52
+  ],
+  [
+   63,
+   70
+  ],
+  [
+   72,
+   92
+  ],
+  [
+   96,
+   120
+  ],
+  [
+   131,
+   138
+  ],
+  [
+   140,
+   160
+  ],
+  [
+   164,
+   183
+  ],
+  [
+   194,
+   235
+  ],
+  [
+   237,
+   297
+  ],
+  [
+   301,
+   319
+  ],
+  [
+   330,
+   336
+  ],
+  [
+   338,
+   358
+  ],
+  [
+   364,
+   620
+  ],
+  [
+   408,
+   608
+  ],
+  [
+   631,
+   636
+  ],
+  [
+   638,
+   658
+  ],
+  [
+   662,
+   687
+  ],
+  [
+   698,
+   703
+  ],
+  [
+   705,
+   726
+  ],
+  [
+   730,
+   763
+  ],
+  [
+   774,
+   898
+  ],
+  [
+   900,
+   921
+  ],
+  [
+   925,
+   1031
+  ],
+  [
+   1042,
+   1049
+  ],
+  [
+   1051,
+   1073
+  ],
+  [
+   1077,
+   1108
+  ],
+  [
+   1126,
+   1145
+  ],
+  [
+   1149,
+   1169
+  ],
+  [
+   1181,
+   1188
+  ],
+  [
+   1190,
+   1210
+  ],
+  [
+   1231,
+   1245
+  ],
+  [
+   1249,
+   1281
+  ],
+  [
+   1331,
+   1347
+  ],
+  [
+   1440,
+   1459
+  ],
+  [
+   1462,
+   1473
+  ],
+  [
+   1476,
+   1490
+  ],
+  [
+   1493,
+   1510
+  ],
+  [
+   1514,
+   1523
+  ],
+  [
+   1543,
+   1565
+  ],
+  [
+   1603,
+   1627
+  ],
+  [
+   1607,
+   1613
+  ],
+  [
+   1724,
+   1749
+  ],
+  [
+   1728,
+   1734
+  ],
+  [
+   1760,
+   1777
+  ],
+  [
+   1893,
+   1919
+  ],
+  [
+   1897,
+   1904
+  ],
+  [
+   1928,
+   1939
+  ],
+  [
+   1996,
+   2024
+  ],
+  [
+   2000,
+   2006
+  ],
+  [
+   2005,
+   2076
+  ],
+  [
+   2035,
+   2048
+  ],
+  [
+   2130,
+   2154
+  ],
+  [
+   2134,
+   2140
+  ],
+  [
+   2163,
+   2172
+  ],
+  [
+   2264,
+   2281
+  ],
+  [
+   2442,
+   2453
+  ],
+  [
+   2591,
+   2715
+  ]
+ ],
+ "bridges_dropped": [],
+ "secondary_structure": "DSSP in the entry's file from PDBe (struct_conf, struct_sheet_range)",
+ "representation": "cartoon",
+ "sampling": 1,
+ "residues": {
+  "ordered": 2483,
+  "disordered": 266,
+  "absent": 0
+ },
+ "sequence_differences": 0,
+ "sha256": {
+  "record": "552072d30ef61d6b6a067c06c6d8800aa2b6ca716140e4c6b0e15f316d0524eb",
+  "translation": "2af88bd53041f189b543e39bfa15680958525801e4021167dcf872af61da3ac3",
+  "working_copy": "5538d68ebd4a5939a0ffa6d416392edd6b8fa1c28153ab708d988242194e7990",
+  "glb": "78d41b8ec658100305ddb799f2b4dd8783a275500331a34896216117dda96ba9",
+  "scene": "913f8538557f5554aab96a411554499a929e6a4f9ba032ce27b34e85539eef39",
+  "folding": "6018f32468013eca6c63ab5fd0f0c88b6b67fab9940210048015c17e9373ff6a"
+ },
+ "measured": {
+  "bake_seconds": 5.34,
+  "check_seconds": 2.94,
+  "glb_bytes": 3873232,
+  "scene_bytes": 1172808,
+  "folding_bytes": 358296,
+  "vertices": 127014,
+  "residues": 2749,
+  "bridges": 57,
+  "rings": 2936,
+  "bind_ms": 124,
+  "frames_ms": 494,
+  "slowest_frame_us": 5122,
+  "largest_step": 0.980298372847362,
+  "largest_nudge": 0.11884014577532298
+ },
+ "drafted_by": "scripts/draft_curated.py"
+}
