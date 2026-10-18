@@ -1204,6 +1204,314 @@
         "impact",
         "structure"
       ]
+    },
+    {
+      "slug": "izumo1",
+      "catalog_order": 30,
+      "display": "IZUMO1",
+      "gene": "IZUMO1",
+      "uniprot": "Q8IYV9",
+      "accession": "NC_000019.10",
+      "summary": "On the sperm's head: it binds Juno on the egg, the step that makes them one.",
+      "chain": null,
+      "facts": {
+        "residues": 350,
+        "exons": 10,
+        "chains": 1,
+        "bridges": 5
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "5JK9",
+        "modelled": null,
+        "label": "the ectodomain",
+        "count": 329,
+        "unit": "residues",
+        "sentence": "The part outside the sperm. Its membrane helix and tail are not drawn.",
+        "semantics": "The part of IZUMO1 outside the sperm, residues 22 to 255, solved by X-ray at 2.1 Å with five disulfide bridges. 234 of the 329 residues after the signal peptide are placed; the membrane helix and the tail inside are in no entry, and its one sugar is not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "gapdhs",
+      "catalog_order": 31,
+      "display": "GAPDHS",
+      "gene": "GAPDHS",
+      "uniprot": "O14556",
+      "accession": "NG_046898",
+      "summary": "The sperm tail's own glycolytic enzyme. Without it the tail cannot beat.",
+      "chain": "GAPDHS",
+      "facts": {
+        "residues": 408,
+        "exons": 11,
+        "chains": 1,
+        "bridges": 0
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        }
+      ],
+      "structure": {
+        "pdb": "3H9E",
+        "modelled": null,
+        "label": "the subunit",
+        "count": 408,
+        "unit": "residues",
+        "sentence": "One chain of four. The start that anchors it is not in the crystal.",
+        "semantics": "One chain of the sperm's glyceraldehyde-3-phosphate dehydrogenase tetramer, solved by X-ray at 1.72 Å with NAD. 334 of its 408 residues are placed: the proline-rich start that ties it to the tail's fibrous sheath is not in the crystal. The NAD and the other three chains are not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "fpr1",
+      "catalog_order": 32,
+      "display": "FPR1",
+      "gene": "FPR1",
+      "uniprot": "P21462",
+      "accession": "NG_023426",
+      "summary": "Smells bacteria: it makes a neutrophil follow formyl peptides to the source.",
+      "chain": "FPR1",
+      "facts": {
+        "residues": 350,
+        "exons": 2,
+        "chains": 1,
+        "bridges": 1
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "7VFX",
+        "modelled": null,
+        "label": "the receptor",
+        "count": 350,
+        "unit": "residues",
+        "sentence": "Seven helices across the membrane; the peptide it senses is not drawn.",
+        "semantics": "FPR1, solved by cryo-EM at 2.8 Å bound to the peptide fMIFL and a G protein: seven helices across the membrane, held by one disulfide bridge. 295 of its 350 residues are placed. The peptide, the G protein's three chains and the antibody fragment holding them are not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "cyp17a1",
+      "catalog_order": 33,
+      "display": "CYP17A1",
+      "gene": "CYP17A1",
+      "uniprot": "P05093",
+      "accession": "NG_007955",
+      "summary": "Makes the adrenal's sex steroids. Abiraterone blocks it in prostate cancer.",
+      "chain": "CYP17A1",
+      "facts": {
+        "residues": 508,
+        "exons": 8,
+        "chains": 1,
+        "bridges": 0
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        }
+      ],
+      "structure": {
+        "pdb": "6WW0",
+        "modelled": null,
+        "label": "the enzyme",
+        "count": 508,
+        "unit": "residues",
+        "sentence": "Two steps of steroid synthesis happen here. Its heme is not drawn.",
+        "semantics": "CYP17A1, solved by X-ray at 2.01 Å with its heme and an abiraterone analogue bound. 464 of its 508 residues are placed; the membrane anchor at the start, residues 1 to 30, is not in the crystal. The heme and the analogue are not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "b3gat1",
+      "catalog_order": 34,
+      "display": "B3GAT1",
+      "gene": "B3GAT1",
+      "uniprot": "Q9P2W7",
+      "accession": "NC_000011.10",
+      "summary": "Adds the glucuronic acid the HNK-1 mark on nerve surfaces is built on.",
+      "chain": "B3GAT1",
+      "facts": {
+        "residues": 334,
+        "exons": 6,
+        "chains": 1,
+        "bridges": 0
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        }
+      ],
+      "structure": {
+        "pdb": "1V84",
+        "modelled": null,
+        "label": "the subunit",
+        "count": 334,
+        "unit": "residues",
+        "sentence": "One chain of two. The stalk and membrane anchor are not drawn.",
+        "semantics": "One chain of the GlcAT-P dimer, solved by X-ray at 1.82 Å with UDP, manganese and the sugar it acts on. 245 of its 334 residues are placed: the stalk and membrane anchor, residues 1 to 82, are not in the crystal. The ligands and the other chain are not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "dmc1",
+      "catalog_order": 35,
+      "display": "DMC1",
+      "gene": "DMC1",
+      "uniprot": "Q14565",
+      "accession": "NG_017203",
+      "summary": "Meiosis only: it finds the matching chromosome and swaps strands with it.",
+      "chain": "DMC1",
+      "facts": {
+        "residues": 340,
+        "exons": 14,
+        "chains": 1,
+        "bridges": 0
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        }
+      ],
+      "structure": {
+        "pdb": "7C9C",
+        "modelled": null,
+        "label": "the recombinase",
+        "count": 340,
+        "unit": "residues",
+        "sentence": "One chain of the filament it builds on DNA; the DNA is not drawn.",
+        "semantics": "One DMC1 chain from a filament on single-stranded DNA, solved by cryo-EM at 3.3 Å. 308 of its 340 residues are placed. The DNA, the other two chains and the bound nucleotide are not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "dynamin1",
+      "catalog_order": 36,
+      "display": "Dynamin-1",
+      "gene": "DNM1",
+      "uniprot": "Q05193",
+      "accession": "NG_029726",
+      "summary": "Pinches off the vesicle: it wraps the neck and cuts it, using GTP.",
+      "chain": "dynamin-1",
+      "facts": {
+        "residues": 864,
+        "exons": 22,
+        "chains": 1,
+        "bridges": 0
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        }
+      ],
+      "structure": {
+        "pdb": "8SXZ",
+        "modelled": null,
+        "label": "the subunit",
+        "count": 864,
+        "unit": "residues",
+        "sentence": "One chain of the ring it winds round a vesicle's neck.",
+        "semantics": "One dynamin-1 chain from the polymer wound round a membrane neck, caught in its constricted state and solved by cryo-EM at 3.3 Å. 693 of its 864 residues are placed. The membrane, the bound GDP and the other three chains are not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "lgi1",
+      "catalog_order": 37,
+      "display": "LGI1",
+      "gene": "LGI1",
+      "uniprot": "O95970",
+      "accession": "NG_011832",
+      "summary": "Held at the synapse by ADAM22. Autoantibodies to it cause encephalitis.",
+      "chain": null,
+      "facts": {
+        "residues": 557,
+        "exons": 8,
+        "chains": 1,
+        "bridges": 5
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "9KZT",
+        "modelled": null,
+        "label": "the subunit",
+        "count": 523,
+        "unit": "residues",
+        "sentence": "One chain of three, as it binds ADAM22; its partner is not drawn.",
+        "semantics": "One LGI1 chain from the 3:3 complex it forms with ADAM22, solved by cryo-EM at 3.8 Å: a horseshoe of leucine-rich repeats and the EPTP propeller, with the five disulfide bridges the entry places. 511 of the 523 residues after the signal peptide are placed. The three ADAM22 chains and the other two LGI1 chains are not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
     }
   ]
 }

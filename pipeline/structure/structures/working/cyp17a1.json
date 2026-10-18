@@ -1,0 +1,66 @@
+{
+ "entry": "6WW0",
+ "model": "1",
+ "method": [
+  "X-RAY DIFFRACTION"
+ ],
+ "resolution": 2.01,
+ "revision": "1.3",
+ "file": {
+  "url": "https://www.ebi.ac.uk/pdbe/entry-files/download/6ww0_updated.cif",
+  "sha256": "6e8602de35880ab76eb91549e423c66d0856517ccb3f8d8bbc7039e83ed91e52"
+ },
+ "policy": 1,
+ "candidate": "6WW0:A@24",
+ "scope": "product",
+ "domains": [],
+ "chains": [
+  {
+   "node": "chainA",
+   "product": "Steroid 17-alpha-hydroxylase/17,20 lyase",
+   "entity": "6WW0_1",
+   "asym": "A",
+   "auth": "A",
+   "first": 1,
+   "last": 508,
+   "placed": 464,
+   "offset": 0
+  }
+ ],
+ "bridges": [],
+ "bridges_dropped": [],
+ "secondary_structure": "DSSP in the entry's file from PDBe (struct_conf, struct_sheet_range)",
+ "representation": "cartoon",
+ "sampling": 2,
+ "residues": {
+  "ordered": 464,
+  "disordered": 21,
+  "absent": 23
+ },
+ "sequence_differences": 0,
+ "sha256": {
+  "record": "10d5f06fec7061b933b09d27729862361ea3d1f52459a9b80f20a891bef3240e",
+  "translation": "83618860fad41d20f0945e036b4bc270c90e6c96b6ddd84eff31402ffef38fa4",
+  "working_copy": "bc698a2191393ea4917594482a4f776dc20ffce89e03475fc128548fb876fc4a",
+  "glb": "00d8a2ff9369ebc6f3c15d1bb363224ee7821127cd85332518f83f56ad7e9ce7",
+  "scene": "223d87195467c74d32bcad14789301cd4e593bf2a7294d9d77e414556aa6f1a5",
+  "folding": "7c634edf89ffac5f47d0165f172e539b4ce4c544d3f5864ce7eebb30f7451409"
+ },
+ "measured": {
+  "bake_seconds": 1.42,
+  "check_seconds": 2.31,
+  "glb_bytes": 1277972,
+  "scene_bytes": 363976,
+  "folding_bytes": 68315,
+  "vertices": 45606,
+  "residues": 485,
+  "bridges": 0,
+  "rings": 1003,
+  "bind_ms": 80,
+  "frames_ms": 133,
+  "slowest_frame_us": 6920,
+  "largest_step": 0.8116132008318513,
+  "largest_nudge": 0.0
+ },
+ "drafted_by": "scripts/draft_curated.py"
+}

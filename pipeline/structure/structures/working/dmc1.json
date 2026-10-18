@@ -1,0 +1,66 @@
+{
+ "entry": "7C9C",
+ "model": "1",
+ "method": [
+  "ELECTRON MICROSCOPY"
+ ],
+ "resolution": 3.33,
+ "revision": "1.3",
+ "file": {
+  "url": "https://www.ebi.ac.uk/pdbe/entry-files/download/7c9c_updated.cif",
+  "sha256": "d1a218ac5ff732f673df54f16d8f5cdce82296538f3eb941f644911ddc11b079"
+ },
+ "policy": 1,
+ "candidate": "7C9C:B@1",
+ "scope": "product",
+ "domains": [],
+ "chains": [
+  {
+   "node": "chainA",
+   "product": "Meiotic recombination protein DMC1 homolog",
+   "entity": "7C9C_2",
+   "asym": "B",
+   "auth": "A",
+   "first": 1,
+   "last": 340,
+   "placed": 308,
+   "offset": 0
+  }
+ ],
+ "bridges": [],
+ "bridges_dropped": [],
+ "secondary_structure": "DSSP in the entry's file from PDBe (struct_conf, struct_sheet_range)",
+ "representation": "cartoon",
+ "sampling": 3,
+ "residues": {
+  "ordered": 308,
+  "disordered": 32,
+  "absent": 0
+ },
+ "sequence_differences": 0,
+ "sha256": {
+  "record": "07f8c8408a50b750e5b99a3d7cb2dcb2e5b9dcd2c0f066a4d6a82dcf427438c0",
+  "translation": "5d387ec698d56f602876fbc8a23821b3061040ef57466581efce5a6b34182814",
+  "working_copy": "a58522b4e1af1ef334c4e632e2d9c8dcf254aa43001636eba13e5a345a7fbfc7",
+  "glb": "69716ba0da1cc197f38ec6971cbeed94d59edf94223224a445d94a63d9e62722",
+  "scene": "e4c6be998d1457ef40fa93f836676923bd902dae4f2fa3a31c0e3c543deeb064",
+  "folding": "64033f3849551858c55f38dc67efd79ac721fd965da419859606f68e4e2ce189"
+ },
+ "measured": {
+  "bake_seconds": 1.12,
+  "check_seconds": 2.33,
+  "glb_bytes": 1145756,
+  "scene_bytes": 325936,
+  "folding_bytes": 44480,
+  "vertices": 40884,
+  "residues": 340,
+  "bridges": 0,
+  "rings": 990,
+  "bind_ms": 82,
+  "frames_ms": 127,
+  "slowest_frame_us": 4118,
+  "largest_step": 0.6759466110356042,
+  "largest_nudge": 0.0
+ },
+ "drafted_by": "scripts/draft_curated.py"
+}

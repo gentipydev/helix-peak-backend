@@ -1,0 +1,71 @@
+{
+ "entry": "7VFX",
+ "model": "1",
+ "method": [
+  "ELECTRON MICROSCOPY"
+ ],
+ "resolution": 2.8,
+ "revision": "1.2",
+ "file": {
+  "url": "https://www.ebi.ac.uk/pdbe/entry-files/download/7vfx_updated.cif",
+  "sha256": "f513fdca58e2610c7e4959835e7d93ede8d10a6694b464e486fccdf3e5c70ba1"
+ },
+ "policy": 1,
+ "candidate": "7VFX:A@1",
+ "scope": "product",
+ "domains": [],
+ "chains": [
+  {
+   "node": "chainA",
+   "product": "N-formyl peptide receptor 1",
+   "entity": "7VFX_1",
+   "asym": "A",
+   "auth": "R",
+   "first": 1,
+   "last": 350,
+   "placed": 295,
+   "offset": 0
+  }
+ ],
+ "bridges": [
+  [
+   98,
+   176
+  ]
+ ],
+ "bridges_dropped": [],
+ "secondary_structure": "DSSP in the entry's file from PDBe (struct_conf, struct_sheet_range)",
+ "representation": "cartoon",
+ "sampling": 3,
+ "residues": {
+  "ordered": 295,
+  "disordered": 55,
+  "absent": 0
+ },
+ "sequence_differences": 0,
+ "sha256": {
+  "record": "32c7290aed6a82dd5e079c422daf8274f13d9062af8f0099a64cf12c61846b24",
+  "translation": "e3bd8aa167ddf1d17d7afa772041bd5a2d99e21f73db748152db640cfd3e257e",
+  "working_copy": "3c530cf003de70283dd659d07b6bf8a45889d146801d3671fc2551554c7de07d",
+  "glb": "452f2f634a462bb02a5c3763f7cb2a2f5eef0bd60b858a41c5252b424aa02c75",
+  "scene": "c5e5095c1d59b6382ef05f845893a744748b61b4a06d1731de821af2df2329b2",
+  "folding": "24099e44734262762590267d70bc1afdd8f6a0b30f3100dcf1f40df0e9f4a4e3"
+ },
+ "measured": {
+  "bake_seconds": 1.39,
+  "check_seconds": 2.33,
+  "glb_bytes": 1382444,
+  "scene_bytes": 406072,
+  "folding_bytes": 50871,
+  "vertices": 49114,
+  "residues": 350,
+  "bridges": 1,
+  "rings": 913,
+  "bind_ms": 85,
+  "frames_ms": 139,
+  "slowest_frame_us": 1202,
+  "largest_step": 0.5719505651719511,
+  "largest_nudge": 0.0
+ },
+ "drafted_by": "scripts/draft_curated.py"
+}

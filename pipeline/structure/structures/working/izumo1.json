@@ -1,0 +1,87 @@
+{
+ "entry": "5JK9",
+ "model": "1",
+ "method": [
+  "X-RAY DIFFRACTION"
+ ],
+ "resolution": 2.1,
+ "revision": "1.4",
+ "file": {
+  "url": "https://www.ebi.ac.uk/pdbe/entry-files/download/5jk9_updated.cif",
+  "sha256": "7f0d1c1264aa964d5dca2ac06c120b04202dcb3b2c4b333fc0e943fbab2e1259"
+ },
+ "policy": 1,
+ "candidate": "5JK9:A@22",
+ "scope": "product",
+ "domains": [],
+ "chains": [
+  {
+   "node": "chainA",
+   "product": "Izumo sperm-egg fusion protein 1",
+   "entity": "5JK9_1",
+   "asym": "A",
+   "auth": "A",
+   "first": 22,
+   "last": 350,
+   "placed": 234,
+   "offset": 0
+  }
+ ],
+ "bridges": [
+  [
+   22,
+   149
+  ],
+  [
+   25,
+   152
+  ],
+  [
+   135,
+   159
+  ],
+  [
+   139,
+   165
+  ],
+  [
+   182,
+   233
+  ]
+ ],
+ "bridges_dropped": [],
+ "secondary_structure": "DSSP in the entry's file from PDBe (struct_conf, struct_sheet_range)",
+ "representation": "cartoon",
+ "sampling": 4,
+ "residues": {
+  "ordered": 234,
+  "disordered": 0,
+  "absent": 95
+ },
+ "sequence_differences": 0,
+ "sha256": {
+  "record": "8d3cd5267aceb5ff53a3026f095980794171fa611ed539e4dbe649712d7de9c6",
+  "translation": "3eebb544af78c416305dae4d146259376daa9c78dd74a0fbd6f9413e25a4cd6a",
+  "working_copy": "c4955d8e99c3c82ced9021bb85febd0e571b6752b87c38f51721505d2ea3648e",
+  "glb": "9e5db9de66c5363175ffdd1a266e489d99f25a9f7db491e4f92f9c81e5a7bf14",
+  "scene": "fa971f7fdd4a151a87a5c0ce2e53b06a3cdb8a4cfd911b5247a04db7b3112e4b",
+  "folding": "75ad945f597674b97e96add7a4586a05f1b550256b6164c6271ee0cd8f69f0c0"
+ },
+ "measured": {
+  "bake_seconds": 1.74,
+  "check_seconds": 5.05,
+  "glb_bytes": 1201724,
+  "scene_bytes": 356248,
+  "folding_bytes": 42592,
+  "vertices": 41870,
+  "residues": 234,
+  "bridges": 5,
+  "rings": 975,
+  "bind_ms": 83,
+  "frames_ms": 120,
+  "slowest_frame_us": 1763,
+  "largest_step": 0.7833721108647724,
+  "largest_nudge": 0.0
+ },
+ "drafted_by": "scripts/draft_curated.py"
+}

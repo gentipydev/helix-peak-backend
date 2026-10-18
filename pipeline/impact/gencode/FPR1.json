@@ -1,0 +1,73 @@
+{
+  "cds": [
+    {
+      "end": 51746994,
+      "start": 51745944,
+      "width": 1051
+    }
+  ],
+  "chromosome": "chr19",
+  "end": 51751878,
+  "exons": [
+    {
+      "acceptor": 51751878,
+      "chromosome": "chr19",
+      "donor": 51751813,
+      "end": 51751878,
+      "exon_number": 1,
+      "overlaps_variant": false,
+      "start": 51751813,
+      "strand": "-",
+      "width": 66
+    },
+    {
+      "acceptor": 51747005,
+      "chromosome": "chr19",
+      "donor": 51745772,
+      "end": 51747005,
+      "exon_number": 2,
+      "overlaps_variant": false,
+      "start": 51745772,
+      "strand": "-",
+      "width": 1234
+    }
+  ],
+  "gene_id": "ENSG00000171051.10",
+  "gene_name": "FPR1",
+  "is_mane_select": true,
+  "junctions": [
+    {
+      "atlas_url": null,
+      "downstream_exon": 2,
+      "intron_length": 4807,
+      "junction_end": 51751813,
+      "junction_start": 51747005,
+      "junction_str": "51747005:51751813",
+      "score_id": null,
+      "type": "Canonical Intron 1",
+      "upstream_exon": 1
+    }
+  ],
+  "num_exons": 2,
+  "start": 51745772,
+  "strand": "-",
+  "transcript_id": "ENST00000304748.5",
+  "transcript_type": "protein_coding",
+  "utr": [
+    {
+      "end": 51751878,
+      "start": 51751813,
+      "width": 66
+    },
+    {
+      "end": 51747005,
+      "start": 51746994,
+      "width": 12
+    },
+    {
+      "end": 51745944,
+      "start": 51745772,
+      "width": 173
+    }
+  ]
+}

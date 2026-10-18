@@ -1,0 +1,66 @@
+{
+ "entry": "1V84",
+ "model": "1",
+ "method": [
+  "X-RAY DIFFRACTION"
+ ],
+ "resolution": 1.82,
+ "revision": "2.1",
+ "file": {
+  "url": "https://www.ebi.ac.uk/pdbe/entry-files/download/1v84_updated.cif",
+  "sha256": "8bb2f2976a3ab199424d929c674c1211285e6834b844485db5ab691f27b85ff3"
+ },
+ "policy": 1,
+ "candidate": "1V84:A@82",
+ "scope": "product",
+ "domains": [],
+ "chains": [
+  {
+   "node": "chainA",
+   "product": "Galactosylgalactosylxylosylprotein 3-beta-glucuronosyltransferase 1",
+   "entity": "1V84_1",
+   "asym": "A",
+   "auth": "A",
+   "first": 1,
+   "last": 334,
+   "placed": 245,
+   "offset": 0
+  }
+ ],
+ "bridges": [],
+ "bridges_dropped": [],
+ "secondary_structure": "DSSP in the entry's file from PDBe (struct_conf, struct_sheet_range)",
+ "representation": "cartoon",
+ "sampling": 4,
+ "residues": {
+  "ordered": 245,
+  "disordered": 8,
+  "absent": 81
+ },
+ "sequence_differences": 1,
+ "sha256": {
+  "record": "14b3f7608875c90f2914685cb6a95b283ec8b0b73cac8d39fbd2d2f608826b24",
+  "translation": "b0dd8d84ad3e5def0a5bd9968c93ce92d4df4a8a4b6f87f5b5b5be07d44cfa83",
+  "working_copy": "5098388a843eea884f53e84bf965e9425211335f9df897a3bf3278f6c31e3ca6",
+  "glb": "d6cf37d72a1b0219c927925f6a3c92d05a97ffa29217ccfbbdfe76520ecf1556",
+  "scene": "23a2a1b01f127fd66017e90e023b873f41e620dddd436b99c2ae4d41b465e31b",
+  "folding": "5f5ac6df0444ec59c7cb44a5cc44098c1559a689d00f1e4df757a0cf5f012388"
+ },
+ "measured": {
+  "bake_seconds": 1.04,
+  "check_seconds": 2.18,
+  "glb_bytes": 1150124,
+  "scene_bytes": 327984,
+  "folding_bytes": 38390,
+  "vertices": 41040,
+  "residues": 253,
+  "bridges": 0,
+  "rings": 1029,
+  "bind_ms": 79,
+  "frames_ms": 119,
+  "slowest_frame_us": 4671,
+  "largest_step": 0.6895819330014218,
+  "largest_nudge": 0.0
+ },
+ "drafted_by": "scripts/draft_curated.py"
+}

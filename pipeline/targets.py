@@ -851,6 +851,153 @@ TARGETS: tuple[Target, ...] = (
             bonds=True,
         ),
     ),
+    Target(
+        slug="izumo1", gene="IZUMO1", uniprot="Q8IYV9", aa=350,
+        display="IZUMO1",
+        # No RefSeqGene: the span MANE puts the transcript on. Minus strand.
+        source=Source("NC_000019.10", 48_740_852, 48_746_909,
+                      protein_id="NP_872381.2", transcript_id="NM_182575.3"),
+        cleaved=True, chain_label="Izumo sperm-egg fusion protein 1",
+        # The record names one chain after the signal peptide: one cleavage,
+        # so the walk cuts it (R3.4).
+        mature_peptides=True,
+        regions=(
+            Region("Signal peptide", "S", 1, 21, kept=False),
+            Region("Izumo sperm-egg fusion protein 1", "", 22, 350),
+        ),
+        disulfides=((22, 149), (25, 152), (135, 159), (139, 165), (182, 233)),
+        structure=Structure(
+            # The part outside the sperm. Its membrane helix, 293-313, and the
+            # tail inside are in no entry.
+            pdb="5JK9", sampling=4,
+            chains=(Chain("chainA", "A"),),
+            bonds=True,
+        ),
+    ),
+    Target(
+        slug="gapdhs", gene="GAPDHS", uniprot="O14556", aa=408,
+        display="GAPDHS",
+        source=Source("NG_046898"),
+        cleaved=False, chain_label="Glyceraldehyde-3-phosphate dehydrogenase, testis-specific",
+        regions=(
+            Region("Glyceraldehyde-3-phosphate dehydrogenase, testis-specific", "", 1, 408),
+        ),
+        structure=Structure(
+            # One chain of four. The proline-rich start that ties it to the
+            # tail's fibrous sheath, 1-73, is not in the crystal.
+            pdb="3H9E", sampling=3,
+            chains=(Chain("chainA", "A"),),
+            bonds=False,
+        ),
+    ),
+    Target(
+        slug="fpr1", gene="FPR1", uniprot="P21462", aa=350,
+        display="FPR1",
+        source=Source("NG_023426"),
+        cleaved=False, chain_label="fMet-Leu-Phe receptor",
+        regions=(
+            Region("fMet-Leu-Phe receptor", "", 1, 350),
+        ),
+        disulfides=((98, 176),),
+        structure=Structure(
+            # The receptor alone, from the entry that holds it with the peptide
+            # fMIFL and a G protein.
+            pdb="7VFX", sampling=3,
+            chains=(Chain("chainA", "A"),),
+            bonds=True,
+        ),
+    ),
+    Target(
+        slug="cyp17a1", gene="CYP17A1", uniprot="P05093", aa=508,
+        display="CYP17A1",
+        source=Source("NG_007955"),
+        cleaved=False, chain_label="Steroid 17-alpha-hydroxylase/17,20 lyase",
+        regions=(
+            Region("Steroid 17-alpha-hydroxylase/17,20 lyase", "", 1, 508),
+        ),
+        structure=Structure(
+            # Solved with its heme and an abiraterone analogue. The membrane
+            # anchor at the start, 1-30, is not in the crystal.
+            pdb="6WW0", sampling=2,
+            chains=(Chain("chainA", "A"),),
+            bonds=False,
+        ),
+    ),
+    Target(
+        slug="b3gat1", gene="B3GAT1", uniprot="Q9P2W7", aa=334,
+        display="B3GAT1",
+        # No RefSeqGene: the span MANE puts the transcript on. Minus strand.
+        source=Source("NC_000011.10", 134_378_508, 134_412_242,
+                      protein_id="NP_473366.1", transcript_id="NM_054025.3"),
+        cleaved=False,
+        chain_label="Galactosylgalactosylxylosylprotein 3-beta-glucuronosyltransferase 1",
+        regions=(
+            Region("Galactosylgalactosylxylosylprotein 3-beta-glucuronosyltransferase 1",
+                   "", 1, 334),
+        ),
+        structure=Structure(
+            # One chain of two, solved with UDP, manganese and the sugar it
+            # acts on. The stalk and membrane anchor, 1-82, are not in it.
+            pdb="1V84", sampling=4,
+            chains=(Chain("chainA", "A"),),
+            bonds=False,
+        ),
+    ),
+    Target(
+        slug="dmc1", gene="DMC1", uniprot="Q14565", aa=340,
+        display="DMC1",
+        source=Source("NG_017203"),
+        cleaved=False, chain_label="Meiotic recombination protein DMC1/LIM15 homolog",
+        regions=(
+            Region("Meiotic recombination protein DMC1/LIM15 homolog", "", 1, 340),
+        ),
+        structure=Structure(
+            # One chain of the filament it builds on single-stranded DNA; the
+            # DNA and the bound nucleotide are not drawn.
+            pdb="7C9C", sampling=3,
+            chains=(Chain("chainA", "A"),),
+            bonds=False,
+        ),
+    ),
+    Target(
+        slug="dynamin1", gene="DNM1", uniprot="Q05193", aa=864,
+        display="Dynamin-1",
+        source=Source("NG_029726"),
+        cleaved=False, chain_label="Dynamin-1",
+        regions=(
+            Region("Dynamin-1", "", 1, 864),
+        ),
+        structure=Structure(
+            # One chain of the polymer wound round a membrane neck, in its
+            # constricted state. The membrane and the bound GDP are not drawn.
+            pdb="8SXZ", sampling=1,
+            chains=(Chain("chainA", "A"),),
+            bonds=False,
+        ),
+    ),
+    Target(
+        slug="lgi1", gene="LGI1", uniprot="O95970", aa=557,
+        display="LGI1",
+        source=Source("NG_011832"),
+        cleaved=True, chain_label="Leucine-rich glioma-inactivated protein 1",
+        # The record names one chain after the signal peptide: one cleavage,
+        # so the walk cuts it (R3.4).
+        mature_peptides=True,
+        regions=(
+            Region("Signal peptide", "S", 1, 34, kept=False),
+            Region("Leucine-rich glioma-inactivated protein 1", "", 35, 557),
+        ),
+        # The entry's five bridges, in the record's numbering. UniProt
+        # annotates none for this protein; 9KZT places these, and the fold
+        # draws them.
+        disulfides=((42, 48), (46, 55), (177, 200), (179, 221), (260, 286)),
+        structure=Structure(
+            # One chain of three, from the 3:3 complex with ADAM22.
+            pdb="9KZT", sampling=2,
+            chains=(Chain("chainA", "A"),),
+            bonds=True,
+        ),
+    ),
 )
 
 BY_SLUG = {t.slug: t for t in TARGETS}
