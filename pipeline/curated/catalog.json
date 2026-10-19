@@ -166,8 +166,45 @@
       ]
     },
     {
-      "slug": "hemoglobin",
+      "slug": "recoverin",
       "catalog_order": 4,
+      "display": "Recoverin",
+      "gene": "RCVRN",
+      "uniprot": "P35243",
+      "accession": "NC_000017.11",
+      "summary": "A calcium sensor in rods and cones. It sets how fast lit rhodopsin is shut off.",
+      "chain": "recoverin",
+      "facts": {
+        "residues": 200,
+        "exons": 3,
+        "chains": 1,
+        "bridges": 0
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        }
+      ],
+      "structure": {
+        "pdb": "2D8N",
+        "modelled": null,
+        "label": "the sensor",
+        "count": 199,
+        "unit": "residues",
+        "sentence": "Two lobes of two EF-hands each; two of the four bind calcium.",
+        "semantics": "Recoverin, solved by X-ray at 2.2 Å: its helices folded into four EF-hands, two to a lobe. 196 of its 199 residues are placed. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "hemoglobin",
+      "catalog_order": 5,
       "display": "Hemoglobin (beta chain)",
       "gene": "HBB",
       "uniprot": "P68871",
@@ -205,7 +242,7 @@
     },
     {
       "slug": "myoglobin",
-      "catalog_order": 5,
+      "catalog_order": 6,
       "display": "Myoglobin",
       "gene": "MB",
       "uniprot": "P02144",
@@ -242,7 +279,7 @@
     },
     {
       "slug": "relaxin",
-      "catalog_order": 6,
+      "catalog_order": 7,
       "display": "Relaxin",
       "gene": "RLN2",
       "uniprot": "P04090",
@@ -287,7 +324,7 @@
     },
     {
       "slug": "somatotropin",
-      "catalog_order": 7,
+      "catalog_order": 8,
       "display": "Growth hormone",
       "gene": "GH1",
       "uniprot": "P01241",
@@ -328,7 +365,7 @@
     },
     {
       "slug": "p53",
-      "catalog_order": 8,
+      "catalog_order": 9,
       "display": "p53",
       "gene": "TP53",
       "uniprot": "P04637",
@@ -368,7 +405,7 @@
     },
     {
       "slug": "dystrophin",
-      "catalog_order": 9,
+      "catalog_order": 10,
       "display": "Dystrophin",
       "gene": "DMD",
       "uniprot": "P11532",
@@ -408,7 +445,7 @@
     },
     {
       "slug": "vasopressin",
-      "catalog_order": 10,
+      "catalog_order": 11,
       "display": "Vasopressin",
       "gene": "AVP",
       "uniprot": "P01185",
@@ -449,7 +486,7 @@
     },
     {
       "slug": "glucagon",
-      "catalog_order": 11,
+      "catalog_order": 12,
       "display": "Glucagon",
       "gene": "GCG",
       "uniprot": "P01275",
@@ -486,7 +523,7 @@
     },
     {
       "slug": "app",
-      "catalog_order": 12,
+      "catalog_order": 13,
       "display": "Amyloid precursor protein",
       "gene": "APP",
       "uniprot": "P05067",
@@ -527,7 +564,7 @@
     },
     {
       "slug": "cftr",
-      "catalog_order": 13,
+      "catalog_order": 14,
       "display": "CFTR",
       "gene": "CFTR",
       "uniprot": "P13569",
@@ -565,7 +602,7 @@
     },
     {
       "slug": "erythropoietin",
-      "catalog_order": 14,
+      "catalog_order": 15,
       "display": "Erythropoietin",
       "gene": "EPO",
       "uniprot": "P01588",
@@ -606,7 +643,7 @@
     },
     {
       "slug": "leptin",
-      "catalog_order": 15,
+      "catalog_order": 16,
       "display": "Leptin",
       "gene": "LEP",
       "uniprot": "P41159",
@@ -647,7 +684,7 @@
     },
     {
       "slug": "tnf",
-      "catalog_order": 16,
+      "catalog_order": 17,
       "display": "TNF-alpha",
       "gene": "TNF",
       "uniprot": "P01375",
@@ -688,7 +725,7 @@
     },
     {
       "slug": "sod1",
-      "catalog_order": 17,
+      "catalog_order": 18,
       "display": "SOD1",
       "gene": "SOD1",
       "uniprot": "P00441",
@@ -729,7 +766,7 @@
     },
     {
       "slug": "amylase",
-      "catalog_order": 18,
+      "catalog_order": 19,
       "display": "Amylase",
       "gene": "AMY1A",
       "uniprot": "P0DUB6",
@@ -770,7 +807,7 @@
     },
     {
       "slug": "prion",
-      "catalog_order": 19,
+      "catalog_order": 20,
       "display": "Prion protein",
       "gene": "PRNP",
       "uniprot": "P04156",
@@ -811,7 +848,7 @@
     },
     {
       "slug": "phospholamban",
-      "catalog_order": 20,
+      "catalog_order": 21,
       "display": "Phospholamban",
       "gene": "PLN",
       "uniprot": "P26678",
@@ -847,7 +884,7 @@
     },
     {
       "slug": "s100b",
-      "catalog_order": 21,
+      "catalog_order": 22,
       "display": "S100B",
       "gene": "S100B",
       "uniprot": "P04271",
@@ -884,7 +921,7 @@
     },
     {
       "slug": "hcgbeta",
-      "catalog_order": 22,
+      "catalog_order": 23,
       "display": "hCG (beta subunit)",
       "gene": "CGB3",
       "uniprot": "P0DN86",
@@ -925,7 +962,7 @@
     },
     {
       "slug": "ppbp",
-      "catalog_order": 23,
+      "catalog_order": 24,
       "display": "PPBP (CXCL7)",
       "gene": "PPBP",
       "uniprot": "P02775",
@@ -966,7 +1003,7 @@
     },
     {
       "slug": "pappa",
-      "catalog_order": 24,
+      "catalog_order": 25,
       "display": "PAPP-A",
       "gene": "PAPPA",
       "uniprot": "Q13219",
@@ -1007,7 +1044,7 @@
     },
     {
       "slug": "cystatinb",
-      "catalog_order": 25,
+      "catalog_order": 26,
       "display": "Cystatin B",
       "gene": "CSTB",
       "uniprot": "P04080",
@@ -1044,7 +1081,7 @@
     },
     {
       "slug": "tyrp1",
-      "catalog_order": 26,
+      "catalog_order": 27,
       "display": "TYRP1",
       "gene": "TYRP1",
       "uniprot": "P17643",
@@ -1075,43 +1112,6 @@
         "unit": "residues",
         "sentence": "The part inside the melanosome; its membrane helix and tail are not drawn.",
         "semantics": "The part of TYRP1 inside the melanosome, solved by X-ray at 2.2 Å, with seven disulfide bridges. Its zinc ions, sugars and the tyrosine analogue it was solved with are not drawn, nor its membrane helix and tail, residues 472 to 537, which the crystal did not hold. Drag to turn it."
-      },
-      "tracks": [
-        "clinvar",
-        "constraint",
-        "impact",
-        "structure"
-      ]
-    },
-    {
-      "slug": "recoverin",
-      "catalog_order": 27,
-      "display": "Recoverin",
-      "gene": "RCVRN",
-      "uniprot": "P35243",
-      "accession": "NC_000017.11",
-      "summary": "A calcium sensor in rods and cones. It sets how fast lit rhodopsin is shut off.",
-      "chain": "recoverin",
-      "facts": {
-        "residues": 200,
-        "exons": 3,
-        "chains": 1,
-        "bridges": 0
-      },
-      "chains": [
-        {
-          "node": "chainA",
-          "tint": "mature1"
-        }
-      ],
-      "structure": {
-        "pdb": "2D8N",
-        "modelled": null,
-        "label": "the sensor",
-        "count": 199,
-        "unit": "residues",
-        "sentence": "Two lobes of two EF-hands each; two of the four bind calcium.",
-        "semantics": "Recoverin, solved by X-ray at 2.2 Å: its helices folded into four EF-hands, two to a lobe. 196 of its 199 residues are placed. Drag to turn it."
       },
       "tracks": [
         "clinvar",
