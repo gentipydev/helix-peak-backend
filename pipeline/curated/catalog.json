@@ -236,7 +236,6 @@
         "clinvar",
         "constraint",
         "impact",
-        "impact_explanations",
         "structure"
       ]
     },
@@ -596,7 +595,6 @@
         "clinvar",
         "constraint",
         "impact",
-        "impact_explanations",
         "structure"
       ]
     },

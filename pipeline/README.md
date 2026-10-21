@@ -23,7 +23,7 @@ app's bundle once had, then uploaded:
 | `assets/mock/gene_<gene>.json` | [`mock/build_gene_record.py`](mock/build_gene_record.py) | `.venv` | the gene record the walk opens on (`record`) |
 | `assets/constraint/<slug>_esm_constraint.json` | [`constraint/score_protein.py`](constraint/score_protein.py) | `pipeline/.esm-venv` | ESM-2 masked marginals, per residue |
 | `assets/impact/<slug>_avi.json` | [`impact/bake_impact.py`](impact/bake_impact.py) | `pipeline/impact/venv` | AlphaGenome Variant Impact, per base |
-| `assets/impact_explanations/<slug>.json` | [`impact/bake_explanations.py`](impact/bake_explanations.py) | `pipeline/impact/venv` | AVI feature attributions (insulin, hemoglobin, CFTR) |
+| `assets/impact_explanations/<slug>.json` | [`impact/bake_explanations.py`](impact/bake_explanations.py) | `pipeline/impact/venv` | AVI feature attributions, all 18 per substitution, and each assay's strongest track (insulin) |
 | `assets/clinvar/<slug>_clinvar.json` | [`clinvar/bake_clinvar.py`](clinvar/bake_clinvar.py) | `.venv` | ClinVar single-base variants on the drawn gene |
 | `assets/models/<slug>.glb` | [`structure/bake.py`](structure/bake.py) | `pipeline/structure/venv` | the fold, as named meshes |
 | `assets/folding/<slug>_folding.json` | [`folding/bake_folding.py`](folding/bake_folding.py) | `pipeline/structure/venv` | each chain's CA trace and secondary structure, residue by residue, in the stored model's frame, for the fold animation |

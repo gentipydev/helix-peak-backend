@@ -13,7 +13,7 @@ def evidence_dir(tmp_path, monkeypatch):
 
 def test_returns_exact_saved_contract(client, evidence_dir, efetch_raising):
     efetch_raising(AssertionError("This route must not call NCBI"))
-    data = {"schema_version": 1, "gene": "INS", "accession": "NG_007114",
+    data = {"schema_version": 2, "gene": "INS", "accession": "NG_007114",
             "scorer": "AVI_SCORE_FEATURE_IMPORTANCE", "positions": {"4999": [[1.2, [[0, -0.4]]]]}}
     (evidence_dir / "insulin.json").write_text(json.dumps(data))
     response = client.get("/gene/NG_007114/INS/impact-explanations")
@@ -110,7 +110,7 @@ def test_no_stored_row_falls_back_to_the_directory(client, evidence_dir, monkeyp
     from app import db
 
     monkeypatch.setattr(db, "pool", _TrackPool(row=None))
-    data = {"schema_version": 1, "gene": "INS", "accession": "NG_007114",
+    data = {"schema_version": 2, "gene": "INS", "accession": "NG_007114",
             "scorer": "AVI_SCORE_FEATURE_IMPORTANCE", "positions": {}}
     (evidence_dir / "insulin.json").write_text(json.dumps(data))
     response = client.get("/gene/NG_007114/INS/impact-explanations")
@@ -123,7 +123,7 @@ def test_a_broken_database_falls_back_rather_than_failing(client, evidence_dir,
     from app import db
 
     monkeypatch.setattr(db, "pool", _TrackPool(failing=True))
-    data = {"schema_version": 1, "gene": "INS", "accession": "NG_007114",
+    data = {"schema_version": 2, "gene": "INS", "accession": "NG_007114",
             "scorer": "AVI_SCORE_FEATURE_IMPORTANCE", "positions": {}}
     (evidence_dir / "insulin.json").write_text(json.dumps(data))
     assert client.get("/gene/NG_007114/INS/impact-explanations").status_code == 200

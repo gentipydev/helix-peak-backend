@@ -78,7 +78,7 @@ def read_impact_explanations(accession: str, gene: str) -> dict:
     # this gene. `Path.glob` yields nothing for a missing directory rather than
     # raising, so without this check an unmounted volume reports "not included
     # for this gene" for every gene -- which is the one thing the 404 must not
-    # be able to mean, because three genes ship expecting a payload.
+    # be able to mean, because a gene ships expecting a payload.
     directory = settings.impact_explanations_dir
     if not directory.is_dir():
         logger.error(
@@ -99,7 +99,7 @@ def read_impact_explanations(accession: str, gene: str) -> dict:
             raise HTTPException(503, _UNAVAILABLE)
         if data.get("accession") != accession or data.get("gene") != gene:
             continue
-        if data.get("schema_version") != 1 or data.get("scorer") != "AVI_SCORE_FEATURE_IMPORTANCE":
+        if data.get("schema_version") != 2 or data.get("scorer") != "AVI_SCORE_FEATURE_IMPORTANCE":
             raise HTTPException(503, _UNAVAILABLE)
         return data
     raise HTTPException(404, "AVI explanations are not included for this gene.")
