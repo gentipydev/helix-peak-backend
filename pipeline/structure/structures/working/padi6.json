@@ -1,0 +1,66 @@
+{
+ "entry": "25YL",
+ "model": "1",
+ "method": [
+  "ELECTRON MICROSCOPY"
+ ],
+ "resolution": 2.8,
+ "revision": "1.0",
+ "file": {
+  "url": "https://www.ebi.ac.uk/pdbe/entry-files/download/25yl_updated.cif",
+  "sha256": "2d5c3361fbc845cd0996f1b2e99db5c3834a03931940ac7ad41bdb2fb8625781"
+ },
+ "policy": 1,
+ "candidate": "25YL:B@9",
+ "scope": "product",
+ "domains": [],
+ "chains": [
+  {
+   "node": "chainA",
+   "product": "Inactive protein-arginine deiminase type-6",
+   "entity": "25YL_1",
+   "asym": "B",
+   "auth": "B",
+   "first": 1,
+   "last": 694,
+   "placed": 685,
+   "offset": 0
+  }
+ ],
+ "bridges": [],
+ "bridges_dropped": [],
+ "secondary_structure": "DSSP in the entry's file from PDBe (struct_conf, struct_sheet_range)",
+ "representation": "cartoon",
+ "sampling": 1,
+ "residues": {
+  "ordered": 685,
+  "disordered": 1,
+  "absent": 8
+ },
+ "sequence_differences": 0,
+ "sha256": {
+  "record": "de02fb15bae5e3a3b0ec054715b5485b09dbc1d7f2583842da52acc1317c9c0b",
+  "translation": "ef887a9869b598cd57c585e73bf6ce6a1b178820a8755077ba2ee843b3ac9fc4",
+  "working_copy": "7f8e6ad3fb50956c75b6d2d11909856f8c22dcf61afc8cc1a10bed1a08980ee2",
+  "glb": "ef71277db395aef90b1df10e334778f9e56033e0cac6a663ea9c0a35717ec535",
+  "scene": "e0ca37e01a17f3f699b10c7584a6b1ab40f314585a5631e6b2a1cf9ac75a5850",
+  "folding": "c8aebcb78bfff38cf3ea37d3737ec5021ec33010ae7156d16576644c121d8537"
+ },
+ "measured": {
+  "bake_seconds": 1.19,
+  "check_seconds": 2.26,
+  "glb_bytes": 825208,
+  "scene_bytes": 235040,
+  "folding_bytes": 91143,
+  "vertices": 29436,
+  "residues": 686,
+  "bridges": 0,
+  "rings": 877,
+  "bind_ms": 61,
+  "frames_ms": 119,
+  "slowest_frame_us": 6761,
+  "largest_step": 0.5576317798188499,
+  "largest_nudge": 0.11907268026095608
+ },
+ "drafted_by": "scripts/draft_curated.py"
+}

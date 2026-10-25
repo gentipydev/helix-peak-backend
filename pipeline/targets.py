@@ -998,6 +998,387 @@ TARGETS: tuple[Target, ...] = (
             bonds=True,
         ),
     ),
+    # The fifth batch (2026-10-25), one for each organ the zoom has no
+    # specimen of, drafted, checked against the record and baked as the third
+    # ten were. Where a record ends a leader where UniProt does not (FGF19,
+    # SP-D), the table follows the record, which is what the walk draws
+    # (R3.2). A row's disulfides are UniProt's, with any its fold draws that
+    # UniProt does not annotate (CASR's and angiopoietin-1's, as LGI1's); a
+    # pair the fold leaves out is named where it sits.
+    Target(
+        slug="s100p", gene="S100P", uniprot="P25815", aa=95,
+        display="S100P",
+        # No RefSeqGene: the span MANE puts the transcript on.
+        source=Source("NC_000004.12", 6_693_878, 6_697_170,
+                      protein_id="NP_005971.1", transcript_id="NM_005980.3"),
+        cleaved=False, chain_label="Protein S100-P",
+        regions=(
+            Region("Protein S100-P", "", 1, 95),
+        ),
+        structure=Structure(
+            # One chain of the calcium-bound pair.
+            pdb="1J55",
+            chains=(Chain("chainA", "A"),),
+            bonds=False,
+        ),
+    ),
+    Target(
+        slug="lactalbumin", gene="LALBA", uniprot="P00709", aa=142,
+        display="Alpha-lactalbumin",
+        # No RefSeqGene: the span MANE puts the transcript on. Minus strand.
+        # The slice names the signal peptide and the chain twice each; the
+        # record keeps one of each, as it keeps one of RLN2's two B chains.
+        source=Source("NC_000012.12", 48_567_684, 48_570_046,
+                      protein_id="NP_002280.1", transcript_id="NM_002289.3"),
+        cleaved=True, chain_label="Alpha-lactalbumin",
+        # The record names one chain after the signal peptide: one cleavage,
+        # so the walk cuts it (R3.4).
+        mature_peptides=True,
+        regions=(
+            Region("Signal peptide", "S", 1, 19, kept=False),
+            Region("Alpha-lactalbumin", "", 20, 142),
+        ),
+        disulfides=((25, 139), (47, 130), (80, 96), (92, 110)),
+        structure=Structure(
+            # One of the crystal's two copies, each with its calcium.
+            pdb="3B0O",
+            chains=(Chain("chainA", "A"),),
+            bonds=True,
+        ),
+    ),
+    Target(
+        slug="slpi", gene="SLPI", uniprot="P03973", aa=132,
+        display="SLPI",
+        source=Source("NG_028137"),
+        cleaved=True, chain_label="Antileukoproteinase",
+        # The record names one chain after the signal peptide: one cleavage,
+        # so the walk cuts it (R3.4).
+        mature_peptides=True,
+        regions=(
+            Region("Signal peptide", "S", 1, 25, kept=False),
+            Region("Antileukoproteinase", "", 26, 132),
+        ),
+        disulfides=((35, 64), (43, 68), (51, 63), (57, 72), (89, 118), (96, 122), (105, 117),
+                    (111, 126)),
+        structure=Structure(
+            # The second WAP domain, 85-131, bound to porcine trypsin: the
+            # half of the chain the entry was made of.
+            pdb="4DOQ", residues=(85, 131),
+            chains=(Chain("chainA", "A"),),
+            bonds=True,
+        ),
+    ),
+    Target(
+        slug="npc2", gene="NPC2", uniprot="P61916", aa=151,
+        display="NPC2",
+        # ISCA2, LTBP2, RAP1AP and MIR4709 share the record; the exact `/gene`
+        # match leaves them out.
+        source=Source("NG_007117"),
+        cleaved=True, chain_label="NPC intracellular cholesterol transporter 2",
+        # The record names one chain after the signal peptide: one cleavage,
+        # so the walk cuts it (R3.4).
+        mature_peptides=True,
+        regions=(
+            Region("Signal peptide", "S", 1, 19, kept=False),
+            Region("NPC intracellular cholesterol transporter 2", "", 20, 151),
+        ),
+        disulfides=((27, 140), (42, 47), (93, 99)),
+        structure=Structure(
+            # One of the entry's two NPC2 chains, holding cholesterol sulfate,
+            # bound to the middle lumenal domain of NPC1.
+            pdb="5KWY",
+            chains=(Chain("chainA", "A"),),
+            bonds=True,
+        ),
+    ),
+    Target(
+        slug="fgf19", gene="FGF19", uniprot="O95750", aa=216,
+        display="FGF19",
+        # No RefSeqGene: the span MANE puts the transcript on. Minus strand.
+        source=Source("NC_000011.10", 69_698_238, 69_704_022,
+                      protein_id="NP_005108.1", transcript_id="NM_005117.3"),
+        cleaved=True, chain_label="Fibroblast growth factor 19",
+        # The record names one chain after the signal peptide: one cleavage,
+        # so the walk cuts it (R3.4).
+        mature_peptides=True,
+        # The record's signal peptide is 1-22 and its chain 23-216, where
+        # UniProt's Signal ends at 24. The table follows the record, which is
+        # what the walk draws.
+        regions=(
+            Region("Signal peptide", "S", 1, 22, kept=False),
+            Region("Fibroblast growth factor 19", "", 23, 216),
+        ),
+        # UniProt's two. 2P23 forms 102-120; its sulfurs of 58-70 lie 2.69 Å
+        # apart, so the fold does not draw that one.
+        disulfides=((58, 70), (102, 120)),
+        structure=Structure(
+            # One chain of the crystal's two, placed from 40 to 175.
+            pdb="2P23",
+            chains=(Chain("chainA", "A"),),
+            bonds=True,
+        ),
+    ),
+    Target(
+        slug="fabp6", gene="FABP6", uniprot="P51161", aa=128,
+        display="FABP6",
+        source=Source("NG_029500"),
+        cleaved=False, chain_label="Gastrotropin",
+        regions=(
+            Region("Initiator methionine", "Met", 1, 1, kept=False),
+            Region("Gastrotropin", "", 2, 128),
+        ),
+        structure=Structure(
+            # The one of the crystal's three chains that holds cholate.
+            pdb="5L8O",
+            chains=(Chain("chainA", "A"),),
+            bonds=False,
+        ),
+    ),
+    Target(
+        slug="surfactantd", gene="SFTPD", uniprot="P35247", aa=375,
+        display="SP-D",
+        source=Source("NG_042218"),
+        cleaved=True, chain_label="Pulmonary surfactant-associated protein D",
+        # The record names the signal peptide, 1-17, and no chain; UniProt's
+        # Signal ends at 20. The table follows the record and names the chain
+        # the signal peptide leaves, which the walk then cuts, as
+        # erythropoietin's (R3.9).
+        mature_peptides=True,
+        regions=(
+            Region("Signal peptide", "S", 1, 17, kept=False),
+            Region("Pulmonary surfactant-associated protein D", "", 18, 375),
+        ),
+        disulfides=((281, 373), (351, 365)),
+        structure=Structure(
+            # The C-type lectin domain and the ten residues before it,
+            # 250-375, from one chain of a trimeric fragment of the neck and
+            # heads, solved with maltose.
+            pdb="1PWB", residues=(250, 375),
+            chains=(Chain("chainA", "A"),),
+            bonds=True,
+        ),
+    ),
+    Target(
+        slug="padi6", gene="PADI6", uniprot="Q6TGC4", aa=694,
+        display="PADI6",
+        # 29,504 bases: past the page budget, so its introns are shortened.
+        source=Source("NG_032943"),
+        cleaved=False, chain_label="Inactive protein-arginine deiminase type-6",
+        regions=(
+            Region("Inactive protein-arginine deiminase type-6", "", 1, 694),
+        ),
+        structure=Structure(
+            # One chain of the pair.
+            pdb="25YL", sampling=1,
+            chains=(Chain("chainA", "A"),),
+            bonds=False,
+        ),
+    ),
+    Target(
+        slug="casr", gene="CASR", uniprot="P41180", aa=1078,
+        display="CaSR",
+        # 107,962 bases: past the page budget, so its introns are shortened.
+        source=Source("NG_009058"),
+        cleaved=True, chain_label="Extracellular calcium-sensing receptor",
+        # The record names one chain after the signal peptide: one cleavage,
+        # so the walk cuts it (R3.4).
+        mature_peptides=True,
+        regions=(
+            Region("Signal peptide", "S", 1, 19, kept=False),
+            Region("Extracellular calcium-sensing receptor", "", 20, 1078),
+        ),
+        # UniProt's eight, and 677-765, which 7M3G forms and UniProt does not
+        # annotate (as LGI1's). Of UniProt's, 437-449 is open in the chain
+        # drawn, its sulfurs 3.6 Å apart, and not drawn; the entry's other
+        # chain forms it.
+        disulfides=((60, 101), (236, 561), (358, 395), (437, 449), (542, 562), (546, 565),
+                    (568, 582), (585, 598), (677, 765)),
+        structure=Structure(
+            # One chain of the active homodimer, solved with calcium, L-Trp,
+            # evocalcet and etelcalcetide, placed from 20 to 887: the tail
+            # inside the cell is not in it.
+            pdb="7M3G", sampling=1,
+            chains=(Chain("chainA", "A"),),
+            bonds=True,
+        ),
+    ),
+    Target(
+        slug="acp3", gene="ACP3", uniprot="P15309", aa=386,
+        display="Prostatic acid phosphatase",
+        # 41,435 bases: past the page budget, so its introns are shortened.
+        source=Source("NG_047032"),
+        cleaved=True, chain_label="Prostatic acid phosphatase",
+        # The record names one chain after the signal peptide: one cleavage,
+        # so the walk cuts it (R3.4). UniProt's PAPf39, 248-286, is a
+        # fragment cut back out of that chain, which the record does not name.
+        mature_peptides=True,
+        regions=(
+            Region("Signal peptide", "S", 1, 32, kept=False),
+            Region("Prostatic acid phosphatase", "", 33, 386),
+        ),
+        disulfides=((161, 372), (347, 351)),
+        structure=Structure(
+            # One chain of the dimer, purified from human semen.
+            pdb="8XJ4", sampling=3,
+            chains=(Chain("chainA", "A"),),
+            bonds=True,
+        ),
+    ),
+    Target(
+        slug="angpt1", gene="ANGPT1", uniprot="Q15389", aa=498,
+        display="Angiopoietin-1",
+        # In mPGES-1's place for the seminal vesicle: PTGES failed AVI's
+        # biology check (its exons score 5.1, its intron interiors 5.3).
+        # 248,437 bases: past the page budget, so its introns are shortened.
+        source=Source("NG_029405"),
+        cleaved=True, chain_label="Angiopoietin-1",
+        # The record names one chain after the signal peptide: one cleavage,
+        # so the walk cuts it (R3.4).
+        mature_peptides=True,
+        regions=(
+            Region("Signal peptide", "S", 1, 15, kept=False),
+            Region("Angiopoietin-1", "", 16, 498),
+        ),
+        # UniProt's two, and 435-437, which 9IVT forms and UniProt does not
+        # annotate (as LGI1's).
+        disulfides=((286, 315), (435, 437), (439, 452)),
+        structure=Structure(
+            # Its receptor-binding domain, 283-498, the fibrinogen-like
+            # domain that binds TIE2, alone in the crystal.
+            pdb="9IVT", residues=(283, 498), sampling=5,
+            chains=(Chain("chainA", "A"),),
+            bonds=True,
+        ),
+    ),
+    Target(
+        slug="loxl2", gene="LOXL2", uniprot="Q9Y4K0", aa=774,
+        display="LOXL2",
+        # 107,224 bases: past the page budget, so its introns are shortened.
+        # No RefSeqGene: the span MANE puts the transcript on. Minus strand;
+        # LOXL2-AS1 shares the slice, and the exact `/gene` match leaves it out.
+        source=Source("NC_000008.11", 23_296_897, 23_404_120,
+                      protein_id="NP_002309.1", transcript_id="NM_002318.3"),
+        cleaved=True, chain_label="Lysyl oxidase homolog 2",
+        # The record names one chain after the signal peptide: one cleavage,
+        # so the walk cuts it (R3.4).
+        mature_peptides=True,
+        regions=(
+            Region("Signal peptide", "S", 1, 25, kept=False),
+            Region("Lysyl oxidase homolog 2", "", 26, 774),
+        ),
+        # UniProt's seventeen. Of the six in the span drawn, 5ZE3 names five:
+        # 351-414's sulfurs lie 1.8 Å apart in it, but the entry does not name
+        # the pair, so the fold does not draw it.
+        disulfides=((84, 148), (97, 158), (128, 138), (218, 291), (231, 301), (265, 275),
+                    (351, 414), (364, 424), (395, 405), (464, 530), (477, 543), (511, 521),
+                    (573, 625), (579, 695), (657, 673), (663, 685), (732, 746)),
+        structure=Structure(
+            # Its third and fourth SRCR domains, 322-554, from the crystal of
+            # the precursor. The entry has Gln at 455, where the record has
+            # the Asn a sugar is joined to.
+            pdb="5ZE3", residues=(322, 554), sampling=4,
+            chains=(Chain("chainA", "A"),),
+            bonds=True,
+        ),
+    ),
+    Target(
+        slug="ckmt2", gene="CKMT2", uniprot="P17540", aa=419,
+        display="CKMT2",
+        # 33,077 bases: past the page budget, so its introns are shortened.
+        # No RefSeqGene: the span MANE puts the transcript on; CKMT2-AS1
+        # shares the slice, and the exact `/gene` match leaves it out. The
+        # slice names the transit peptide and the chain three times each.
+        source=Source("NC_000005.10", 81_233_322, 81_266_398,
+                      protein_id="NP_001093205.1", transcript_id="NM_001099735.2"),
+        cleaved=True, chain_label="Creatine kinase S-type, mitochondrial",
+        # The record names one chain after the transit peptide: one cleavage,
+        # so the walk cuts it (R3.4).
+        mature_peptides=True,
+        regions=(
+            Region("Transit peptide (mitochondrion)", "T", 1, 39, kept=False),
+            Region("Creatine kinase S-type, mitochondrial", "", 40, 419),
+        ),
+        structure=Structure(
+            # One of the crystal's eight chains, each with ADP.
+            pdb="4Z9M", sampling=3,
+            chains=(Chain("chainA", "A"),),
+            bonds=False,
+        ),
+    ),
+    Target(
+        slug="glycodelin", gene="PAEP", uniprot="P09466", aa=180,
+        display="Glycodelin",
+        # No RefSeqGene: the span MANE puts the transcript on.
+        source=Source("NC_000009.12", 135_561_756, 135_566_955,
+                      protein_id="NP_002562.2", transcript_id="NM_002571.4"),
+        cleaved=True, chain_label="Glycodelin",
+        # The slice carries isoform 2's chain inside the exons of the MANE
+        # transcript, over this one's: two chains over one stretch, which one
+        # page of disjoint chains cannot draw, so the walk stops at the
+        # precursor (R3.4), as for uromodulin. What the signal peptide leaves
+        # is the one chain itself, which the record does not name: named here
+        # (R3.3).
+        mature_peptides=False,
+        proprotein="glycodelin",
+        regions=(
+            Region("Signal peptide", "S", 1, 18, kept=False),
+            Region("Glycodelin", "", 19, 180),
+        ),
+        disulfides=((84, 178), (124, 137)),
+        structure=Structure(
+            # One chain of the dimer. The entry has Glu at 46, where the record
+            # has the Asn a sugar is joined to.
+            pdb="4R0B", sampling=7,
+            chains=(Chain("chainA", "A"),),
+            bonds=True,
+        ),
+    ),
+    Target(
+        slug="alox12", gene="ALOX12", uniprot="P18054", aa=663,
+        display="ALOX12",
+        # No RefSeqGene: the span MANE puts the transcript on; ALOX12-AS1
+        # shares the slice, and the exact `/gene` match leaves it out.
+        source=Source("NC_000017.11", 6_996_049, 7_010_754,
+                      protein_id="NP_000688.2", transcript_id="NM_000697.3"),
+        cleaved=False, chain_label="Polyunsaturated fatty acid lipoxygenase ALOX12",
+        regions=(
+            Region("Polyunsaturated fatty acid lipoxygenase ALOX12", "", 1, 663),
+        ),
+        structure=Structure(
+            # One chain of the tetramer: the one that holds oleoyl-CoA, with
+            # its iron. The entry has Ser at 322, where the record has Asn.
+            pdb="8GHE", sampling=1,
+            chains=(Chain("chainA", "A"),),
+            bonds=False,
+        ),
+    ),
+    Target(
+        slug="gas6", gene="GAS6", uniprot="Q14393", aa=678,
+        display="GAS6",
+        # 43,528 bases: past the page budget, so its introns are shortened.
+        # GAS6-AS1 and GAS6-DT share the record; the exact `/gene` match
+        # leaves them out.
+        source=Source("NG_029703"),
+        cleaved=True, chain_label="Growth arrest-specific protein 6",
+        # The record names the signal peptide and no chain: the table names
+        # the chain it leaves, which the walk then cuts, as erythropoietin's
+        # (R3.9).
+        mature_peptides=True,
+        regions=(
+            Region("Signal peptide", "S", 1, 30, kept=False),
+            Region("Growth arrest-specific protein 6", "", 31, 678),
+        ),
+        disulfides=((65, 70), (120, 133), (125, 142), (144, 153), (160, 171), (167, 180),
+                    (182, 195), (201, 212), (207, 221), (223, 236), (242, 251), (247, 260),
+                    (262, 277), (283, 570), (444, 470), (643, 670)),
+        structure=Structure(
+            # Its two laminin G-like domains, 288-675, bound to the AXL
+            # receptor. The Gla and EGF-like domains are not drawn.
+            pdb="5VXZ", residues=(288, 675), sampling=3,
+            chains=(Chain("chainA", "A"),),
+            bonds=True,
+        ),
+    ),
 )
 
 BY_SLUG = {t.slug: t for t in TARGETS}

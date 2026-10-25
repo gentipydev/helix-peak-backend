@@ -1,0 +1,75 @@
+{
+ "entry": "8XJ4",
+ "model": "1",
+ "method": [
+  "ELECTRON MICROSCOPY"
+ ],
+ "resolution": 3.19,
+ "revision": "1.3",
+ "file": {
+  "url": "https://www.ebi.ac.uk/pdbe/entry-files/download/8xj4_updated.cif",
+  "sha256": "d49367e8a919a5bbaa4651ff94f6be8145c5674449ff5f87660ef323537933da"
+ },
+ "policy": 1,
+ "candidate": "8XJ4:A@31",
+ "scope": "product",
+ "domains": [],
+ "chains": [
+  {
+   "node": "chainA",
+   "product": "Prostatic acid phosphatase",
+   "entity": "8XJ4_1",
+   "asym": "A",
+   "auth": "B",
+   "first": 33,
+   "last": 386,
+   "placed": 345,
+   "offset": 0
+  }
+ ],
+ "bridges": [
+  [
+   161,
+   372
+  ],
+  [
+   347,
+   351
+  ]
+ ],
+ "bridges_dropped": [],
+ "secondary_structure": "DSSP in the entry's file from PDBe (struct_conf, struct_sheet_range)",
+ "representation": "cartoon",
+ "sampling": 3,
+ "residues": {
+  "ordered": 345,
+  "disordered": 0,
+  "absent": 9
+ },
+ "sequence_differences": 0,
+ "sha256": {
+  "record": "94bbce5d8120a3126c22189b79141be5bb9746597c1e6ea5afe42890f754ee04",
+  "translation": "3c034726488da0d983ef74707427fe347f18653c3a81156061d192a6179ac130",
+  "working_copy": "b04313b1f1bacb73e1a2411df8dadf2bae754a2eb5c1c4156a83a5ab8dbe1588",
+  "glb": "e92b254e51af2a43beaede4e7a95737e5ad3ba18c3ba226c049d2e2c6a1b550a",
+  "scene": "72b185055c5131d383883b93f235c627db60acf29532f493c07ccf1e7e282569",
+  "folding": "a4724fe6110467486a521716beb6f9cb4caf240a2e6475b9d74ff7c5488abbec"
+ },
+ "measured": {
+  "bake_seconds": 1.2,
+  "check_seconds": 2.07,
+  "glb_bytes": 1366748,
+  "scene_bytes": 395560,
+  "folding_bytes": 50097,
+  "vertices": 48356,
+  "residues": 345,
+  "bridges": 2,
+  "rings": 1080,
+  "bind_ms": 77,
+  "frames_ms": 132,
+  "slowest_frame_us": 1741,
+  "largest_step": 0.959971082273603,
+  "largest_nudge": 0.0
+ },
+ "drafted_by": "scripts/draft_curated.py"
+}

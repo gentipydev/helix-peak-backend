@@ -1,0 +1,66 @@
+{
+ "entry": "8GHE",
+ "model": "1",
+ "method": [
+  "ELECTRON MICROSCOPY"
+ ],
+ "resolution": 2.05,
+ "revision": "1.1",
+ "file": {
+  "url": "https://www.ebi.ac.uk/pdbe/entry-files/download/8ghe_updated.cif",
+  "sha256": "1da4a04fef928a8fba2faa3aa495fecfad0476940a5d4cb0d3b821425ca150dc"
+ },
+ "policy": 1,
+ "candidate": "8GHE:D@2",
+ "scope": "product",
+ "domains": [],
+ "chains": [
+  {
+   "node": "chainA",
+   "product": "Polyunsaturated fatty acid lipoxygenase ALOX12",
+   "entity": "8GHE_1",
+   "asym": "D",
+   "auth": "A",
+   "first": 1,
+   "last": 663,
+   "placed": 662,
+   "offset": 0
+  }
+ ],
+ "bridges": [],
+ "bridges_dropped": [],
+ "secondary_structure": "DSSP in the entry's file from PDBe (struct_conf, struct_sheet_range)",
+ "representation": "cartoon",
+ "sampling": 1,
+ "residues": {
+  "ordered": 662,
+  "disordered": 0,
+  "absent": 1
+ },
+ "sequence_differences": 1,
+ "sha256": {
+  "record": "cf9a5baef8199d7720ffab8216ca5dacfd3a4965ec4fc9462d968ba24aea451a",
+  "translation": "b8c0da372cb95f619176f62b3fc72e6e5d9f61e414d27b8729e4cf94beee0cf4",
+  "working_copy": "ba9cff0c0345b10523a21474da447ea92185c16709057adc5b9575f4097d75d0",
+  "glb": "878c38020469591fc8a8e02adc9ff1bc0d821efa784cd4e078ca8e4c4de7abe3",
+  "scene": "79f79b3f12163cdde1bfebd9a1d2dc4a7e7f8a529853f5f5942b87f511745e1d",
+  "folding": "d0a68bf8574518b3e47ea1ba4a005e5bdbe4232ef8b2ed29b3dc92d5edc5c476"
+ },
+ "measured": {
+  "bake_seconds": 1.29,
+  "check_seconds": 2.13,
+  "glb_bytes": 921812,
+  "scene_bytes": 261848,
+  "folding_bytes": 92753,
+  "vertices": 32886,
+  "residues": 662,
+  "bridges": 0,
+  "rings": 763,
+  "bind_ms": 53,
+  "frames_ms": 105,
+  "slowest_frame_us": 6032,
+  "largest_step": 0.33298168641719256,
+  "largest_nudge": 0.0029185241691930264
+ },
+ "drafted_by": "scripts/draft_curated.py"
+}

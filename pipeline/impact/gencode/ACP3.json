@@ -1,0 +1,361 @@
+{
+  "cds": [
+    {
+      "end": 132317576,
+      "start": 132317456,
+      "width": 121
+    },
+    {
+      "end": 132328362,
+      "start": 132328266,
+      "width": 97
+    },
+    {
+      "end": 132331733,
+      "start": 132331646,
+      "width": 88
+    },
+    {
+      "end": 132332344,
+      "start": 132332191,
+      "width": 154
+    },
+    {
+      "end": 132337554,
+      "start": 132337455,
+      "width": 100
+    },
+    {
+      "end": 132342644,
+      "start": 132342551,
+      "width": 94
+    },
+    {
+      "end": 132345059,
+      "start": 132344926,
+      "width": 134
+    },
+    {
+      "end": 132350002,
+      "start": 132349919,
+      "width": 84
+    },
+    {
+      "end": 132352823,
+      "start": 132352719,
+      "width": 105
+    },
+    {
+      "end": 132356875,
+      "start": 132356685,
+      "width": 191
+    }
+  ],
+  "chromosome": "chr3",
+  "end": 132358841,
+  "exons": [
+    {
+      "acceptor": 132317406,
+      "chromosome": "chr3",
+      "donor": 132317576,
+      "end": 132317576,
+      "exon_number": 1,
+      "overlaps_variant": false,
+      "start": 132317406,
+      "strand": "+",
+      "width": 171
+    },
+    {
+      "acceptor": 132328266,
+      "chromosome": "chr3",
+      "donor": 132328362,
+      "end": 132328362,
+      "exon_number": 2,
+      "overlaps_variant": false,
+      "start": 132328266,
+      "strand": "+",
+      "width": 97
+    },
+    {
+      "acceptor": 132331646,
+      "chromosome": "chr3",
+      "donor": 132331733,
+      "end": 132331733,
+      "exon_number": 3,
+      "overlaps_variant": false,
+      "start": 132331646,
+      "strand": "+",
+      "width": 88
+    },
+    {
+      "acceptor": 132332191,
+      "chromosome": "chr3",
+      "donor": 132332344,
+      "end": 132332344,
+      "exon_number": 4,
+      "overlaps_variant": false,
+      "start": 132332191,
+      "strand": "+",
+      "width": 154
+    },
+    {
+      "acceptor": 132337455,
+      "chromosome": "chr3",
+      "donor": 132337554,
+      "end": 132337554,
+      "exon_number": 5,
+      "overlaps_variant": false,
+      "start": 132337455,
+      "strand": "+",
+      "width": 100
+    },
+    {
+      "acceptor": 132342551,
+      "chromosome": "chr3",
+      "donor": 132342644,
+      "end": 132342644,
+      "exon_number": 6,
+      "overlaps_variant": false,
+      "start": 132342551,
+      "strand": "+",
+      "width": 94
+    },
+    {
+      "acceptor": 132344926,
+      "chromosome": "chr3",
+      "donor": 132345059,
+      "end": 132345059,
+      "exon_number": 7,
+      "overlaps_variant": false,
+      "start": 132344926,
+      "strand": "+",
+      "width": 134
+    },
+    {
+      "acceptor": 132349919,
+      "chromosome": "chr3",
+      "donor": 132350002,
+      "end": 132350002,
+      "exon_number": 8,
+      "overlaps_variant": false,
+      "start": 132349919,
+      "strand": "+",
+      "width": 84
+    },
+    {
+      "acceptor": 132352719,
+      "chromosome": "chr3",
+      "donor": 132352823,
+      "end": 132352823,
+      "exon_number": 9,
+      "overlaps_variant": false,
+      "start": 132352719,
+      "strand": "+",
+      "width": 105
+    },
+    {
+      "acceptor": 132356685,
+      "chromosome": "chr3",
+      "donor": 132358841,
+      "end": 132358841,
+      "exon_number": 10,
+      "overlaps_variant": false,
+      "start": 132356685,
+      "strand": "+",
+      "width": 2157
+    }
+  ],
+  "gene_id": "ENSG00000014257.17",
+  "gene_name": "ACP3",
+  "is_mane_select": true,
+  "junctions": [
+    {
+      "atlas_url": null,
+      "downstream_exon": 2,
+      "intron_length": 10689,
+      "junction_end": 132328266,
+      "junction_start": 132317576,
+      "junction_str": "132317576:132328266",
+      "score_id": null,
+      "type": "Canonical Intron 1",
+      "upstream_exon": 1
+    },
+    {
+      "atlas_url": null,
+      "downstream_exon": 3,
+      "intron_length": 3283,
+      "junction_end": 132331646,
+      "junction_start": 132328362,
+      "junction_str": "132328362:132331646",
+      "score_id": null,
+      "type": "Canonical Intron 2",
+      "upstream_exon": 2
+    },
+    {
+      "atlas_url": null,
+      "downstream_exon": 4,
+      "intron_length": 457,
+      "junction_end": 132332191,
+      "junction_start": 132331733,
+      "junction_str": "132331733:132332191",
+      "score_id": null,
+      "type": "Canonical Intron 3",
+      "upstream_exon": 3
+    },
+    {
+      "atlas_url": null,
+      "downstream_exon": 5,
+      "intron_length": 5110,
+      "junction_end": 132337455,
+      "junction_start": 132332344,
+      "junction_str": "132332344:132337455",
+      "score_id": null,
+      "type": "Canonical Intron 4",
+      "upstream_exon": 4
+    },
+    {
+      "atlas_url": null,
+      "downstream_exon": 6,
+      "intron_length": 4996,
+      "junction_end": 132342551,
+      "junction_start": 132337554,
+      "junction_str": "132337554:132342551",
+      "score_id": null,
+      "type": "Canonical Intron 5",
+      "upstream_exon": 5
+    },
+    {
+      "atlas_url": null,
+      "downstream_exon": 7,
+      "intron_length": 2281,
+      "junction_end": 132344926,
+      "junction_start": 132342644,
+      "junction_str": "132342644:132344926",
+      "score_id": null,
+      "type": "Canonical Intron 6",
+      "upstream_exon": 6
+    },
+    {
+      "atlas_url": null,
+      "downstream_exon": 8,
+      "intron_length": 4859,
+      "junction_end": 132349919,
+      "junction_start": 132345059,
+      "junction_str": "132345059:132349919",
+      "score_id": null,
+      "type": "Canonical Intron 7",
+      "upstream_exon": 7
+    },
+    {
+      "atlas_url": null,
+      "downstream_exon": 9,
+      "intron_length": 2716,
+      "junction_end": 132352719,
+      "junction_start": 132350002,
+      "junction_str": "132350002:132352719",
+      "score_id": null,
+      "type": "Canonical Intron 8",
+      "upstream_exon": 8
+    },
+    {
+      "atlas_url": null,
+      "downstream_exon": 10,
+      "intron_length": 3861,
+      "junction_end": 132356685,
+      "junction_start": 132352823,
+      "junction_str": "132352823:132356685",
+      "score_id": null,
+      "type": "Canonical Intron 9",
+      "upstream_exon": 9
+    },
+    {
+      "downstream_exon": 3,
+      "intron_length": 14069,
+      "junction_end": 132331646,
+      "junction_start": 132317576,
+      "junction_str": "132317576:132331646",
+      "type": "Exon 2 Skipping",
+      "upstream_exon": 1
+    },
+    {
+      "downstream_exon": 4,
+      "intron_length": 3828,
+      "junction_end": 132332191,
+      "junction_start": 132328362,
+      "junction_str": "132328362:132332191",
+      "type": "Exon 3 Skipping",
+      "upstream_exon": 2
+    },
+    {
+      "downstream_exon": 5,
+      "intron_length": 5721,
+      "junction_end": 132337455,
+      "junction_start": 132331733,
+      "junction_str": "132331733:132337455",
+      "type": "Exon 4 Skipping",
+      "upstream_exon": 3
+    },
+    {
+      "downstream_exon": 6,
+      "intron_length": 10206,
+      "junction_end": 132342551,
+      "junction_start": 132332344,
+      "junction_str": "132332344:132342551",
+      "type": "Exon 5 Skipping",
+      "upstream_exon": 4
+    },
+    {
+      "downstream_exon": 7,
+      "intron_length": 7371,
+      "junction_end": 132344926,
+      "junction_start": 132337554,
+      "junction_str": "132337554:132344926",
+      "type": "Exon 6 Skipping",
+      "upstream_exon": 5
+    },
+    {
+      "downstream_exon": 8,
+      "intron_length": 7274,
+      "junction_end": 132349919,
+      "junction_start": 132342644,
+      "junction_str": "132342644:132349919",
+      "type": "Exon 7 Skipping",
+      "upstream_exon": 6
+    },
+    {
+      "downstream_exon": 9,
+      "intron_length": 7659,
+      "junction_end": 132352719,
+      "junction_start": 132345059,
+      "junction_str": "132345059:132352719",
+      "type": "Exon 8 Skipping",
+      "upstream_exon": 7
+    },
+    {
+      "downstream_exon": 10,
+      "intron_length": 6682,
+      "junction_end": 132356685,
+      "junction_start": 132350002,
+      "junction_str": "132350002:132356685",
+      "type": "Exon 9 Skipping",
+      "upstream_exon": 8
+    }
+  ],
+  "num_exons": 10,
+  "start": 132317406,
+  "strand": "+",
+  "transcript_id": "ENST00000336375.10",
+  "transcript_type": "protein_coding",
+  "utr": [
+    {
+      "end": 132317456,
+      "start": 132317406,
+      "width": 51
+    },
+    {
+      "end": 132358841,
+      "start": 132356875,
+      "width": 1967
+    }
+  ]
+}

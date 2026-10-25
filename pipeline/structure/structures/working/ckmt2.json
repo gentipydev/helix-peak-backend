@@ -1,0 +1,66 @@
+{
+ "entry": "4Z9M",
+ "model": "1",
+ "method": [
+  "X-RAY DIFFRACTION"
+ ],
+ "resolution": 2.1,
+ "revision": "1.2",
+ "file": {
+  "url": "https://www.ebi.ac.uk/pdbe/entry-files/download/4z9m_updated.cif",
+  "sha256": "0477e5a853f1cedeb1e12a7068caa2f72932f8880625913f08b66c5b41842e11"
+ },
+ "policy": 1,
+ "candidate": "4Z9M:E@27",
+ "scope": "product",
+ "domains": [],
+ "chains": [
+  {
+   "node": "chainA",
+   "product": "Creatine kinase S-type, mitochondrial",
+   "entity": "4Z9M_1",
+   "asym": "E",
+   "auth": "E",
+   "first": 40,
+   "last": 419,
+   "placed": 369,
+   "offset": 0
+  }
+ ],
+ "bridges": [],
+ "bridges_dropped": [],
+ "secondary_structure": "DSSP in the entry's file from PDBe (struct_conf, struct_sheet_range)",
+ "representation": "cartoon",
+ "sampling": 3,
+ "residues": {
+  "ordered": 369,
+  "disordered": 8,
+  "absent": 3
+ },
+ "sequence_differences": 0,
+ "sha256": {
+  "record": "f0c3893d34fe852e35d9963a497ae326943a1e08b496d832431e34c5cd845d35",
+  "translation": "ef95d8444aacfda862a63ef165ce85195ca317b5b63840b410d1b04bc46d72df",
+  "working_copy": "e01a84d615d31655fc97b3f0b68e73248856d001df13da94e8e64cb5df5d06b0",
+  "glb": "9042587c0ba83e79d14db0bf9a1d5e23b884108bc3d0b4c159cfa693878979fd",
+  "scene": "fb19a1e7f14c67730409d103408f482f80075170099d3dee86005c111edcfd67",
+  "folding": "a23484e611846f1dc215be0e18aec71bad0a8ecc65549fb64d9d7accf25f7b53"
+ },
+ "measured": {
+  "bake_seconds": 1.21,
+  "check_seconds": 2.06,
+  "glb_bytes": 1374240,
+  "scene_bytes": 392592,
+  "folding_bytes": 51237,
+  "vertices": 49044,
+  "residues": 377,
+  "bridges": 0,
+  "rings": 1167,
+  "bind_ms": 76,
+  "frames_ms": 133,
+  "slowest_frame_us": 2882,
+  "largest_step": 0.7322083907881729,
+  "largest_nudge": 0.0
+ },
+ "drafted_by": "scripts/draft_curated.py"
+}

@@ -1,0 +1,145 @@
+{
+  "cds": [
+    {
+      "end": 48570020,
+      "start": 48569887,
+      "width": 134
+    },
+    {
+      "end": 48569240,
+      "start": 48569081,
+      "width": 160
+    },
+    {
+      "end": 48568592,
+      "start": 48568516,
+      "width": 77
+    },
+    {
+      "end": 48568017,
+      "start": 48567959,
+      "width": 59
+    }
+  ],
+  "chromosome": "chr12",
+  "end": 48570046,
+  "exons": [
+    {
+      "acceptor": 48570046,
+      "chromosome": "chr12",
+      "donor": 48569887,
+      "end": 48570046,
+      "exon_number": 1,
+      "overlaps_variant": false,
+      "start": 48569887,
+      "strand": "-",
+      "width": 160
+    },
+    {
+      "acceptor": 48569240,
+      "chromosome": "chr12",
+      "donor": 48569081,
+      "end": 48569240,
+      "exon_number": 2,
+      "overlaps_variant": false,
+      "start": 48569081,
+      "strand": "-",
+      "width": 160
+    },
+    {
+      "acceptor": 48568592,
+      "chromosome": "chr12",
+      "donor": 48568516,
+      "end": 48568592,
+      "exon_number": 3,
+      "overlaps_variant": false,
+      "start": 48568516,
+      "strand": "-",
+      "width": 77
+    },
+    {
+      "acceptor": 48568017,
+      "chromosome": "chr12",
+      "donor": 48567683,
+      "end": 48568017,
+      "exon_number": 4,
+      "overlaps_variant": false,
+      "start": 48567683,
+      "strand": "-",
+      "width": 335
+    }
+  ],
+  "gene_id": "ENSG00000167531.6",
+  "gene_name": "LALBA",
+  "is_mane_select": true,
+  "junctions": [
+    {
+      "atlas_url": null,
+      "downstream_exon": 2,
+      "intron_length": 646,
+      "junction_end": 48569887,
+      "junction_start": 48569240,
+      "junction_str": "48569240:48569887",
+      "score_id": null,
+      "type": "Canonical Intron 1",
+      "upstream_exon": 1
+    },
+    {
+      "atlas_url": null,
+      "downstream_exon": 3,
+      "intron_length": 488,
+      "junction_end": 48569081,
+      "junction_start": 48568592,
+      "junction_str": "48568592:48569081",
+      "score_id": null,
+      "type": "Canonical Intron 2",
+      "upstream_exon": 2
+    },
+    {
+      "atlas_url": null,
+      "downstream_exon": 4,
+      "intron_length": 498,
+      "junction_end": 48568516,
+      "junction_start": 48568017,
+      "junction_str": "48568017:48568516",
+      "score_id": null,
+      "type": "Canonical Intron 3",
+      "upstream_exon": 3
+    },
+    {
+      "downstream_exon": 3,
+      "intron_length": 1294,
+      "junction_end": 48569887,
+      "junction_start": 48568592,
+      "junction_str": "48568592:48569887",
+      "type": "Exon 2 Skipping",
+      "upstream_exon": 1
+    },
+    {
+      "downstream_exon": 4,
+      "intron_length": 1063,
+      "junction_end": 48569081,
+      "junction_start": 48568017,
+      "junction_str": "48568017:48569081",
+      "type": "Exon 3 Skipping",
+      "upstream_exon": 2
+    }
+  ],
+  "num_exons": 4,
+  "start": 48567683,
+  "strand": "-",
+  "transcript_id": "ENST00000301046.6",
+  "transcript_type": "protein_coding",
+  "utr": [
+    {
+      "end": 48570046,
+      "start": 48570020,
+      "width": 27
+    },
+    {
+      "end": 48567959,
+      "start": 48567683,
+      "width": 277
+    }
+  ]
+}

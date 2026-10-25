@@ -1,0 +1,83 @@
+{
+ "entry": "3B0O",
+ "model": "1",
+ "method": [
+  "X-RAY DIFFRACTION"
+ ],
+ "resolution": 1.61,
+ "revision": "1.2",
+ "file": {
+  "url": "https://www.ebi.ac.uk/pdbe/entry-files/download/3b0o_updated.cif",
+  "sha256": "01da356b337f5e38f61076db62614691468cc394f517d8e056a63c03d463a89e"
+ },
+ "policy": 1,
+ "candidate": "3B0O:A@21",
+ "scope": "product",
+ "domains": [],
+ "chains": [
+  {
+   "node": "chainA",
+   "product": "Alpha-lactalbumin",
+   "entity": "3B0O_1",
+   "asym": "A",
+   "auth": "A",
+   "first": 20,
+   "last": 142,
+   "placed": 119,
+   "offset": 19
+  }
+ ],
+ "bridges": [
+  [
+   25,
+   139
+  ],
+  [
+   47,
+   130
+  ],
+  [
+   80,
+   96
+  ],
+  [
+   92,
+   110
+  ]
+ ],
+ "bridges_dropped": [],
+ "secondary_structure": "DSSP in the entry's file from PDBe (struct_conf, struct_sheet_range)",
+ "representation": "cartoon",
+ "sampling": 8,
+ "residues": {
+  "ordered": 119,
+  "disordered": 3,
+  "absent": 1
+ },
+ "sequence_differences": 0,
+ "sha256": {
+  "record": "04ac04e3b07e4014bde87a4fc3ff109f7027c7e220bed8e87b138cc4e5ddf49e",
+  "translation": "d03585c5777f6507612e36fb3edc945884fab3243188a6644ffb48afe47b7a8f",
+  "working_copy": "886b0074c3f00dfdd792a25fc311ecdfb5feb2076ec9c7ca954e88b47028bd33",
+  "glb": "4d2904bb1075dae275f05f2cfd6961aebc5c6fe3f2ae4e4e4440919a18f83343",
+  "scene": "1f20ab66624c3fefe24866a3dd04aede32af26afa7cd4e80ed46a4dd6995b6dd",
+  "folding": "820b6a80821e7c049dbf2f8f8b31c18424e1516212b72be8a5dd4917d548b5c2"
+ },
+ "measured": {
+  "bake_seconds": 0.92,
+  "check_seconds": 2.26,
+  "glb_bytes": 1260432,
+  "scene_bytes": 371848,
+  "folding_bytes": 19769,
+  "vertices": 44164,
+  "residues": 122,
+  "bridges": 4,
+  "rings": 973,
+  "bind_ms": 80,
+  "frames_ms": 141,
+  "slowest_frame_us": 3895,
+  "largest_step": 0.23499371553969273,
+  "largest_nudge": 0.0
+ },
+ "drafted_by": "scripts/draft_curated.py"
+}

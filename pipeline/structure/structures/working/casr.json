@@ -1,0 +1,99 @@
+{
+ "entry": "7M3G",
+ "model": "1",
+ "method": [
+  "ELECTRON MICROSCOPY"
+ ],
+ "resolution": 2.5,
+ "revision": "1.4",
+ "file": {
+  "url": "https://www.ebi.ac.uk/pdbe/entry-files/download/7m3g_updated.cif",
+  "sha256": "81752322a728c694f7591ee3534ee65b6e4bbe2ef15ff41476959e1c15a8fd57"
+ },
+ "policy": 1,
+ "candidate": "7M3G:A@20",
+ "scope": "product",
+ "domains": [],
+ "chains": [
+  {
+   "node": "chainA",
+   "product": "Extracellular calcium-sensing receptor",
+   "entity": "7M3G_1",
+   "asym": "A",
+   "auth": "A",
+   "first": 20,
+   "last": 1078,
+   "placed": 821,
+   "offset": 0
+  }
+ ],
+ "bridges": [
+  [
+   60,
+   101
+  ],
+  [
+   236,
+   561
+  ],
+  [
+   358,
+   395
+  ],
+  [
+   542,
+   562
+  ],
+  [
+   546,
+   565
+  ],
+  [
+   568,
+   582
+  ],
+  [
+   585,
+   598
+  ],
+  [
+   677,
+   765
+  ]
+ ],
+ "bridges_dropped": [],
+ "secondary_structure": "DSSP in the entry's file from PDBe (struct_conf, struct_sheet_range)",
+ "representation": "cartoon",
+ "sampling": 1,
+ "residues": {
+  "ordered": 821,
+  "disordered": 54,
+  "absent": 184
+ },
+ "sequence_differences": 0,
+ "sha256": {
+  "record": "215a06ff02017ca9e7c000b4113f0db3cbc8b8505b1999b1dbc272c3c5ebc573",
+  "translation": "6c2adc8809792b84c0c5bc19ff04e45e74db85abcf49bcaf002a0c6627f2e06c",
+  "working_copy": "f91600c16b12a7c11f50e9a09aaf6a48810364f0cb38e523bb52e636b593aa80",
+  "glb": "9a246973f4f01d59d7a86e8e7e50782a53da3951f96a65dc1dc75e2faa95e228",
+  "scene": "0af2450f41039d0b2b3638c2df7adfd81afcfd7432d1b74c0869297b09c6a20d",
+  "folding": "303c43f2025b53c7b2633f3ab3aeeea725ab0fe5339cece588c5fcbd732b800c"
+ },
+ "measured": {
+  "bake_seconds": 1.33,
+  "check_seconds": 2.2,
+  "glb_bytes": 1224704,
+  "scene_bytes": 358232,
+  "folding_bytes": 129153,
+  "vertices": 42098,
+  "residues": 875,
+  "bridges": 8,
+  "rings": 964,
+  "bind_ms": 83,
+  "frames_ms": 159,
+  "slowest_frame_us": 1841,
+  "largest_step": 1.0281244473802194,
+  "largest_nudge": 0.05150217250223932
+ },
+ "drafted_by": "scripts/draft_curated.py"
+}

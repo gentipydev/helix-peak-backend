@@ -1,0 +1,79 @@
+{
+ "entry": "5KWY",
+ "model": "1",
+ "method": [
+  "X-RAY DIFFRACTION"
+ ],
+ "resolution": 2.405,
+ "revision": "1.5",
+ "file": {
+  "url": "https://www.ebi.ac.uk/pdbe/entry-files/download/5kwy_updated.cif",
+  "sha256": "511ee5f83918daa57c419c9cd1052d31d9893263ae5a569f32e1e333196b3ace"
+ },
+ "policy": 1,
+ "candidate": "5KWY:C@20",
+ "scope": "product",
+ "domains": [],
+ "chains": [
+  {
+   "node": "chainA",
+   "product": "NPC intracellular cholesterol transporter 2",
+   "entity": "5KWY_2",
+   "asym": "C",
+   "auth": "C",
+   "first": 20,
+   "last": 151,
+   "placed": 132,
+   "offset": 0
+  }
+ ],
+ "bridges": [
+  [
+   27,
+   140
+  ],
+  [
+   42,
+   47
+  ],
+  [
+   93,
+   99
+  ]
+ ],
+ "bridges_dropped": [],
+ "secondary_structure": "DSSP in the entry's file from PDBe (struct_conf, struct_sheet_range)",
+ "representation": "cartoon",
+ "sampling": 8,
+ "residues": {
+  "ordered": 132,
+  "disordered": 0,
+  "absent": 0
+ },
+ "sequence_differences": 0,
+ "sha256": {
+  "record": "4776c15119f7df5b982f020ed094e332ac2178ca9d814845132e3e9aa0d7e90d",
+  "translation": "5dab70c3c4bba9e040d3c6244326da671d56ba2c8176fca497bc4d17e33b4068",
+  "working_copy": "237ab9b78a363bce9c85728fe50bb7d083cf93d44dd610b08e7851379469204d",
+  "glb": "d8756778f28141972f71adc82ab2d710d8a2eb5fd1a31c061c4cf1ac934a82d1",
+  "scene": "7e3d3fd4543bdac2e23c1c93d2306eb67052e7f7206c4be1451c3a08b2d70545",
+  "folding": "7f60b84deb4fc09796608c0e4c12c1cec4ab264ae3891ae8d564cc6eedd920a5"
+ },
+ "measured": {
+  "bake_seconds": 0.86,
+  "check_seconds": 2.06,
+  "glb_bytes": 963804,
+  "scene_bytes": 280112,
+  "folding_bytes": 20423,
+  "vertices": 33768,
+  "residues": 132,
+  "bridges": 3,
+  "rings": 1077,
+  "bind_ms": 72,
+  "frames_ms": 121,
+  "slowest_frame_us": 1673,
+  "largest_step": 0.4139116905801625,
+  "largest_nudge": 0.0
+ },
+ "drafted_by": "scripts/draft_curated.py"
+}

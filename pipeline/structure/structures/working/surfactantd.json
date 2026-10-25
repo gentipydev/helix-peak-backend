@@ -1,0 +1,77 @@
+{
+ "entry": "1PWB",
+ "model": "1",
+ "method": [
+  "X-RAY DIFFRACTION"
+ ],
+ "resolution": 1.4,
+ "revision": "2.3",
+ "file": {
+  "url": "https://www.ebi.ac.uk/pdbe/entry-files/download/1pwb_updated.cif",
+  "sha256": "e92f554a252987ede360473cff1ac1203e9b5608c7911266ec9426bd39666c4f"
+ },
+ "policy": 1,
+ "candidate": "1PWB:A@199:domain",
+ "scope": "domain",
+ "domains": [
+  "C-type lectin"
+ ],
+ "chains": [
+  {
+   "node": "chainA",
+   "product": "Pulmonary surfactant-associated protein D",
+   "entity": "1PWB_1",
+   "asym": "A",
+   "auth": "A",
+   "first": 250,
+   "last": 375,
+   "placed": 126,
+   "offset": 20
+  }
+ ],
+ "bridges": [
+  [
+   281,
+   373
+  ],
+  [
+   351,
+   365
+  ]
+ ],
+ "bridges_dropped": [],
+ "secondary_structure": "DSSP in the entry's file from PDBe (struct_conf, struct_sheet_range)",
+ "representation": "cartoon",
+ "sampling": 8,
+ "residues": {
+  "ordered": 126,
+  "disordered": 0,
+  "absent": 0
+ },
+ "sequence_differences": 0,
+ "sha256": {
+  "record": "c7f1b4f2c71fceddf37c9b0fdbebfaecedef6ea9a5e9d8043322b8c5bcb5bb01",
+  "translation": "3bd69294e0d1ed7cf10b17d8f6cdfd788fbbbb83f1a05b38eaa01c42003984e4",
+  "working_copy": "299a6f0d27b8f01e9da362093642457d98d4cde35d7613f51a15e4fdf41cc5c3",
+  "glb": "314dfaebe31c6481e8e2ae9bb61f6a2b4b7612e635fc9d3e8b8fa00b702cc92b",
+  "scene": "d66d1520bea3e2309d2d158a829b0ce0b044135c5f2bdf9bbaf0c455a15c7d85",
+  "folding": "f6722a4290994daaec14547a46d3e99e40c0273eb3294076042acc04830e52be"
+ },
+ "measured": {
+  "bake_seconds": 0.91,
+  "check_seconds": 2.09,
+  "glb_bytes": 1131384,
+  "scene_bytes": 333896,
+  "folding_bytes": 19059,
+  "vertices": 39950,
+  "residues": 126,
+  "bridges": 2,
+  "rings": 1027,
+  "bind_ms": 79,
+  "frames_ms": 115,
+  "slowest_frame_us": 742,
+  "largest_step": 0.667477602179492,
+  "largest_nudge": 0.0
+ },
+ "drafted_by": "scripts/draft_curated.py"
+}

@@ -1510,6 +1510,657 @@
         "impact",
         "structure"
       ]
+    },
+    {
+      "slug": "s100p",
+      "catalog_order": 38,
+      "display": "S100P",
+      "gene": "S100P",
+      "uniprot": "P25815",
+      "accession": "NC_000004.12",
+      "summary": "A calcium sensor of the urothelium; a marker of bladder and pancreatic cancers.",
+      "chain": "S100P",
+      "facts": {
+        "residues": 95,
+        "exons": 2,
+        "chains": 1,
+        "bridges": 0
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        }
+      ],
+      "structure": {
+        "pdb": "1J55",
+        "modelled": null,
+        "label": "the subunit",
+        "count": 95,
+        "unit": "residues",
+        "sentence": "One chain of the calcium-bound pair, with its two EF-hands.",
+        "semantics": "One S100P chain from its calcium-bound homodimer, solved by X-ray at 2.0 Å: two EF-hands. 88 of its 95 residues are placed; the hinge between the hands, 46 to 51, and the last residue are not. The other chain and the calcium are not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "lactalbumin",
+      "catalog_order": 39,
+      "display": "Alpha-lactalbumin",
+      "gene": "LALBA",
+      "uniprot": "P00709",
+      "accession": "NC_000012.12",
+      "summary": "Turns β1,4-galactosyltransferase into lactose synthase, the enzyme of milk sugar.",
+      "chain": null,
+      "facts": {
+        "residues": 142,
+        "exons": 4,
+        "chains": 1,
+        "bridges": 4
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "3B0O",
+        "modelled": null,
+        "label": "the fold",
+        "count": 123,
+        "unit": "residues",
+        "sentence": "The calcium-bound fold, held by four disulfide bridges.",
+        "semantics": "Human alpha-lactalbumin, solved by X-ray at 1.61 Å with calcium bound: one of the crystal's two copies. 119 of the 123 residues after the signal peptide are placed, and its four disulfide bridges are drawn. The calcium is not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "slpi",
+      "catalog_order": 40,
+      "display": "SLPI",
+      "gene": "SLPI",
+      "uniprot": "P03973",
+      "accession": "NG_028137",
+      "summary": "Blocks neutrophil elastase on mucosal surfaces; plentiful in cervical mucus.",
+      "chain": null,
+      "facts": {
+        "residues": 132,
+        "exons": 4,
+        "chains": 1,
+        "bridges": 8
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "4DOQ",
+        "modelled": [
+          85,
+          131
+        ],
+        "label": "the second WAP domain",
+        "count": 47,
+        "unit": "residues",
+        "sentence": "The second of its two WAP domains, which carries the inhibitory loop.",
+        "semantics": "The second WAP domain of SLPI, residues 85 to 131, as it binds porcine trypsin, solved by X-ray at 2.0 Å. Every residue is placed, and its four disulfide bridges are drawn. The first half of the chain, with the other WAP domain, and the trypsin are not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "npc2",
+      "catalog_order": 41,
+      "display": "NPC2",
+      "gene": "NPC2",
+      "uniprot": "P61916",
+      "accession": "NG_007117",
+      "summary": "Hands cholesterol to NPC1 in the lysosome. Losing it causes Niemann–Pick C2.",
+      "chain": null,
+      "facts": {
+        "residues": 151,
+        "exons": 5,
+        "chains": 1,
+        "bridges": 3
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "5KWY",
+        "modelled": null,
+        "label": "the fold",
+        "count": 132,
+        "unit": "residues",
+        "sentence": "Solved with cholesterol sulfate in its pocket, bound to NPC1; neither is drawn.",
+        "semantics": "NPC2, residues 20 to 151, from its complex with the middle lumenal domain of NPC1, solved by X-ray at 2.4 Å with cholesterol sulfate in its pocket. Every residue is placed, and its three disulfide bridges are drawn. NPC1, the entry's second pair and the cholesterol sulfate are not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "fgf19",
+      "catalog_order": 42,
+      "display": "FGF19",
+      "gene": "FGF19",
+      "uniprot": "O95750",
+      "accession": "NC_000011.10",
+      "summary": "After a meal it tells the liver, through β-Klotho, to make less bile acid.",
+      "chain": null,
+      "facts": {
+        "residues": 216,
+        "exons": 3,
+        "chains": 1,
+        "bridges": 2
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "2P23",
+        "modelled": null,
+        "label": "the fold",
+        "count": 194,
+        "unit": "residues",
+        "sentence": "Its β-trefoil core. 136 of the 194 residues are placed; the ends are not.",
+        "semantics": "FGF19, solved by X-ray at 1.8 Å: one chain of the crystal's two, its β-trefoil core placed from residue 40 to 175, 136 of the 194 residues after the signal peptide. The bridge 102–120 is drawn; 58–70, which UniProt also annotates, is open in this crystal, its sulfurs 2.7 Å apart, and is not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "fabp6",
+      "catalog_order": 43,
+      "display": "FABP6",
+      "gene": "FABP6",
+      "uniprot": "P51161",
+      "accession": "NG_029500",
+      "summary": "Ferries bile acids across the cells of the ileum, on their way back to the liver.",
+      "chain": "FABP6",
+      "facts": {
+        "residues": 128,
+        "exons": 4,
+        "chains": 1,
+        "bridges": 0
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        }
+      ],
+      "structure": {
+        "pdb": "5L8O",
+        "modelled": null,
+        "label": "the fold",
+        "count": 127,
+        "unit": "residues",
+        "sentence": "A β-barrel with a helical lid, solved with cholate inside it.",
+        "semantics": "FABP6, residues 2 to 128, solved by X-ray at 2.39 Å: the one of the crystal's three chains that holds cholate. 125 of its 127 residues are placed. The cholate and the other two chains are not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "surfactantd",
+      "catalog_order": 44,
+      "display": "SP-D",
+      "gene": "SFTPD",
+      "uniprot": "P35247",
+      "accession": "NG_042218",
+      "summary": "A collectin of the airways: its heads bind microbial sugars and clump the microbes.",
+      "chain": null,
+      "facts": {
+        "residues": 375,
+        "exons": 8,
+        "chains": 1,
+        "bridges": 2
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "1PWB",
+        "modelled": [
+          250,
+          375
+        ],
+        "label": "the C-type lectin domain",
+        "count": 126,
+        "unit": "residues",
+        "sentence": "One sugar-binding head of the trimer; its stalk is not drawn.",
+        "semantics": "The C-type lectin domain of SP-D and the ten residues before it, 250 to 375, from one chain of a trimeric fragment solved by X-ray at 1.4 Å with maltose. Every residue is placed, and its two disulfide bridges are drawn. The other two heads, the neck, the collagen stalk, the calcium and the maltose are not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "padi6",
+      "catalog_order": 45,
+      "display": "PADI6",
+      "gene": "PADI6",
+      "uniprot": "Q6TGC4",
+      "accession": "NG_032943",
+      "summary": "Of the egg's subcortical maternal complex; without it, embryos arrest early.",
+      "chain": "PADI6",
+      "facts": {
+        "residues": 694,
+        "exons": 16,
+        "chains": 1,
+        "bridges": 0
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        }
+      ],
+      "structure": {
+        "pdb": "25YL",
+        "modelled": null,
+        "label": "the subunit",
+        "count": 694,
+        "unit": "residues",
+        "sentence": "One chain of the pair: a deiminase's fold, without a deiminase's activity.",
+        "semantics": "One PADI6 chain from its homodimer, solved by cryo-EM at 2.8 Å. 685 of its 694 residues are placed; the first nine are not. The other chain is not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "casr",
+      "catalog_order": 46,
+      "display": "CaSR",
+      "gene": "CASR",
+      "uniprot": "P41180",
+      "accession": "NG_009058",
+      "summary": "Senses blood calcium and turns PTH release down. Calcimimetics act through it.",
+      "chain": null,
+      "facts": {
+        "residues": 1078,
+        "exons": 7,
+        "chains": 1,
+        "bridges": 9
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "7M3G",
+        "modelled": null,
+        "label": "the subunit",
+        "count": 1059,
+        "unit": "residues",
+        "sentence": "One chain of the active dimer, from the Venus flytrap to the seven helices.",
+        "semantics": "One CaSR chain from the active homodimer, solved by cryo-EM at 2.5 Å with calcium, tryptophan and two calcimimetics bound: from the Venus flytrap to the seven helices, 821 of the 1,059 residues after the signal peptide. Eight disulfide bridges are drawn; 437–449, open in this chain, is not. The other chain, the ligands and the tail inside the cell are not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "acp3",
+      "catalog_order": 47,
+      "display": "Prostatic acid phosphatase",
+      "gene": "ACP3",
+      "uniprot": "P15309",
+      "accession": "NG_047032",
+      "summary": "A main enzyme of semen. It was the marker of prostate cancer before PSA.",
+      "chain": null,
+      "facts": {
+        "residues": 386,
+        "exons": 10,
+        "chains": 1,
+        "bridges": 2
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "8XJ4",
+        "modelled": null,
+        "label": "the subunit",
+        "count": 354,
+        "unit": "residues",
+        "sentence": "One chain of the dimer, as purified from human semen.",
+        "semantics": "One chain of prostatic acid phosphatase from its homodimer, purified from human semen and solved by cryo-EM at 3.2 Å. 345 of the 354 residues after the signal peptide are placed, and its two disulfide bridges are drawn. The other chain and the sugars are not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "angpt1",
+      "catalog_order": 48,
+      "display": "Angiopoietin-1",
+      "gene": "ANGPT1",
+      "uniprot": "Q15389",
+      "accession": "NG_029405",
+      "summary": "The TIE2 agonist that keeps blood vessels stable and their lining sealed.",
+      "chain": null,
+      "facts": {
+        "residues": 498,
+        "exons": 9,
+        "chains": 1,
+        "bridges": 3
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "9IVT",
+        "modelled": [
+          283,
+          498
+        ],
+        "label": "the receptor-binding domain",
+        "count": 216,
+        "unit": "residues",
+        "sentence": "Its receptor-binding domain, the part that binds TIE2.",
+        "semantics": "The receptor-binding domain of angiopoietin-1, residues 283 to 498, solved by X-ray at 1.75 Å. Every residue is placed, and its three disulfide bridges are drawn, 435–437 among them, which UniProt does not annotate. The rest of the chain is not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "loxl2",
+      "catalog_order": 49,
+      "display": "LOXL2",
+      "gene": "LOXL2",
+      "uniprot": "Q9Y4K0",
+      "accession": "NC_000008.11",
+      "summary": "Cross-links collagen and elastin outside the cell. A target in fibrosis and cancer.",
+      "chain": null,
+      "facts": {
+        "residues": 774,
+        "exons": 14,
+        "chains": 1,
+        "bridges": 17
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "5ZE3",
+        "modelled": [
+          322,
+          554
+        ],
+        "label": "the third and fourth SRCR domains",
+        "count": 233,
+        "unit": "residues",
+        "sentence": "Its third and fourth SRCR domains. The rest of the chain is not drawn.",
+        "semantics": "The third and fourth SRCR domains of LOXL2, residues 322 to 554, from a crystal of the precursor at 2.4 Å. Every residue is placed, and five disulfide bridges are drawn; UniProt's sixth here, 351–414, is not named by the entry and is not drawn. The rest of the chain, the metals and the sugars are not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "ckmt2",
+      "catalog_order": 50,
+      "display": "CKMT2",
+      "gene": "CKMT2",
+      "uniprot": "P17540",
+      "accession": "NC_000005.10",
+      "summary": "Makes phosphocreatine in muscle mitochondria, the store that keeps ATP topped up.",
+      "chain": null,
+      "facts": {
+        "residues": 419,
+        "exons": 10,
+        "chains": 1,
+        "bridges": 0
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        }
+      ],
+      "structure": {
+        "pdb": "4Z9M",
+        "modelled": null,
+        "label": "the subunit",
+        "count": 380,
+        "unit": "residues",
+        "sentence": "One of the crystal's eight chains, solved with ADP.",
+        "semantics": "One CKMT2 chain, solved by X-ray at 2.1 Å with ADP bound: one of the crystal's eight. 369 of the 380 residues after the transit peptide are placed. The other chains and the ADP are not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "glycodelin",
+      "catalog_order": 51,
+      "display": "Glycodelin",
+      "gene": "PAEP",
+      "uniprot": "P09466",
+      "accession": "NC_000009.12",
+      "summary": "The endometrium's main secretion after ovulation. Its glycans set what it does.",
+      "chain": "glycodelin",
+      "facts": {
+        "residues": 180,
+        "exons": 7,
+        "chains": 1,
+        "bridges": 2
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "4R0B",
+        "modelled": null,
+        "label": "the subunit",
+        "count": 162,
+        "unit": "residues",
+        "sentence": "One chain of the dimer: a lipocalin barrel.",
+        "semantics": "One glycodelin chain from its dimer, solved by X-ray at 2.45 Å: a lipocalin barrel. 153 of the 162 residues after the signal peptide are placed, and its two disulfide bridges are drawn. The entry has Glu at 46, where the gene makes an Asn that carries a glycan. The other chain is not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "alox12",
+      "catalog_order": 52,
+      "display": "ALOX12",
+      "gene": "ALOX12",
+      "uniprot": "P18054",
+      "accession": "NC_000017.11",
+      "summary": "Oxygenates arachidonic acid to 12-HETE, in platelets and squamous epithelia.",
+      "chain": "ALOX12",
+      "facts": {
+        "residues": 663,
+        "exons": 14,
+        "chains": 1,
+        "bridges": 0
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        }
+      ],
+      "structure": {
+        "pdb": "8GHE",
+        "modelled": null,
+        "label": "the subunit",
+        "count": 663,
+        "unit": "residues",
+        "sentence": "One chain of the tetramer: a PLAT domain and the catalytic domain.",
+        "semantics": "One ALOX12 chain from its tetramer, solved by cryo-EM at 2.0 Å: a PLAT domain and the catalytic domain that holds the iron. 662 of its 663 residues are placed. The entry has Ser at 322, where the record has Asn. The other three chains, the iron and the oleoyl-CoA this chain binds are not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
+    },
+    {
+      "slug": "gas6",
+      "catalog_order": 53,
+      "display": "GAS6",
+      "gene": "GAS6",
+      "uniprot": "Q14393",
+      "accession": "NG_029703",
+      "summary": "Tethers dying cells' phosphatidylserine to AXL and MERTK; vitamin K-dependent.",
+      "chain": null,
+      "facts": {
+        "residues": 678,
+        "exons": 15,
+        "chains": 1,
+        "bridges": 16
+      },
+      "chains": [
+        {
+          "node": "chainA",
+          "tint": "mature1"
+        },
+        {
+          "node": "bonds",
+          "tint": "cysteine"
+        }
+      ],
+      "structure": {
+        "pdb": "5VXZ",
+        "modelled": [
+          288,
+          675
+        ],
+        "label": "the laminin G-like domains",
+        "count": 388,
+        "unit": "residues",
+        "sentence": "Its two laminin G-like domains, which bind AXL. The rest is not drawn.",
+        "semantics": "The two laminin G-like domains of GAS6, residues 288 to 675, bound to the AXL receptor and solved by X-ray at 2.3 Å. 369 of these 388 residues are placed, and their two disulfide bridges are drawn. The Gla and EGF-like domains, AXL and the calcium are not drawn. Drag to turn it."
+      },
+      "tracks": [
+        "clinvar",
+        "constraint",
+        "impact",
+        "structure"
+      ]
     }
   ]
 }

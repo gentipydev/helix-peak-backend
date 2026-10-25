@@ -1,0 +1,80 @@
+{
+ "entry": "2P23",
+ "model": "1",
+ "method": [
+  "X-RAY DIFFRACTION"
+ ],
+ "resolution": 1.8,
+ "revision": "1.4",
+ "file": {
+  "url": "https://www.ebi.ac.uk/pdbe/entry-files/download/2p23_updated.cif",
+  "sha256": "995352d35bb2a124f518a35a91113cb3a3a6b4e15a8e897643f6ed20f585f1a5"
+ },
+ "policy": 1,
+ "candidate": "2P23:A@23",
+ "scope": "product",
+ "domains": [],
+ "chains": [
+  {
+   "node": "chainA",
+   "product": "Fibroblast growth factor 19",
+   "entity": "2P23_1",
+   "asym": "A",
+   "auth": "A",
+   "first": 25,
+   "last": 216,
+   "placed": 136,
+   "offset": 0
+  }
+ ],
+ "bridges": [
+  [
+   102,
+   120
+  ]
+ ],
+ "bridges_dropped": [
+  {
+   "a": 58,
+   "a_node": "chainA",
+   "b": 70,
+   "b_node": "chainA",
+   "reason": "sulfurs apart",
+   "distance": 2.69
+  }
+ ],
+ "secondary_structure": "DSSP in the entry's file from PDBe (struct_conf, struct_sheet_range)",
+ "representation": "cartoon",
+ "sampling": 8,
+ "residues": {
+  "ordered": 136,
+  "disordered": 56,
+  "absent": 0
+ },
+ "sequence_differences": 0,
+ "sha256": {
+  "record": "369c1b1af88d49ee1138921378ae6cceb910699aeb80a64e82f9126b21f6053f",
+  "translation": "6fa66caee9c8ae7d6af1e1237eaab55816c54b466dd5b5df4ce6c206ee6c0c9f",
+  "working_copy": "73d3d15319d240ed5ffb11fa32cb2a27ea8450f7f78728a61b95a37dc2628a33",
+  "glb": "f1da1a0709d9902a56efa3c85987c94af0b0c6b3cf950c8a2c7b637a3f8fc558",
+  "scene": "5ca027d7693b46f7bd10a70cccd8225753a444a3e916c0740257fb5307c9937d",
+  "folding": "cd1c98cf19f992cf2be1d0dc9f65cf1ad78636c7f222e3b8cbeae59cc22943a3"
+ },
+ "measured": {
+  "bake_seconds": 0.88,
+  "check_seconds": 2.15,
+  "glb_bytes": 1065432,
+  "scene_bytes": 305592,
+  "folding_bytes": 22682,
+  "vertices": 37792,
+  "residues": 192,
+  "bridges": 1,
+  "rings": 1119,
+  "bind_ms": 78,
+  "frames_ms": 153,
+  "slowest_frame_us": 1404,
+  "largest_step": 0.7733550587322285,
+  "largest_nudge": 0.0
+ },
+ "drafted_by": "scripts/draft_curated.py"
+}

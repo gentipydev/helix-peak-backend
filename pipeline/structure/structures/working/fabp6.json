@@ -1,0 +1,66 @@
+{
+ "entry": "5L8O",
+ "model": "1",
+ "method": [
+  "X-RAY DIFFRACTION"
+ ],
+ "resolution": 2.39,
+ "revision": "1.3",
+ "file": {
+  "url": "https://www.ebi.ac.uk/pdbe/entry-files/download/5l8o_updated.cif",
+  "sha256": "476d511218b8048fd9c4b91b00922f421db95b070e4bffa6d422ceb27d4d7cc6"
+ },
+ "policy": 1,
+ "candidate": "5L8O:B@1",
+ "scope": "product",
+ "domains": [],
+ "chains": [
+  {
+   "node": "chainA",
+   "product": "Gastrotropin",
+   "entity": "5L8O_1",
+   "asym": "B",
+   "auth": "B",
+   "first": 2,
+   "last": 128,
+   "placed": 125,
+   "offset": 0
+  }
+ ],
+ "bridges": [],
+ "bridges_dropped": [],
+ "secondary_structure": "DSSP in the entry's file from PDBe (struct_conf, struct_sheet_range)",
+ "representation": "cartoon",
+ "sampling": 8,
+ "residues": {
+  "ordered": 125,
+  "disordered": 2,
+  "absent": 0
+ },
+ "sequence_differences": 0,
+ "sha256": {
+  "record": "65dd90c18fd2120432a36cb61be0fe72082f0909ad63f3c21641ecfd3fdd5a79",
+  "translation": "ef9d33cc3497bc013a75f1eb9f1e0e3e565c1d445b1b40c2f9c868bd66a4917b",
+  "working_copy": "d6f39c0d2871a2a881c79fdf376dcab38ec12e9b0c1fd97cf9f7b0bf326b5056",
+  "glb": "95b6c024d7f804997053793b3759154fcdec6cc4ecdf477fac4be49342f4c88b",
+  "scene": "b95c5ea4eb1a024201d34e41a0e8d40800a14edd2bae2af44c39f4828e464b87",
+  "folding": "e0a55b84b39a47ac594b955b4f7365a2e61a399b34fe6873b30e2bfef2a475aa"
+ },
+ "measured": {
+  "bake_seconds": 0.88,
+  "check_seconds": 2.02,
+  "glb_bytes": 921812,
+  "scene_bytes": 261440,
+  "folding_bytes": 19176,
+  "vertices": 32886,
+  "residues": 127,
+  "bridges": 0,
+  "rings": 1030,
+  "bind_ms": 55,
+  "frames_ms": 114,
+  "slowest_frame_us": 5085,
+  "largest_step": 0.4590475137443643,
+  "largest_nudge": 0.0
+ },
+ "drafted_by": "scripts/draft_curated.py"
+}

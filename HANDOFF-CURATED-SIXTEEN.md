@@ -190,6 +190,45 @@ Each goes into the verification section, with what was done about it.
      data first, no field basics (memory `domain-expert-audience`).
    - Then `scripts/resolver_worker.sh status`, and `restart`: the worker runs this tree, and
      its scorer imports `targets.py`.
+
+   **What actually happened (2026-10-25).** The user chose, before the session began, that a
+   red gate holds its protein and every refusal comes to the one stop with the words, rather
+   than stopping the session at each.
+   - **All sixteen drafted on their planned entries** (16 of 16, about 15 minutes), and every
+     fold passed the app's check. For CASR, 7M3G's chain B, ranked first, narrowly fails it
+     (a ring 1.518 from its own stretch of chain, where 1.5 is allowed; PAPP-A's chain D
+     case), and the same entry's chain A, which places 821 residues to B's 804, passes.
+   - **Every translation equals its UniProt sequence**, so no row declares
+     `uniprot_variants`. Each RefSeqGene holds one coding sequence for its gene, at MANE's
+     version, so those rows name it unversioned, as the eight's do.
+   - **Two records end a leader where UniProt does not.** FGF19's names its signal peptide 1–22
+     and its chain 23–216 (UniProt: 1–24); SP-D's names a signal peptide 1–17 and no chain
+     (UniProt: 1–20). In each of the 38 rows the table's signal peptide is the record's, so both
+     tables follow their records (R3.2's source order), and SP-D's chain, 18–375, is filled
+     from the table as erythropoietin's is (R3.9). GAS6's record also names its signal peptide
+     alone, and its chain, 31–678, is filled the same way.
+   - **Glycodelin stops at the precursor.** Its slice carries isoform 2's chain inside the
+     MANE transcript's exons, over this one's, and the build refuses two chains on one
+     stretch: `mature_peptides=False` (R3.4), as for uromodulin, its catalog `chain` named
+     `glycodelin`. Every other cut record names one chain after its leader, so the walk cuts
+     it (`mature_peptides=True`). α-lactalbumin's slice names its signal peptide and chain
+     twice, CKMT2's its transit peptide and chain three times; the record keeps one of each.
+   - **Disulfides: UniProt's, with any the fold draws that UniProt lacks.** The handoff's
+     premise for FGF19 was wrong: UniProt annotates 102–120 as well as 58–70, and 2P23 forms
+     102–120 (58–70's sulfurs are 2.69 Å apart). LOXL2's 351–414, which the handoff says 5ZE3
+     does not place, is placed with its sulfurs 1.76 Å apart; the entry only does not record
+     the bond. CASR's chain A forms 677–765, which UniProt does not annotate, and leaves 437–449
+     open (3.59 Å), which its chain B forms. Dropping a UniProt pair for one chain's geometry
+     would make a card contradict the knowledge base, so each row keeps UniProt's pairs and
+     adds the entry's (CASR 9, as LGI1's five were added), and the fold's words name a pair
+     the fold leaves out. A pair can still be dropped later without scoring again
+     (`score_protein.py --metadata-only`).
+   - **The words** were written by hand and held to the search tests' pinned queries by a
+     port of `rank` (`protein_catalog_test`, a walk test, pins `protein`, `hormone`,
+     `precursor`, `TP53` and `titin`; the search tests pin `ins`, `lysozyme`, `kinase` and
+     others). So SFTPD is displayed `SP-D`, and no summary says "protein", "hormone", "ins"
+     (chains, domains, proteins), "lysozyme" or "kinase".
+   - `restart`ed the worker on the new tree (queue empty).
 2. **Bake.** For each:
    `NCBI_EMAIL=gentiannurce@gmail.com .venv/bin/python pipeline/bake_curated.py --target <slug>`
    (`--dry-run` prints the commands, `--from <step>` resumes). Its last step checks that row
@@ -201,6 +240,29 @@ Each goes into the verification section, with what was done about it.
    - `fetch_tracks.py --check`: every other row's files as stored.
 
    At a red gate, stop and ask (decision 2). Commit the backend.
+
+   **What actually happened (2026-10-25).** One protein at a time, every step but `check`
+   (the words were written meanwhile, and only `check` reads them), then the checks over every
+   row. 52 minutes for the sixteen; CASR's ESM-2 (1,078 residues, in windows) took 13 of them.
+   - **Fifteen passed every gate.** ESM-2's alignment ran 76.8% (PADI6) to 94.4% (NPC2)
+     against the 50% it asks; every AVI biology check but one passed; each fold passed the
+     app's check a second time (`bundle`); each locus landed in its planned organ and cell.
+   - **PTGES failed AVI's biology check** (its exons score 5.1, its intron interiors 5.3),
+     though every one of its 14,694 bases agrees with GRCh38: PF4's case. ClinVar falls with it.
+     Held. The handoff had no alternate for the seminal vesicle, so the Atlas scan's other
+     candidates there were tried: a structure passes policy 1 for ANGPT1 (9IVT), CHEK1 (2YEX)
+     and TES (2XQN), and AVI's own gates pass all three (`pipeline.resolver.impact_local` on the
+     dry run's resolution, in a scratch directory; exons 13.0, 10.9 and 12.6 against introns
+     5.2, 4.7 and 6.3). ANGPT1 was drafted at order 48, checked against its record, worded
+     and baked whole (alignment 79.7% / 79.0%; 386 ClinVar records), in the tree in mPGES-1's
+     place for the user to accept or not; mPGES-1's row and words are kept aside.
+   - Glycodelin's protein page called what its signal peptide leaves "proprotein" (R3.3's
+     last resort); the row now names it (`proprotein="glycodelin"`), as PAPP-A's, and the row
+     was baked again.
+   - Gates: `check_assets.py` 54 rows (53 scored, 54 with AVI), `check_folding.py` 54, 0
+     problems, `check_locus.py` 54, 0 problems; pytest 906 passed, 96 skipped;
+     `fetch_tracks.py --check` 266 files as stored, 0 differ. The numpy warnings
+     `check_folding.py` prints are there for the 38 alone too.
 3. **Try the app on them.** `pipeline/sync_fixtures.py --from local --target <slug>…` writes
    the rows and their tracks into the app's fixtures, as they will be served.
    - Add the sixteen to the zoom's own tables, as the eight did. In `zoom_domain_test`: the baked
@@ -210,8 +272,41 @@ Each goes into the verification section, with what was done about it.
      as the ten's did.
    - Run `flutter analyze`, `flutter test`, and the three guards in the app CLAUDE.md against
      the start commit. A walk-test edit needs the user's word.
+
+   **What actually happened (2026-10-25).** The sixteen's fixtures were written from the bakes
+   (`sync_fixtures.py --from local`, 112 files and their `/catalog` rows) and the zoom's tables
+   gained them: their baked paths and cell shapes in `zoom_domain_test`, and CASR's and FABP6's
+   endocrine cells in `cell_scene_test`'s part-by-part list. `flutter analyze` clean; the three
+   guards clean against `bde24dd` (no walk-test line changed, 16 proteins added to the
+   fixtures and nothing else, no golden PNG moved). `flutter test`: 2,470 passed, 66 skipped,
+   and every walk test passed with the sixteen in it. Five failed:
+   - **Four zoom checks**, each zoom code meeting a case none of the 38 reaches:
+     - Chromosomes 13 and 14 (GAS6, NPC2): their short arms are 15–16% of the chromosome
+       (21's is 26%), too short for the waist and end cap, whose sizes are fixed. The stalk at
+       p12 is drawn at 0.75 of the arm's width, where 0.9 is asked, and the cleft is not yet
+       open at the arm's top (`chromosome_scene_test`, `chromosome_look_test`).
+     - The vessel's and the parathyroid's own drawings (GAS6, CASR) have no outline, so the
+       place their tissue is sampled lies outside it (`zoom_anatomy_test`).
+     - LOXL2: in a smooth muscle cell's flat nucleus, chromosome 8's glowing territory lies over
+       the nucleolus (`nucleolus_test`).
+   - `test/features/zoom/_scratch_shots_test.dart`, a git-excluded screenshot tool of an earlier
+     session that only loads with `SHOTS` set. Not this batch's; left as it was.
+
+   Walking the sixteen's pages (a throwaway test over `AnatomyModel.derive`) found glycodelin's
+   "proprotein" (Phase 2), and CKMT2's transit peptide drawn as the N-terminal extension on the
+   gene page, with a protein page of one block and a mature page of its 380 residues. The
+   sixteen add 75 catalog golden pages.
 4. **Stop for the user.** Show them the sixteen's words (summary, structure sentence and
    semantics) and whatever Phases 1–3 left to them. Nothing goes live before their yes.
+
+   **What actually happened (2026-10-25).** One stop, with every word, the choices made by rule
+   (the bridges, the records' leaders, glycodelin, CKMT2's transit peptide, `SP-D`) and the two
+   open questions. The user's answers:
+   - **Angiopoietin-1 for the seminal vesicle**, in mPGES-1's place at order 48.
+   - **The four zoom checks fixed generically in the zoom's code**, each change acting only
+     where these cases occur, so nothing the 38 draw changes, and shown to the user before the
+     app's commit.
+   - **The words approved as written.**
 5. **Live.** Curl `/health` first: Render sleeps.
    - `seed_catalog.py --target …`, a dry run, then for real.
    - Each kind with `upload_tracks.py --kind <kind> --target …`, a dry run first: record;

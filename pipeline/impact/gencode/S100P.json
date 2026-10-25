@@ -1,0 +1,73 @@
+{
+  "cds": [
+    {
+      "end": 6694070,
+      "start": 6693932,
+      "width": 139
+    },
+    {
+      "end": 6697039,
+      "start": 6696892,
+      "width": 148
+    }
+  ],
+  "chromosome": "chr4",
+  "end": 6697170,
+  "exons": [
+    {
+      "acceptor": 6693877,
+      "chromosome": "chr4",
+      "donor": 6694070,
+      "end": 6694070,
+      "exon_number": 1,
+      "overlaps_variant": false,
+      "start": 6693877,
+      "strand": "+",
+      "width": 194
+    },
+    {
+      "acceptor": 6696892,
+      "chromosome": "chr4",
+      "donor": 6697170,
+      "end": 6697170,
+      "exon_number": 2,
+      "overlaps_variant": false,
+      "start": 6696892,
+      "strand": "+",
+      "width": 279
+    }
+  ],
+  "gene_id": "ENSG00000163993.7",
+  "gene_name": "S100P",
+  "is_mane_select": true,
+  "junctions": [
+    {
+      "atlas_url": null,
+      "downstream_exon": 2,
+      "intron_length": 2821,
+      "junction_end": 6696892,
+      "junction_start": 6694070,
+      "junction_str": "6694070:6696892",
+      "score_id": null,
+      "type": "Canonical Intron 1",
+      "upstream_exon": 1
+    }
+  ],
+  "num_exons": 2,
+  "start": 6693877,
+  "strand": "+",
+  "transcript_id": "ENST00000296370.4",
+  "transcript_type": "protein_coding",
+  "utr": [
+    {
+      "end": 6693932,
+      "start": 6693877,
+      "width": 56
+    },
+    {
+      "end": 6697170,
+      "start": 6697039,
+      "width": 132
+    }
+  ]
+}

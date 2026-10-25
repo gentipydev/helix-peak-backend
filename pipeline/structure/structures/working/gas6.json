@@ -1,0 +1,78 @@
+{
+ "entry": "5VXZ",
+ "model": "1",
+ "method": [
+  "X-RAY DIFFRACTION"
+ ],
+ "resolution": 2.3,
+ "revision": "2.2",
+ "file": {
+  "url": "https://www.ebi.ac.uk/pdbe/entry-files/download/5vxz_updated.cif",
+  "sha256": "6c76103f20ded38eab87c6175aa9c7092962aadcb9469af6bddc555cc6c9f07b"
+ },
+ "policy": 1,
+ "candidate": "5VXZ:B@281:domain",
+ "scope": "domain",
+ "domains": [
+  "Laminin G-like 1",
+  "Laminin G-like 2"
+ ],
+ "chains": [
+  {
+   "node": "chainA",
+   "product": "Growth arrest-specific protein 6",
+   "entity": "5VXZ_1",
+   "asym": "B",
+   "auth": "B",
+   "first": 288,
+   "last": 675,
+   "placed": 369,
+   "offset": 0
+  }
+ ],
+ "bridges": [
+  [
+   444,
+   470
+  ],
+  [
+   643,
+   670
+  ]
+ ],
+ "bridges_dropped": [],
+ "secondary_structure": "DSSP in the entry's file from PDBe (struct_conf, struct_sheet_range)",
+ "representation": "cartoon",
+ "sampling": 3,
+ "residues": {
+  "ordered": 369,
+  "disordered": 19,
+  "absent": 0
+ },
+ "sequence_differences": 0,
+ "sha256": {
+  "record": "cdf304cfc95d4b6e3bee386de2dd312726f2ddcfc91bf1a34d0699fab8c782a4",
+  "translation": "7df33ec92371bd7ab9c4576fb6680c7660f627253cd1173b6fc270d0826f1491",
+  "working_copy": "607ff8fb938b1561ae96e47607accf0a23d8b5d5f17e277832f0b7594d88d13e",
+  "glb": "68fe7f2e1fc7117c6450a43fe9d3389310f14c321e258154f93032ff9188f9a8",
+  "scene": "7a0810ec3d6b061d929d4452eccb5a7a9fe7f91bee879ee889d8b1c4df47234b",
+  "folding": "9ba49ec61d01409ba369f41d7ca808b0ba5df3438e4e46728ce265092e847d51"
+ },
+ "measured": {
+  "bake_seconds": 1.09,
+  "check_seconds": 2.16,
+  "glb_bytes": 1108360,
+  "scene_bytes": 317304,
+  "folding_bytes": 51225,
+  "vertices": 39128,
+  "residues": 388,
+  "bridges": 2,
+  "rings": 1190,
+  "bind_ms": 78,
+  "frames_ms": 151,
+  "slowest_frame_us": 1378,
+  "largest_step": 0.7429074359597622,
+  "largest_nudge": 0.0
+ },
+ "drafted_by": "scripts/draft_curated.py"
+}

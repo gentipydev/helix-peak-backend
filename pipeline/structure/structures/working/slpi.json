@@ -1,0 +1,85 @@
+{
+ "entry": "4DOQ",
+ "model": "1",
+ "method": [
+  "X-RAY DIFFRACTION"
+ ],
+ "resolution": 2.0,
+ "revision": "1.4",
+ "file": {
+  "url": "https://www.ebi.ac.uk/pdbe/entry-files/download/4doq_updated.cif",
+  "sha256": "58bd3538a9dbd525ff8872da5657daebffc636c384b32279eec2fe8d51c368e6"
+ },
+ "policy": 1,
+ "candidate": "4DOQ:B@85:domain",
+ "scope": "domain",
+ "domains": [
+  "WAP 2"
+ ],
+ "chains": [
+  {
+   "node": "chainA",
+   "product": "Antileukoproteinase",
+   "entity": "4DOQ_2",
+   "asym": "B",
+   "auth": "B",
+   "first": 85,
+   "last": 131,
+   "placed": 47,
+   "offset": 25
+  }
+ ],
+ "bridges": [
+  [
+   89,
+   118
+  ],
+  [
+   96,
+   122
+  ],
+  [
+   105,
+   117
+  ],
+  [
+   111,
+   126
+  ]
+ ],
+ "bridges_dropped": [],
+ "secondary_structure": "DSSP in the entry's file from PDBe (struct_conf, struct_sheet_range)",
+ "representation": "cartoon",
+ "sampling": 8,
+ "residues": {
+  "ordered": 47,
+  "disordered": 0,
+  "absent": 0
+ },
+ "sequence_differences": 0,
+ "sha256": {
+  "record": "96af47c84bc4d40c38bf129246588f32a08aff6425131f11f6140b6c79ed8757",
+  "translation": "b40fc18e239d0f71c5ac0bc634feef0dbc0381d9600d0d8020f5512b20fd8760",
+  "working_copy": "aeee19cbb6608692d383d1142031709718b92f4dc634447e86ee05545b28ead2",
+  "glb": "aee6f0445cc5a48371fff596a3f9a68d3b146e200c5502205e8d55c7b1c01f65",
+  "scene": "e3ba59448e89502ba756a6efa852e304316d1827df5e343813585178e6ce15c8",
+  "folding": "cd8141498bf6f20fce46ccb3910d7ef1e58dc558df4d2e55ab62302e137d76e5"
+ },
+ "measured": {
+  "bake_seconds": 0.72,
+  "check_seconds": 2.02,
+  "glb_bytes": 422944,
+  "scene_bytes": 131288,
+  "folding_bytes": 9196,
+  "vertices": 14254,
+  "residues": 47,
+  "bridges": 4,
+  "rings": 379,
+  "bind_ms": 59,
+  "frames_ms": 55,
+  "slowest_frame_us": 1689,
+  "largest_step": 0.6929729809003471,
+  "largest_nudge": 0.0
+ },
+ "drafted_by": "scripts/draft_curated.py"
+}

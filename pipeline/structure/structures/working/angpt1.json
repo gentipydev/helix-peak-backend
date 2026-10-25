@@ -1,0 +1,81 @@
+{
+ "entry": "9IVT",
+ "model": "1",
+ "method": [
+  "X-RAY DIFFRACTION"
+ ],
+ "resolution": 1.75,
+ "revision": "1.0",
+ "file": {
+  "url": "https://www.ebi.ac.uk/pdbe/entry-files/download/9ivt_updated.cif",
+  "sha256": "a1802054567c797c13ceecfb70089559c905bde463e53d8b6d774c674e46e94c"
+ },
+ "policy": 1,
+ "candidate": "9IVT:A@283:domain",
+ "scope": "domain",
+ "domains": [
+  "Fibrinogen C-terminal"
+ ],
+ "chains": [
+  {
+   "node": "chainA",
+   "product": "Angiopoietin-1",
+   "entity": "9IVT_1",
+   "asym": "A",
+   "auth": "A",
+   "first": 283,
+   "last": 498,
+   "placed": 216,
+   "offset": 0
+  }
+ ],
+ "bridges": [
+  [
+   286,
+   315
+  ],
+  [
+   435,
+   437
+  ],
+  [
+   439,
+   452
+  ]
+ ],
+ "bridges_dropped": [],
+ "secondary_structure": "DSSP in the entry's file from PDBe (struct_conf, struct_sheet_range)",
+ "representation": "cartoon",
+ "sampling": 5,
+ "residues": {
+  "ordered": 216,
+  "disordered": 0,
+  "absent": 0
+ },
+ "sequence_differences": 0,
+ "sha256": {
+  "record": "48b1fc7078f0af7e205f6691c1c4c85514ef886cba8a8367738f470243becdfe",
+  "translation": "9161753d4a3aed6dd365d4dd67f36b96eeaee3eb7d9c43f362bdea5378fd569b",
+  "working_copy": "4b7de9c0090db7c366afa74691a350d9996dd21e1415ba40477eab0f4c2bc69b",
+  "glb": "c6a597559de5b16db185a0cede587dc2431054a32e7305e8e313eef937a613d5",
+  "scene": "ce486b9a4980895f020d774ec87a7af5e670246e7df39a0bba2e8ff0362da73e",
+  "folding": "942e93917476fd5184fe3305c04a12e62d63c8e9a5101485d93974b9119619ab"
+ },
+ "measured": {
+  "bake_seconds": 1.93,
+  "check_seconds": 3.74,
+  "glb_bytes": 1180868,
+  "scene_bytes": 342576,
+  "folding_bytes": 30824,
+  "vertices": 41520,
+  "residues": 216,
+  "bridges": 3,
+  "rings": 1126,
+  "bind_ms": 157,
+  "frames_ms": 200,
+  "slowest_frame_us": 3301,
+  "largest_step": 0.7503126728538958,
+  "largest_nudge": 0.0
+ },
+ "drafted_by": "scripts/draft_curated.py"
+}

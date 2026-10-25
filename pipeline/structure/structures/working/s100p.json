@@ -1,0 +1,66 @@
+{
+ "entry": "1J55",
+ "model": "1",
+ "method": [
+  "X-RAY DIFFRACTION"
+ ],
+ "resolution": 2.0,
+ "revision": "1.3",
+ "file": {
+  "url": "https://www.ebi.ac.uk/pdbe/entry-files/download/1j55_updated.cif",
+  "sha256": "8649b49703b3125c0506e5b5b4e180a639b73ece972ae8371c7365fef696495a"
+ },
+ "policy": 1,
+ "candidate": "1J55:A@1",
+ "scope": "product",
+ "domains": [],
+ "chains": [
+  {
+   "node": "chainA",
+   "product": "Protein S100-P",
+   "entity": "1J55_1",
+   "asym": "A",
+   "auth": "A",
+   "first": 1,
+   "last": 95,
+   "placed": 88,
+   "offset": 0
+  }
+ ],
+ "bridges": [],
+ "bridges_dropped": [],
+ "secondary_structure": "DSSP in the entry's file from PDBe (struct_conf, struct_sheet_range)",
+ "representation": "cartoon",
+ "sampling": 8,
+ "residues": {
+  "ordered": 88,
+  "disordered": 7,
+  "absent": 0
+ },
+ "sequence_differences": 0,
+ "sha256": {
+  "record": "80a2eb24398ecca9fb989ce862fa519faac99bc7a6dd495ee10b3cb393a01243",
+  "translation": "03dee70fbbd848ea193af29a5e25f204cfb0ace88b5561c7ca8770d552d0f04c",
+  "working_copy": "a5ea081119ef7e9ecd33bd74869bfee87f39b9ae9b28742c15365a777a36f96c",
+  "glb": "ccf2c379dbd5eba9cf72b4fa304d02b25e322f88945ac4da95adf4397313f8a4",
+  "scene": "1de5241208ef81daabb075a30d487b3517bbb30c5aeea26fac7b2daba3f285a0",
+  "folding": "c588f796ee875f1a476bc62bfcd1f49c4bfa7394755686a5998324be15966564"
+ },
+ "measured": {
+  "bake_seconds": 1.87,
+  "check_seconds": 2.88,
+  "glb_bytes": 995228,
+  "scene_bytes": 291576,
+  "folding_bytes": 14511,
+  "vertices": 35508,
+  "residues": 95,
+  "bridges": 0,
+  "rings": 702,
+  "bind_ms": 54,
+  "frames_ms": 82,
+  "slowest_frame_us": 3022,
+  "largest_step": 0.6737113400139088,
+  "largest_nudge": 0.0
+ },
+ "drafted_by": "scripts/draft_curated.py"
+}
