@@ -319,6 +319,21 @@ Each goes into the verification section, with what was done about it.
      - `/proteins/resolve/<GENE>` reads `ready` at its slug.
      - `fetch_tracks.py --check`.
      - `LIVE_BACKEND=https://helix-peak-backend.onrender.com flutter test test/live_backend_check.dart`.
+
+   **What actually happened (2026-10-25).** After the backend's commit `0ff87ca`, with no
+   protein of the sixteen built on demand and the worker's queue empty:
+   - **The seed.** Its dry run, then for real: 16 proteins, 92 aliases, 96 track rows.
+   - **The uploads.** Every kind, a dry run first: record; structure, whose dry run against
+     the service compiled every scene, each model and scene by its digest the one the draft's
+     app check passed (32 of 32); folding; constraint; impact; clinvar; locus. 16 objects of
+     each, and 32 for the structures.
+   - **The checks.**
+     - `seed_catalog.py --check`: 54 rows, 0 differences.
+     - `check_assets.py --against` the service: 54 rows agree.
+     - `/catalog`: 54 rows, orders 0 to 53.
+     - `/proteins/resolve/<GENE>`: `ready` at its slug for all sixteen.
+     - `fetch_tracks.py --check`: 378 files as stored, 0 differ.
+     - `live_backend_check.dart` passes.
 6. **App.** `pipeline/sync_fixtures.py --check --target …` from the service must find the local
    run's files unchanged. Commit the app: the fixtures, the zoom tables and the docs (this
    batch's verification section, the compressed-intron section). List the new golden PNGs for
