@@ -1,24 +1,26 @@
 # HANDOFF: sixteen more curated proteins, one for each organ the zoom has no specimen of
 
-Prepared 2026-10-25. Starts from app `bde24dd` and the backend commit that rewrote this file
-(both level with GitHub when it was written). Read both CLAUDE.md files,
+Prepared 2026-10-25. Starts from app `bde24dd` (level with GitHub) and the backend commit that
+last changed this file (`git log -1 -- HANDOFF-CURATED-SIXTEEN.md`; the backend is ahead of
+GitHub only by this file's commits). Read both CLAUDE.md files,
 `helix-peek/docs/protein-pipeline-rules.md` and `pipeline/README.md` ("Adding a protein")
-first: that runbook is the whole method, and this file adds only the batch. Under each phase,
-write a short **What actually happened** when it is done.
+first: that runbook is the whole method, and this file adds only the batch. Paths are the
+backend's, except `helix-peek/…`, the app's checkout beside it. Under each phase, write a short
+**What actually happened** when it is done.
 
-Until this batch this file was `HANDOFF-CURATED-TEN.md`, the third ten's handoff. That record
-is in git at `3907aed`;
-the checks of both later batches are in `helix-peek/docs/protein-verification.md` ("The third
-ten", "The fourth batch").
+Until this batch this file was `HANDOFF-CURATED-TEN.md`, the third ten's handoff; that record is
+in git at `3907aed`. The checks of the third ten and the fourth batch are in
+`helix-peek/docs/protein-verification.md`.
 
 ## Decided by the user (2026-10-25)
 
 1. **The sixteen below**, one for each `OrganKind` with no specimen under
    `helix-peek/lib/features/zoom/presentation/scenes/organs/` (20 of the 36 have one), so each
    of those organs has a protein to show once its specimen is drawn.
-2. **A red gate stops the session.** When a protein fails the app's fold check, AVI's biology
-   check, ESM-2's alignment gate or a page limit, ask. The user chooses each time: a swap,
-   shipping it unscored (as phospholamban), or dropping the organ.
+2. **A red gate stops the session.** When a protein fails a gate (the app's fold check, AVI's
+   biology check, ESM-2's alignment gate, a page limit, the resolver or the record build), or
+   its locus bake lands it outside its organ, ask. The user chooses each time: a swap, shipping
+   it unscored (as phospholamban), or dropping the organ.
 3. **This session executes, live writes included**, after one stop: the user reviews the
    sixteen's words before anything is live (Phase 4). `--dry-run` every seed and upload
    first, and write only with every gate green. Never push. Ask before a migration, a deploy,
@@ -34,11 +36,12 @@ recoverin was.
 
 ## The sixteen
 
-Organ and cell come from the locus bake's `path_of`, over the Atlas bulk file
-(proteinatlas.json.gz, 25.1, fetched 2026-10-25). "Drawn as" is the zoom's `shapeOfCell`, or
-`shapeOfTissue` where the path names no cell. The entry is PDB policy 1's choice in a
-`scripts/dry_fold.py` run of 2026-10-25 (UniProt 2026_03, RCSB search of 2026-10-21), its
-method and resolution as the fold page will print them; residues are placed of the span drawn.
+Organ and cell come from the locus bake's `path_of`, run over the Atlas bulk file
+(proteinatlas.json.gz) fetched 2026-10-25. The bake reads the Atlas itself, so its `path` is
+the one that counts. "Drawn as" is the zoom's `shapeOfCell`, or `shapeOfTissue` where the path
+names no cell. The entry is PDB policy 1's choice in a `scripts/dry_fold.py` run of 2026-10-25
+(UniProt 2026_03, RCSB search of 2026-10-21), its method and resolution as the fold page will
+print them. Residues: placed / in the span drawn.
 
 | order | slug (suggested) | gene | UniProt | organ → cell (drawn as) | RNA specificity | entry | notes |
 |---|---|---|---|---|---|---|---|
@@ -47,7 +50,7 @@ method and resolution as the fold page will print them; residues are placed of t
 | 40 | slpi | SLPI | P03973 | cervix → no cell, the tissue's own (epithelial) | group enriched | 4DOQ X-ray 2.00 Å, 47/47 | domain only: WAP 2, 85–131; 4 bridges |
 | 41 | npc2 | NPC2 | P61916 | epididymis → epididymal principal cells (epithelial) | tissue enriched | 5KWY X-ray 2.40 Å, 132/132 | 3 bridges |
 | 42 | fgf19 | FGF19 | O95750 | gallbladder → cholangiocytes (epithelial) | tissue enriched | 2P23 X-ray 1.80 Å, 136/192 | 1 bridge, not UniProt's |
-| 43 | fabp6 | FABP6 | P51161 | intestine → colon enteroendocrine cells (endocrine) | tissue enriched | 5L8O X-ray 2.39 Å, 125/127 | |
+| 43 | fabp6 | FABP6 | P51161 | intestine → colon enteroendocrine cells (endocrine) | tissue enriched | 5L8O X-ray 2.39 Å, 125/127 | initiator methionine removed |
 | 44 | surfactantd | SFTPD | P35247 | lung → alveolar cells type 2 (epithelial) | tissue enriched | 1PWB X-ray 1.40 Å, 126/126 | domain only: C-type lectin, 250–375; 2 bridges |
 | 45 | padi6 | PADI6 | Q6TGC4 | ovary → oocytes (germ) | tissue enriched | 25YL cryo-EM 2.8 Å, 685/694 | one chain of two |
 | 46 | casr | CASR | P41180 | parathyroid gland → no cell, the tissue's own (endocrine) | tissue enriched | 7M3G cryo-EM 2.5 Å, 804/1,059 | 9 bridges; 1,078 aa |
@@ -60,8 +63,10 @@ method and resolution as the fold page will print them; residues are placed of t
 | 53 | gas6 | GAS6 | Q14393 | blood vessel → no cell, the tissue's own (endothelial) | tissue enriched | 5VXZ X-ray 2.30 Å, 369/388 | domain only: laminin G-like 1–2, 288–675; 2 bridges |
 
 Re-run the structure check with
-`NCBI_EMAIL=gentiannurce@gmail.com .venv/bin/python scripts/dry_fold.py --out <dir> S100P LALBA SLPI NPC2 FGF19 FABP6 SFTPD PADI6 CASR ACP3 PTGES LOXL2 CKMT2 PAEP ALOX12 GAS6`
-(the 2026-10-25 report sat in that session's scratchpad and may be gone). Draft with:
+`NCBI_EMAIL=gentiannurce@gmail.com .venv/bin/python scripts/dry_fold.py --out <dir> S100P LALBA SLPI NPC2 FGF19 FABP6 SFTPD PADI6 CASR ACP3 PTGES LOXL2 CKMT2 PAEP ALOX12 GAS6`.
+The 2026-10-25 run's files, while this Mac keeps them, are in
+`/private/tmp/claude-501/-Users-gentiannurce-Desktop-HelixPeek/8b7eb047-13f2-4c76-8992-68e49befd8f9/scratchpad/`:
+`folds/report.md` and `folds/report.json`, and the Atlas scan, `organ_scan.json`. Draft with:
 
 ```sh
 NCBI_EMAIL=gentiannurce@gmail.com .venv/bin/python scripts/draft_curated.py --out <dir> \
@@ -87,11 +92,16 @@ Alternates that passed the same dry run (swap only with the user):
 | smooth muscle | MYLK | 6C6M X-ray 2.50 Å, one Ig-like domain, 95 of 1,914 | smooth muscle cells |
 
 None passed for breast, epididymis, gallbladder, intestine, ovary, parathyroid gland, seminal
-vesicle or blood vessel. Candidates refused, for any of the organs: PTH and KLK3 (6- and 7-residue propeptides,
-autotaxin's limit), ACTN1 (six cell locations, and no buildable index entry), IDH2 (the
-resolver: its MANE mRNA does not hold its protein), SPINK2, ANXA4 and SFTPC (no buildable index
-entry); no entry passes for EDNRA, ANO1, SERPINB4, MFGE8, COMP, BGN, APOA4, DEFA5, FSHR, INHA,
-VDR, CCKAR, UPK1A, WFDC2, STC2 or CSN2. SEMG1 and SEMG2 were not tried.
+vesicle or blood vessel. Refused, for any organ:
+
+- PTH (no entry passes, and its propeptide is 6 residues) and KLK3 (a 7-residue propeptide):
+  autotaxin's limit.
+- ACTN1: six cell locations, and no buildable index entry.
+- IDH2: the resolver refuses it (its MANE mRNA does not hold its protein).
+- SPINK2, ANXA4 and SFTPC: no buildable index entry.
+- No entry passes for EDNRA, ANO1, SERPINB4, MFGE8, COMP, BGN, APOA4, DEFA5, FSHR, INHA, VDR,
+  CCKAR, UPK1A, WFDC2, STC2 or CSN2.
+- SEMG1 and SEMG2 were not tried.
 
 None of the sixteen or the alternates was built on demand on 2026-10-25 (`/proteins/built`
 lists eleven proteins), and `/catalog` served 38 rows. Check `/proteins/built` again before
@@ -107,6 +117,7 @@ seeding: the seed refuses a row over a protein built on demand.
   - PF4 failed AVI's `check_biology` (exons 7.4 = introns 7.4); PPBP replaced it.
   - PLN failed ESM-2's alignment gate (40.0% / 46.7%, against the more than 50% it needs) and
     ships unscored (`scored=False`).
+
   `bake_curated.py` runs impact after constraint, so a `check_biology` refusal arrives after
   ESM-2's time.
 - **Two page limits, still open.** A region above `regionFloor` but under about 30 bases that
@@ -146,18 +157,20 @@ Each goes into the verification section, with what was done about it.
 5. **Residues the entries differ on**, each within what the fidelity gate allows: 5ZE3 has Q at
    455, 4R0B has E at 46 and 8GHE has S at 322, where each record has N. 5TL9's Cys59 is
    modified (CSO, S-hydroxycysteine).
-6. **CKMT2's transit peptide.** Its first 39 residues are a mitochondrial transit peptide, the
-   first leader in a curated row that is not a signal peptide. The resolver names it `Transit
-   peptide (…)`, short `T` (`resolve._label`). R3.1 and R3.2 are written for a signal peptide,
-   so check what the protein and mature pages call it and record it.
+6. **Leaders.** CKMT2's first 39 residues are a mitochondrial transit peptide, the first leader
+   in a curated row that is neither a signal peptide nor a methionine. The resolver names it
+   `Transit peptide (…)`, short `T` (`resolve._label`). R3.1 and R3.2 are written for a signal
+   peptide, so check what the protein and mature pages call it, and record it. FABP6's chain
+   starts at 2: its initiator methionine is a region of its own, as SOD1's is (R3.7).
 7. **Four folds draw a domain**, as p53's, APP's and uromodulin's do: SLPI's second WAP domain,
    SFTPD's carbohydrate-recognition domain, LOXL2's SRCR 3–4 and GAS6's two laminin G-like
    domains. The structure sentence says what is not drawn.
-8. **Introns shortened.** By Ensembl's gene spans, these are likely to exceed the 24,000-base
-   budget: CASR (108 kb), LOXL2 (128 kb), ACP3 (51 kb), GAS6 (44 kb), CKMT2 (33 kb) and PADI6
-   (30 kb). FABP6 (51 kb) and SFTPD (45 kb) exceed it only if MANE's span is as long. The record
+8. **Introns shortened.** The budget holds the MANE transcript's span, exons and introns
+   (`build_gene_record.intron_scale`). By Ensembl's canonical (MANE Select) spans, six are over
+   24,000 bases: CASR (107,962), LOXL2 (107,224), GAS6 (43,528), ACP3 (41,435), CKMT2 (33,077)
+   and PADI6 (29,504). The next longest are ALOX12 (14,706) and PTGES (14,694). The record
    decides (`GeneRecord.isIntronCompressed`). The app CLAUDE.md's compressed-intron section names
-   each gene that joins.
+   each gene that joins: fifteen genes, if all six do.
 9. **Tissue enhanced, not enriched.** That is what the Atlas says for PTGES, LOXL2 and ALOX12
    (the list given on 2026-10-25 said enriched). `path_of` reads the organ from the Atlas's
    tissue specificity either way.
@@ -173,23 +186,28 @@ Each goes into the verification section, with what was done about it.
      are kept, `mature_peptides`), structure, and the list above.
    - Settle each `# HAND:` (R3.3, R3.4).
    - Add the rows to `targets.py` and `curated/catalog.json` at orders 38–53.
-   - Write every `DRAFT:` word by hand (R4.5).
+   - Write every `DRAFT:` word by hand (R4.5), in the register of the 38 rows already written:
+     data first, no field basics (memory `domain-expert-audience`).
    - Then `scripts/resolver_worker.sh status`, and `restart`: the worker runs this tree, and
      its scorer imports `targets.py`.
 2. **Bake.** For each:
    `NCBI_EMAIL=gentiannurce@gmail.com .venv/bin/python pipeline/bake_curated.py --target <slug>`
-   (`--dry-run` prints the commands, `--from <step>` resumes). The gates:
-   - `check_assets.py` over all 54 rows.
-   - `check_folding` and `check_locus` clean.
+   (`--dry-run` prints the commands, `--from <step>` resumes). Its last step checks that row
+   alone. Then the gates, by hand:
+   - `check_assets.py`, `folding/check_folding.py` and `locus/check_locus.py` with no
+     `--target`: all 54 rows.
+   - Each locus lands in its planned organ (decision 2).
    - `.venv/bin/pytest` green offline.
    - `fetch_tracks.py --check`: every other row's files as stored.
 
    At a red gate, stop and ask (decision 2). Commit the backend.
 3. **Try the app on them.** `pipeline/sync_fixtures.py --from local --target <slug>…` writes
    the rows and their tracks into the app's fixtures, as they will be served.
-   - Add the sixteen to the zoom's own tables, as the eight did (`zoom_domain_test`'s baked
-     paths and cell shapes, `cell_scene_test`). Any other zoom-test change goes to the user, as
-     the ten's did.
+   - Add the sixteen to the zoom's own tables, as the eight did. In `zoom_domain_test`: the baked
+     paths (a protein in no cell is tabled as prion's is) and the cell shapes (the table's
+     "drawn as"). In `cell_scene_test`: the cells drawn part by part, which are the endocrine
+     cells and the neurons, so FABP6 and CASR join. Any other zoom-test change goes to the user,
+     as the ten's did.
    - Run `flutter analyze`, `flutter test`, and the three guards in the app CLAUDE.md against
      the start commit. A walk-test edit needs the user's word.
 4. **Stop for the user.** Show them the sixteen's words (summary, structure sentence and
@@ -207,9 +225,9 @@ Each goes into the verification section, with what was done about it.
      - `fetch_tracks.py --check`.
      - `LIVE_BACKEND=https://helix-peak-backend.onrender.com flutter test test/live_backend_check.dart`.
 6. **App.** `pipeline/sync_fixtures.py --check --target …` from the service must find the local
-   run's files unchanged. Commit the app: the fixtures, the zoom tables and the docs (the
-   compressed-intron section). List the new golden PNGs for the x86 host; the ten owed 44 and
-   the eight 34.
+   run's files unchanged. Commit the app: the fixtures, the zoom tables and the docs (this
+   batch's verification section, the compressed-intron section). List the new golden PNGs for
+   the x86 host; the ten owed 44 and the eight 34.
 7. **Report** to the user, and update the memory notes: `unbuilt-organ-proteins`,
    `live-db-migration-state`, `zoom-cell-coverage`, `goldens-need-x86-host`,
    `protein-pipeline-goal`, `local-main-ahead-of-origin`.
@@ -218,7 +236,9 @@ Each goes into the verification section, with what was done about it.
 
 - Every bake environment and command is in `pipeline/README.md`.
 - `NCBI_EMAIL=gentiannurce@gmail.com` goes in the command's environment only.
-- `ALPHAGENOME_API_KEY` is in `~/.env`; the Atlas meters per minute, so chunk.
+- `ALPHAGENOME_API_KEY` is in `~/.env`. AlphaGenome meters requests per minute: the impact
+  bake cuts its windows to 20 kb, paces them and retries (`bake_impact.CHUNK_BP`), so bake one
+  protein at a time.
 - Never install into `pipeline/.esm-venv`.
 - The resolver worker runs this backend tree against production. Read its queue first
   (`scripts/resolver_worker.sh status`), and `restart` it after changing `pipeline/`.
