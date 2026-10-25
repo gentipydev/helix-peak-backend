@@ -6,7 +6,8 @@ Prepared 2026-10-25. Starts from app `bde24dd` and the backend commit that rewro
 first: that runbook is the whole method, and this file adds only the batch. Under each phase,
 write a short **What actually happened** when it is done.
 
-Until this batch the file was the third ten's handoff. That record is in git at `3907aed`;
+Until this batch this file was `HANDOFF-CURATED-TEN.md`, the third ten's handoff. That record
+is in git at `3907aed`;
 the checks of both later batches are in `helix-peek/docs/protein-verification.md` ("The third
 ten", "The fourth batch").
 
@@ -62,7 +63,7 @@ Re-run the structure check with
 `NCBI_EMAIL=gentiannurce@gmail.com .venv/bin/python scripts/dry_fold.py --out <dir> S100P LALBA SLPI NPC2 FGF19 FABP6 SFTPD PADI6 CASR ACP3 PTGES LOXL2 CKMT2 PAEP ALOX12 GAS6`
 (the 2026-10-25 report sat in that session's scratchpad and may be gone). Draft with:
 
-```
+```sh
 NCBI_EMAIL=gentiannurce@gmail.com .venv/bin/python scripts/draft_curated.py --out <dir> \
     S100P=s100p@1J55 LALBA=lactalbumin@3B0O SLPI=slpi@4DOQ NPC2=npc2@5KWY \
     FGF19=fgf19@2P23 FABP6=fabp6@5L8O SFTPD=surfactantd@1PWB PADI6=padi6@25YL \
@@ -224,6 +225,7 @@ Each goes into the verification section, with what was done about it.
 - zsh does not split a joined string, so pass slugs as an array: `args+=(--target "$s")`.
 
 **Out of scope:**
+
 - The sixteen organs' specimens, drawn from anatomy as the other twenty's were. That is zoom
   work the user asks for by name, organ by organ; until then each organ is the figure's outline
   with its plain surface.
