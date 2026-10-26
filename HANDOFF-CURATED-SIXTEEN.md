@@ -338,6 +338,31 @@ Each goes into the verification section, with what was done about it.
    run's files unchanged. Commit the app: the fixtures, the zoom tables and the docs (this
    batch's verification section, the compressed-intron section). List the new golden PNGs for
    the x86 host; the ten owed 44 and the eight 34.
+
+   **What actually happened (2026-10-25/26).**
+   - `sync_fixtures.py --check` from the service: 113 fixtures, 0 differ.
+   - **The four zoom checks** were fixed in the zoom's code, the user's choice:
+     - the vessel's and the parathyroid's drawings given their outlines;
+     - on a short arm under 3.2 half-widths, the waist and that end's rounding drawn down
+       in proportion;
+     - a followed territory that would lie over the nucleolus turned a quarter of the way
+       round, away from it.
+
+     A dump of every chromatid width and cleft, and every territory and nucleolus, is the
+     same to the float for the thirty-eight before and after. The user saw the diff before
+     the commit.
+   - **The app's checks.** `flutter test` 2,472 passed; its one failure is the git-excluded
+     screenshot tool that needs `SHOTS`. `flutter analyze` is clean, and the three guards are
+     clean against `bde24dd` (16 proteins and 80 files added to `test/fixtures`, nothing else).
+   - **The app's commits**, local:
+     - `93a4587`: the zoom's three cases;
+     - `7c259ce`: the fixtures and the zoom's tables;
+     - `7de0d9e`: the docs, with this batch's verification section and the compressed-intron
+       list, now sixteen genes.
+   - **Every one of the zoom's 36 organs** now has a curated protein that reaches it.
+   - **Golden pages.** 75 new catalog golden pages are owed to the x86 host
+     (`test/goldens/catalog/<slug>-1-gene.png` and `-2.png` to `-5.png`). The ten's 44 and the
+     eight's 34 are still owed too.
 7. **Report** to the user, and update the memory notes: `unbuilt-organ-proteins`,
    `live-db-migration-state`, `zoom-cell-coverage`, `goldens-need-x86-host`,
    `protein-pipeline-goal`, `local-main-ahead-of-origin`.
