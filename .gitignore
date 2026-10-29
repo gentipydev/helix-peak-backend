@@ -24,3 +24,9 @@ pipeline/data/
 # The environment the resolver's worker runs in on the dev Mac, until Modal
 # runs it (pipeline/resolver/README.md).
 .worker-venv/
+
+# The de novo model: its fetched corpus, its runs and its checkpoints.
+# Offline working files, like pipeline/data/ above -- never committed.
+pipeline/denovo/data/
+pipeline/denovo/runs/
+*.pt
