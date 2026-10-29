@@ -8,7 +8,7 @@ import sys
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -91,6 +91,51 @@ def _token_losses(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
     )
 
 
+def build(
+    config: Config, total_steps: int, device: torch.device
+) -> Tuple[HelixPeekLM, torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR]:
+    model = HelixPeekLM(
+        d_model=config.d_model,
+        nhead=config.nhead,
+        num_layers=config.num_layers,
+        dim_feedforward=config.dim_feedforward,
+        dropout=config.dropout,
+    ).to(device)
+    optimizer = torch.optim.AdamW(
+        param_groups(model, config.weight_decay), lr=config.learning_rate
+    )
+    scheduler = torch.optim.lr_scheduler.LambdaLR(
+        optimizer, lr_schedule(config, total_steps)
+    )
+    return model, optimizer, scheduler
+
+
+def train_step(
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    scheduler: torch.optim.lr_scheduler.LambdaLR,
+    x: torch.Tensor,
+    y: torch.Tensor,
+    grad_clip: float,
+    after_backward: Optional[Callable[[], None]] = None,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """`after_backward` sees the gradients before they are clipped and the
+    weights before they move; `trace.py` records them there."""
+    per_token = _token_losses(model(x), y)
+    real = (y.reshape(-1) != PAD_ID)
+    tokens = real.sum()
+    loss = (per_token * real).sum() / tokens.clamp(min=1)
+
+    optimizer.zero_grad(set_to_none=True)
+    loss.backward()
+    if after_backward is not None:
+        after_backward()
+    norm = torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+    optimizer.step()
+    scheduler.step()
+    return loss.detach(), tokens, norm
+
+
 @torch.no_grad()
 def evaluate(
     model: torch.nn.Module,
@@ -130,21 +175,9 @@ def run(
     train_frames, train_lengths = build_dataset(train_sequences)
     val_frames, val_lengths = build_dataset(validation_sequences)
 
-    model = HelixPeekLM(
-        d_model=config.d_model,
-        nhead=config.nhead,
-        num_layers=config.num_layers,
-        dim_feedforward=config.dim_feedforward,
-        dropout=config.dropout,
-    ).to(device)
-
-    optimizer = torch.optim.AdamW(
-        param_groups(model, config.weight_decay), lr=config.learning_rate
-    )
     steps_per_epoch = math.ceil(len(train_sequences) / config.batch_size)
-    total_steps = steps_per_epoch * config.max_epochs
-    scheduler = torch.optim.lr_scheduler.LambdaLR(
-        optimizer, lr_schedule(config, total_steps)
+    model, optimizer, scheduler = build(
+        config, steps_per_epoch * config.max_epochs, device
     )
 
     if log:
@@ -166,18 +199,10 @@ def run(
 
         for x, y in batches(train_frames, train_lengths, config.batch_size, generator):
             x, y = x.to(device), y.to(device)
-            per_token = _token_losses(model(x), y)
-            real = (y.reshape(-1) != PAD_ID)
-            tokens = real.sum()
-            loss = (per_token * real).sum() / tokens.clamp(min=1)
-
-            optimizer.zero_grad(set_to_none=True)
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_clip)
-            optimizer.step()
-            scheduler.step()
-
-            loss_sum += loss.detach() * tokens
+            loss, tokens, _ = train_step(
+                model, optimizer, scheduler, x, y, config.grad_clip
+            )
+            loss_sum += loss * tokens
             token_sum += tokens
 
         train_loss = (loss_sum / token_sum.clamp(min=1)).item()
