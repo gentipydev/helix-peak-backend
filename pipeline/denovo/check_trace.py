@@ -163,6 +163,11 @@ def validate(payload: bytes, name: Optional[str] = None) -> Dict:
     groups = data.get("groups") or []
     if len(points) != 2 * layers + 2 or len(groups) != 3 * layers + 4:
         raise Refused("the points or groups do not fit %d layers" % layers)
+    sizes = data.get("group_sizes")
+    if (not isinstance(sizes, list) or len(sizes) != len(groups)
+            or not all(isinstance(n, int) and n > 0 for n in sizes)
+            or sum(sizes) != model["parameters"]):
+        raise Refused("the groups' sizes do not add up to the model's parameters")
 
     reference = data.get("baselines") or {}
     for key in ("uniform", "unigram", "bigram"):

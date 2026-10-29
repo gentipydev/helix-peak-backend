@@ -144,6 +144,14 @@ def test_the_probabilities_are_over_what_can_come_next(toy):
         assert np.allclose(probs.sum(axis=1), 1.0, atol=21 / 255)
 
 
+def test_every_weight_is_in_one_group(toy):
+    model = HelixPeekLM(d_model=TOY.d_model, nhead=TOY.nhead, num_layers=TOY.num_layers,
+                        dim_feedforward=TOY.dim_feedforward)
+    assert sum(toy["group_sizes"]) == toy["model"]["parameters"] == sum(
+        p.numel() for p in model.parameters())
+    assert len(toy["group_sizes"]) == len(toy["groups"])
+
+
 def test_points_and_groups_follow_the_layers():
     assert point_names(2) == ["x0", "m1", "h1", "m2", "h2", "hf"]
     assert len(group_names(4)) == 16

@@ -355,7 +355,8 @@ def _run(config: Config, sequences: Sequence[str], capture_at: frozenset) -> Dic
     if capture.error > ATTENTION_TOLERANCE:
         raise RuntimeError("the attention worked out again is %.2e from the layer's own" % capture.error)
     return {"steps": kept, "checkpoints": checkpoints, "batch": batch,
-            "parameters": parameter_count(model)}
+            "parameters": parameter_count(model),
+            "group_sizes": [sum(p.numel() for p in members[name]) for name in groups]}
 
 
 def _array(values, dtype: str, **extra) -> Dict:
@@ -451,6 +452,9 @@ def record(
         "floor": floor(sequences),
         "points": point_names(config.num_layers),
         "groups": group_names(config.num_layers),
+        # How many weights each group holds: a group's norm over the root of
+        # its size is the typical weight's, which is what Adam evens out.
+        "group_sizes": played["group_sizes"],
         "steps": {
             "count": len(steps["loss"]),
             "loss": _array(steps["loss"], "f4"),

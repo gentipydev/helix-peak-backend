@@ -88,6 +88,13 @@ def test_an_attention_row_must_sum_to_one():
         validate(dump(data))
 
 
+def test_the_groups_must_hold_every_weight():
+    data = load()
+    data["group_sizes"][0] += 1
+    with pytest.raises(Refused, match="sizes"):
+        validate(dump(data))
+
+
 def test_the_batch_must_frame_the_peptides():
     data = load()
     data["batch"]["x"][0][1] = 0
