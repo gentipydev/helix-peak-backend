@@ -1,8 +1,9 @@
 # A de novo protein model, from scratch
 
 A learning project: a small language model that writes peptide sequences one
-residue at a time, built up a file at a time. Offline only. Nothing here is a
-track, nothing is uploaded, and the service never imports it.
+residue at a time, built up a file at a time. Offline, but for one thing it
+uploads: a recorded training run, which the app plays stage by stage (see "The
+run the app plays"). Nothing here is a track, and the service never imports it.
 
 ## Not ESM-2's kind of model
 
@@ -21,6 +22,7 @@ ones before it, so sampling one at a time writes a sequence from `<bos>` to
 4. `bigram.py` + `bigram_torch.py` + `baselines.py`: the loss to beat. Done.
 5. `helix_peek_LM.py` + `train.py` + `sweep.py`: the transformer. Done.
 6. Sampling: temperature and top-k, from `<bos>` until `<eos>`. **Not written.**
+7. `trace.py` + `check_trace.py` + `publish_trace.py`: the run the app plays. Done.
 
 ## The corpus: 10,416 peptides, and why not 20,000
 
@@ -167,6 +169,73 @@ so `ignore_index` has to go with it.
 A checkpoint's `lm_head` rows for `<pad>` and `<bos>` are therefore untrained.
 Anything that samples from this model must apply the same mask.
 
+## The run the app plays
+
+The app's Peptide Language Model page shows this model learning, one training
+step at a time: tokenising, the forward pass, the prediction, the loss, the
+backward pass, the update and the loop. Every number it draws is the engine's
+own. `trace.py` drives `train.build` and `train.train_step`, exactly as
+`train.run` drives them, and records the run through read-only hooks.
+
+The data is the curated proteins' peptides (`curated_peptides.py`): six
+peptides, 174 residues, from insulin, relaxin and vasopressin. The run is the
+swept model and optimiser with three changes, each for the page:
+
+| | corpus run | recorded run | why |
+|---|---|---|---|
+| data | 9,367 train, 1,049 held out | the six, nothing held out | six peptides cannot be split; this run shows learning, not generalisation |
+| batch | 64 of 9,367 | all six, every step | one batch, so a step's forward pass is the whole dataset's |
+| dropout | 0.2 | **0** | the forward pass drawn is then the forward pass trained, number for number |
+| epochs | 200 cap, stop after 10 idle | 200 steps, no stopping | nothing is held out to stop on |
+
+What it records:
+
+- **every step**: the loss, residues and `<eos>` apart, the learning rate used,
+  the gradient norm before clipping and the clip applied, 16 parameter groups'
+  gradient and update norms, each of the 180 targets' loss, and the output
+  layer's weights and biases;
+- **at each checkpoint**, everything else: the residual stream at its ten
+  points (the embeddings, after each block's attention and feed-forward, and
+  the final norm), the gradient reaching each of them, every head's attention
+  map, the logits and the probabilities over the 21 tokens that can follow,
+  and the output layer's clipped gradient and its update.
+
+The checkpoints are chosen by rule: step 1; the first step whose loss is
+below each baseline on these six (uniform, unigram, bigram); the first below
+one nat and below a tenth of one; and the last. Arrays are little-endian
+base64 in JSON, int8, uint8 or uint16 with their scales where quantised.
+
+```
+6 peptides, 180 targets | 456,887 parameters | 200 steps on cpu
+loss 3.1448 -> 0.0676 (uniform 3.0445, unigram 2.8564, bigram 2.0434, floor 0.0597)
+checkpoints: 1 (first), 8 (uniform), 14 (unigram), 35 (bigram), 55 (one_nat), 100 (tenth_nat), 200 (last)
+2,989,968 bytes
+```
+
+The floor is the least loss any model reading whole prefixes can reach on
+these six: from `<bos>` alone nothing says which peptide comes, so each first
+residue costs ln 6, and 6 ln 6 / 180 = 0.0597. By step 200 that is the only
+gradient left.
+
+It is recorded twice: the first pass finds the checkpoints, and the second
+keeps the activations at them and must train to the same losses, float for
+float. On CPU, with deterministic kernels and one thread, a run is the same
+bytes every time on the same machine, which is the proof that what is served
+is what the engine makes:
+
+```
+python trace.py                    # runs/curated/trace.json
+python check_trace.py              # the shape the app reads (stdlib, Python 3.9)
+python trace.py --check --against https://helix-peak-backend.onrender.com
+python trace.py --toy --out tests/fixtures/toy_trace.json   # the tests' fixture
+```
+
+From the backend's `.venv`, which has psycopg and no torch,
+`python3 pipeline/denovo/publish_trace.py --dry-run`, then with
+`DATABASE_URL`, `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` set, uploads it to
+`tracks/peptide-lm/curated.<sha12>.json` and points the `lm_run` row
+(migration 0013) at it. `GET /peptide-lm/runs/curated` serves the row.
+
 ## Running it
 
 ```
@@ -175,6 +244,7 @@ python baselines.py               # uniform, unigram, bigram on the same split
 python dedup.py --report          # cluster sizes, and the split holds
 python train.py --tag default     # one run, best weights into runs/default/
 python sweep.py                   # 33 runs, three seeds, runs/sweep/
+python trace.py                   # the recorded run the app plays, runs/curated/
 ```
 
 Tests are offline and never touch the network: `pytest pipeline/denovo` in this
