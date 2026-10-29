@@ -12,8 +12,8 @@ if str(BACKEND) not in sys.path:
 
 from pipeline.denovo.alphabet import MAX_LENGTH, MIN_LENGTH
 from pipeline.denovo.curated_peptides import (
-    MATURE, by_protein, collect, entries, missing, modelable, of, read_record,
-    record_path, report, under_floor, withheld, write,
+    LEADER, MATURE, by_protein, collect, entries, leaders, missing, modelable, of,
+    read_record, record_path, report, under_floor, withheld, write,
 )
 from pipeline.targets import TARGETS
 
@@ -58,8 +58,8 @@ def test_entries_of_a_record_with_nothing_is_empty():
 
 
 @stored
-def test_insulin_carries_its_three_chains_and_its_leader():
-    found = {label: s for _, label, s in of(_target("insulin"))}
+def test_insulin_carries_its_three_chains():
+    found = {label: s for _, label, s in of(_target("insulin"), with_leaders=True)}
     assert len(found["insulin A chain"]) == 21
     assert len(found["insulin B chain"]) == 30
     assert len(found["C-peptide"]) == 31
@@ -68,16 +68,24 @@ def test_insulin_carries_its_three_chains_and_its_leader():
 
 
 @stored
-def test_mature_only_drops_the_leaders():
-    assert {e[0] for e in of(_target("insulin"), mature_only=True)} == {MATURE}
-    assert of(_target("lysozyme"), mature_only=True) == []
+def test_a_leader_is_not_a_product():
+    assert {e[0] for e in of(_target("insulin"))} == {MATURE}
+    assert of(_target("lysozyme")) == []
+    assert [e[0] for e in of(_target("lysozyme"), with_leaders=True)] == [LEADER]
 
 
 @stored
-def test_only_three_proteins_carry_a_mature_peptide_in_range():
-    assert [t.slug for t, _ in by_protein(mature_only=True)] == [
-        "insulin", "relaxin", "vasopressin",
-    ]
+def test_the_leaders_are_set_aside_not_lost():
+    held = leaders()
+    assert len(held) == 31
+    assert all(e[0] == LEADER for _, e in held)
+    assert "lysozyme" in {t.slug for t, _ in held}
+
+
+@stored
+def test_only_three_proteins_carry_a_peptide_the_model_can_train_on():
+    assert [t.slug for t, _ in by_protein()] == ["insulin", "relaxin", "vasopressin"]
+    assert len(collect()) == 6
 
 
 @stored
@@ -107,6 +115,12 @@ def test_write_round_trips(tmp_path):
     lines = out.read_text().split()
     assert count == len(lines) == len(set(lines))
     assert all(modelable(line) for line in lines)
+
+
+@stored
+def test_the_report_says_why_the_leaders_are_out():
+    assert "31 signal peptides set aside" in report()
+    assert "set aside" not in report(with_leaders=True)
 
 
 @stored
