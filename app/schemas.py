@@ -347,3 +347,20 @@ class ResolveResponse(BaseModel):
     state: str
     reason: Optional[str] = None
     build: Optional[BuildReport] = None
+
+
+class LmRun(BaseModel):
+    """Where a recorded training run of the de novo peptide model is.
+
+    Named as a ready track is: ``url`` is public storage, which the client
+    fetches directly, and ``sha256`` the bytes there. ``provenance`` says what
+    made them: the steps and checkpoints, the engine, its versions, the records
+    the peptides were read from, the commit and the date.
+    """
+
+    name: str
+    url: str
+    bytes: int
+    sha256: str
+    format: str
+    provenance: dict = {}

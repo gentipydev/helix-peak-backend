@@ -45,7 +45,8 @@ differs from storage. A mismatch means the refactor changed data. Stop; never up
 
 - Is: `/gene/{id}/{gene}` (read-through cache of whole records), `/catalog`, `/catalog/search`,
   `/protein/{slug}`, `/protein/{slug}/tracks`, `/proteins/suggest`, `/proteins/built`, `/proteins/resolve` (POST,
-  GET `/{gene}`, and POST `/{gene}/stop`), `.../impact-explanations`, `/health`, `/health/db`.
+  GET `/{gene}`, and POST `/{gene}/stop`), `.../impact-explanations`, `/peptide-lm/runs/{name}`,
+  `/health`, `/health/db`.
   It writes `genbank_record`, and one `resolve_request` row per new ask. It names bytes and never carries
   them: a ready track resolves to a public Supabase storage URL the client fetches directly.
 - Is not: authenticated (there is no auth), rate limited (Biopython's ~0.37 s spacing between
@@ -69,6 +70,9 @@ differs from storage. A mismatch means the refactor changed data. Stop; never up
 - `catalog.py`: reads `protein` and `protein_alias`. Raises `CatalogUnavailable` (503) and never answers empty.
 - `tracks.py`: `protein_track` rows become `{kind: Track}` with public storage URLs. Any kind with a row is served; `KINDS` is the floor.
 - `impact_explanations.py`: AVI explanations. Storage redirect first, then the local directory.
+- `lm_runs.py`: `/peptide-lm/runs/{name}`, a recorded training run of the de novo peptide model
+  (`lm_run`, `0013`), named as a ready track is: URL, sha256, provenance. No pool or a failed read
+  is a 503, never a 404.
 - `protein_index.py`: pure. `normalize()`, UniProt/MANE parsing, index rows and terms. Shared with `scripts/load_protein_index.py`.
 - `suggest.py`: `/proteins/suggest`. Ranked prefix tiers over `protein_index_term`, near misses last;
   `building` marks a protein whose build is under way, which the app watches rather than opens.
@@ -151,6 +155,18 @@ things follow for anyone working in this checkout:
   and ClinVar in the worker's own process, its raw responses deleted once the bake is done.
   AVI refused refuses ClinVar too: its records are placed by AVI's map. `RESOLVER_EVIDENCE=0`
   turns it off; `scripts/queue_evidence.py` queues it for a protein built without it.
+
+## The peptide model's recorded run
+
+The app's Peptide Language Model page plays one training run of `pipeline/denovo/`'s model on
+the curated proteins' peptides. It is not a track: it is trained on several proteins' peptides,
+so its row is `lm_run` (`0013`), not `protein_track`, and nothing about any protein changes.
+`pipeline/denovo/trace.py` records it with the engine's own `train_step` (deterministic, CPU, one
+thread), `check_trace.py` holds it to its shape, and `publish_trace.py` uploads it from `.venv`
+(`--dry-run` first). The proof that what is served is what the engine makes:
+`pipeline/denovo/venv/bin/python pipeline/denovo/trace.py --check --against <service>` records it
+again and compares the sha256 with the served row's. A change to `train.py`, `helix_peek_LM.py`,
+`sequences.py` or `trace.py` needs that proof, or a new run published on purpose.
 
 ## Checklist: adding a track kind
 

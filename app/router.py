@@ -7,7 +7,7 @@ from urllib.error import HTTPError, URLError
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Response
 from fastapi.responses import RedirectResponse
 
-from . import catalog, resolves, suggest, tracks
+from . import catalog, lm_runs, resolves, suggest, tracks
 from .catalog import CatalogUnavailable
 from .config import settings
 from .genbank_parser import GeneNotFound, extract_gene
@@ -16,6 +16,7 @@ from .schemas import (
     BuiltResponse,
     CatalogPage,
     GeneResponse,
+    LmRun,
     ProteinDetail,
     ResolveRequest,
     ResolveResponse,
@@ -278,6 +279,23 @@ def read_resolve(gene: str) -> dict:
     if said is None:
         raise _not_indexed(gene)
     return said
+
+
+@router.get("/peptide-lm/runs/{name}", response_model=LmRun)
+def read_lm_run(name: str) -> dict:
+    """Where a recorded training run of the peptide model is, which the app plays.
+
+    Named, never carried: the client fetches the bytes from storage. 404 where
+    no run has this name; 503 where the runs cannot be read.
+    """
+    with _catalog_errors():
+        found = lm_runs.get(name)
+    if found is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No training run {!r}.".format(name),
+        )
+    return found
 
 
 @router.get("/protein/{slug}", response_model=ProteinDetail)
