@@ -208,4 +208,3 @@ text through as a 200. The cache parses before it writes, and evicts a cached ro
 fails to parse. `_upstream_errors` keeps its clauses most-specific-first, because
 `HTTPError` < `URLError` < `OSError`.
 
-Git: commit locally and never push, in any form. The user does all pushing.
