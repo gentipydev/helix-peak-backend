@@ -1,0 +1,24 @@
+{
+  "fetched": "2026-10-29",
+  "uniprot_release": "2026_03",
+  "source": "https://rest.uniprot.org/uniprotkb",
+  "queries": {
+    "whole_entries": "(reviewed:true) AND (length:[10 TO 50]) AND (fragment:false) NOT (keyword:KW-0800)",
+    "mature_products": "(reviewed:true) AND (ft_peptide:*) NOT (keyword:KW-0800)"
+  },
+  "product_kinds": [
+    "Peptide",
+    "Propeptide"
+  ],
+  "counts": {
+    "whole_entries": 8273,
+    "products": 12975,
+    "products_by_kind": {
+      "Peptide": 9745,
+      "Propeptide": 3230
+    },
+    "products_in_range": 9072,
+    "corpus": 10416
+  },
+  "corpus_sha256": "b4ce6fa4dcd1af0d17cb1e669ad54819f96a3d26cfe2ea9d45f866fc764899da"
+}

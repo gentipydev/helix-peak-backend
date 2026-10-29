@@ -27,6 +27,10 @@ pipeline/data/
 
 # The de novo model: its fetched corpus, its runs and its checkpoints.
 # Offline working files, like pipeline/data/ above -- never committed.
-pipeline/denovo/data/
+# Its provenance is the exception: a kilobyte naming the UniProt release and
+# the queries the committed numbers came from, which no later fetch can
+# recover once that release ages out. The corpus itself rebuilds from it.
+pipeline/denovo/data/*
+!pipeline/denovo/data/provenance.json
 pipeline/denovo/runs/
 *.pt
