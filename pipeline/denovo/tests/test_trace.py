@@ -38,8 +38,7 @@ def stored(spec):
 
 
 def test_the_recorder_trains_as_the_engine_does(toy):
-    # The engine, holding as many places as the recorder gave the model.
-    config = replace(TOY, patience=TOY.max_epochs, max_len=toy["model"]["max_len"])
+    config = replace(TOY, patience=TOY.max_epochs)
     with deterministic():
         history = run(config, TOY_SEQUENCES, TOY_SEQUENCES, device=CPU, log=False)["history"]
     recorded = stored(toy["steps"]["loss"]).tolist()
@@ -61,8 +60,7 @@ def test_what_it_records_is_a_run_the_app_can_play(toy):
 def test_the_embedding_tables_are_the_ones_the_step_read(toy):
     torch.manual_seed(TOY.seed)
     model = HelixPeekLM(d_model=TOY.d_model, nhead=TOY.nhead, num_layers=TOY.num_layers,
-                        dim_feedforward=TOY.dim_feedforward, dropout=TOY.dropout,
-                        max_len=toy["model"]["max_len"])
+                        dim_feedforward=TOY.dim_feedforward, dropout=TOY.dropout)
     first = toy["checkpoints"][0]
     for key, weights in (("token_embedding", model.token_embedding.weight),
                          ("position_embedding", model.positional_embedding[0])):
@@ -160,14 +158,9 @@ def test_the_probabilities_are_over_what_can_come_next(toy):
         assert np.allclose(probs.sum(axis=1), 1.0, atol=21 / 255)
 
 
-def test_the_model_holds_as_many_places_as_the_longest_peptide_reads(toy):
-    assert toy["model"]["max_len"] == max(len(s) for s in TOY_SEQUENCES) + 1
-    assert toy["checkpoints"][0]["position_embedding"]["shape"][0] == toy["model"]["max_len"]
-
-
 def test_every_weight_is_in_one_group(toy):
     model = HelixPeekLM(d_model=TOY.d_model, nhead=TOY.nhead, num_layers=TOY.num_layers,
-                        dim_feedforward=TOY.dim_feedforward, max_len=toy["model"]["max_len"])
+                        dim_feedforward=TOY.dim_feedforward)
     assert sum(toy["group_sizes"]) == toy["model"]["parameters"] == sum(
         p.numel() for p in model.parameters())
     assert len(toy["group_sizes"]) == len(toy["groups"])

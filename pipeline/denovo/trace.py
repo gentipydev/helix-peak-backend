@@ -42,7 +42,7 @@ HERE = Path(__file__).resolve().parent
 if str(HERE.parents[1]) not in sys.path:
     sys.path.insert(0, str(HERE.parents[1]))
 
-from pipeline.denovo.alphabet import EOS_ID, TOKENS
+from pipeline.denovo.alphabet import EOS_ID, MAX_CONTEXT, TOKENS
 from pipeline.denovo.baselines import baselines
 from pipeline.denovo.bigram import ALLOWED, framed
 from pipeline.denovo.bigram_torch import masked
@@ -407,9 +407,6 @@ def record(
     for sequence in sequences:
         if not is_modelable(sequence):
             raise ValueError("%r is not a peptide the model takes" % sequence)
-    # As many places as the longest of them reads, `<bos>` and its residues:
-    # a position row no peptide reads would never move from its start.
-    config = replace(config, max_len=max(len(s) for s in sequences) + 1)
 
     with deterministic():
         plain = _run(config, sequences, frozenset())
@@ -452,7 +449,7 @@ def record(
             "nhead": config.nhead,
             "num_layers": config.num_layers,
             "dim_feedforward": config.dim_feedforward,
-            "max_len": config.max_len,
+            "max_len": MAX_CONTEXT,
             "parameters": played["parameters"],
         },
         "config": asdict(config),
