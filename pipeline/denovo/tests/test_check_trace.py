@@ -102,6 +102,30 @@ def test_the_batch_must_frame_the_peptides():
         validate(dump(data))
 
 
+def test_a_checkpoint_without_its_embedding_tables_is_refused():
+    data = load()
+    del data["checkpoints"][0]["position_embedding"]
+    with pytest.raises(Refused, match="position_embedding"):
+        validate(dump(data))
+
+
+def test_the_padding_row_of_the_token_embedding_is_zero():
+    data = load()
+    rewrite(data["checkpoints"][0]["token_embedding"], lambda raw: raw.__setitem__(0, 5))
+    with pytest.raises(Refused, match="padding row"):
+        validate(dump(data))
+
+
+def test_x0_must_be_each_ids_token_row_plus_its_places():
+    data = load()
+    width = data["model"]["d_model"]
+    # <bos>'s row, which every peptide's first place reads.
+    rewrite(data["checkpoints"][0]["token_embedding"],
+            lambda raw: raw.__setitem__(width, (raw[width] + 64) % 256))
+    with pytest.raises(Refused, match="token row plus"):
+        validate(dump(data))
+
+
 def test_the_checkpoints_must_run_from_the_first_step_to_the_last():
     data = load()
     data["checkpoints"] = data["checkpoints"][1:]

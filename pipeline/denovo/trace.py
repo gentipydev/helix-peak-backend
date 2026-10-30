@@ -9,8 +9,9 @@ The run is the engine's own: `train.build` and `train.train_step`, driven as
 `train.run` drives them, on the curated proteins' peptides, with nothing held
 out. Read-only hooks watch it. Every step's loss, learning rate, gradient norms,
 per-target losses and output-layer weights are kept, and at each checkpoint so
-is everything else: the residual stream at every layer, its gradient, every
-attention map, the logits, and the update the step made.
+is everything else: the embedding tables the step read its ids through, the
+residual stream at every layer, its gradient, every attention map, the logits,
+and the update the step made.
 
 It is recorded twice. The first pass picks the checkpoints from the losses;
 the second keeps the activations at them and must train to the same losses,
@@ -342,6 +343,9 @@ def _run(config: Config, sequences: Sequence[str], capture_at: frozenset) -> Dic
                             heads.append(np.concatenate(pieces))
                         maps.append(heads)
                     checkpoints[step] = {
+                        # As the step found them: the tables its x0 was made from.
+                        "token_embedding": before["token_embedding"][0].numpy(),
+                        "position_embedding": before["position_embedding"][0][0].numpy(),
                         "points": [real(capture.points[name].detach()).numpy() for name in names],
                         "point_grad": [real(seen["point_grad"][name]).numpy() for name in names],
                         "attention": np.array(maps),
@@ -417,6 +421,8 @@ def record(
         checkpoints.append({
             "step": step,
             "why": why,
+            "token_embedding": _int8(kept["token_embedding"]),
+            "position_embedding": _int8(kept["position_embedding"]),
             "points": _int8_each(kept["points"]),
             "point_grad": _array(np.stack(kept["point_grad"]), "f4"),
             "attention": _array(_unit(kept["attention"]), "u1", scale=1.0 / 255),

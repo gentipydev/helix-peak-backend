@@ -194,11 +194,20 @@ What it records:
   the gradient norm before clipping and the clip applied, 16 parameter groups'
   gradient and update norms, each of the 180 targets' loss, and the output
   layer's weights and biases;
-- **at each checkpoint**, everything else: the residual stream at its ten
-  points (the embeddings, after each block's attention and feed-forward, and
-  the final norm), the gradient reaching each of them, every head's attention
-  map, the logits and the probabilities over the 21 tokens that can follow,
-  and the output layer's clipped gradient and its update.
+- **at each checkpoint**, everything else: the two embedding tables as the
+  step found them (the token embedding, 23 × 96, its padding row zero, and the
+  position embedding, 51 × 96), the residual stream at its ten points (the
+  embeddings, after each block's attention and feed-forward, and the final
+  norm), the gradient reaching each of them, every head's attention map, the
+  logits and the probabilities over the 21 tokens that can follow, and the
+  output layer's clipped gradient and its update. `check_trace.py` holds the
+  stream's first point to the tables: each target's x0 is its id's token row
+  plus its place's row, to within half a quantisation step of each array.
+
+The tables were added on 2026-10-30 for the page's Forward opening, which
+draws each id picking its row. Recording them changed no other byte: the run
+with the two keys taken out of each checkpoint is the run served before
+(sha256 `5488a0e6…`).
 
 The checkpoints are chosen by rule: step 1; the first step whose loss is
 below each baseline on these six (uniform, unigram, bigram); the first below
@@ -209,7 +218,7 @@ base64 in JSON, int8, uint8 or uint16 with their scales where quantised.
 6 peptides, 180 targets | 456,887 parameters | 200 steps on cpu
 loss 3.1448 -> 0.0676 (uniform 3.0445, unigram 2.8564, bigram 2.0434, floor 0.0597)
 checkpoints: 1 (first), 8 (uniform), 14 (unigram), 35 (bigram), 55 (one_nat), 100 (tenth_nat), 200 (last)
-2,989,968 bytes
+3,057,622 bytes
 ```
 
 The floor is the least loss any model reading whole prefixes can reach on

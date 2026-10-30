@@ -57,6 +57,19 @@ def test_what_it_records_is_a_run_the_app_can_play(toy):
     assert summary["targets"] == sum(len(s) + 1 for s in TOY_SEQUENCES)
 
 
+def test_the_embedding_tables_are_the_ones_the_step_read(toy):
+    torch.manual_seed(TOY.seed)
+    model = HelixPeekLM(d_model=TOY.d_model, nhead=TOY.nhead, num_layers=TOY.num_layers,
+                        dim_feedforward=TOY.dim_feedforward, dropout=TOY.dropout)
+    first = toy["checkpoints"][0]
+    for key, weights in (("token_embedding", model.token_embedding.weight),
+                         ("position_embedding", model.positional_embedding[0])):
+        spec = first[key]
+        assert spec["shape"] == list(weights.shape)
+        kept = stored(spec) * spec["scale"]
+        assert np.abs(kept - weights.detach().numpy()).max() <= spec["scale"] / 2 + 1e-6
+
+
 def test_the_committed_fixture_is_a_toy_run():
     fixture = Path(__file__).resolve().parent / "fixtures" / "toy_trace.json"
     assert check_trace.validate(fixture.read_bytes(), name="toy")["steps"] == TOY.max_epochs

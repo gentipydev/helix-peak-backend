@@ -88,6 +88,31 @@ def _rows_sum_to_one(values: Sequence[float], widths: Sequence[int], what: str) 
         at += width
 
 
+def _embedded(checkpoint: Dict, x0: Sequence[float], x0_scale: float, inputs: Sequence[Sequence[int]],
+              spans: Sequence[int], vocab: int, context: int, width: int, what: str) -> None:
+    """The tables the step read its ids through: the token embedding, its
+    padding row zero, and the position embedding; and the stream's first point
+    each target's token row plus its place's, to within half a step of each of
+    the three arrays."""
+    tables = []
+    for key, rows in (("token_embedding", vocab), ("position_embedding", context)):
+        spec = checkpoint.get(key) or {}
+        tables.append((numbers(spec, [rows, width], "%s %s" % (what, key)),
+                       _scale(spec, "%s %s" % (what, key))))
+    (token, token_scale), (place, place_scale) = tables
+    if any(token[PAD_ID * width:(PAD_ID + 1) * width]):
+        raise Refused("%s's padding row of the token embedding is not zero" % what)
+    slack = (x0_scale + token_scale + place_scale) / 2 + 1e-6
+    target = 0
+    for row, span in zip(inputs, spans):
+        for i in range(span):
+            for d in range(width):
+                made = token[row[i] * width + d] * token_scale + place[i * width + d] * place_scale
+                if abs(made - x0[target * width + d] * x0_scale) > slack:
+                    raise Refused("%s x0 is not each id's token row plus its place's" % what)
+            target += 1
+
+
 def _peptides(data: Dict) -> List[str]:
     peptides = data.get("peptides")
     if not isinstance(peptides, list) or not peptides:
@@ -148,6 +173,8 @@ def validate(payload: bytes, name: Optional[str] = None) -> Dict:
     for key in ("d_model", "nhead", "num_layers", "dim_feedforward", "parameters"):
         if not isinstance(model.get(key), int) or model[key] <= 0:
             raise Refused("the model has no %s" % key)
+    if not isinstance(model.get("max_len"), int) or model["max_len"] <= 0:
+        raise Refused("the model has no max_len")
     width, heads, layers = model["d_model"], model["nhead"], model["num_layers"]
     if width % heads:
         raise Refused("%d does not split into %d heads" % (width, heads))
@@ -155,6 +182,8 @@ def validate(payload: bytes, name: Optional[str] = None) -> Dict:
     sequences = _peptides(data)
     _batch(data, sequences)
     spans = [len(s) + 1 for s in sequences]
+    if max(spans) > model["max_len"]:
+        raise Refused("a peptide is longer than the %d places the model holds" % model["max_len"])
     targets = sum(spans)
     if data.get("targets") != targets:
         raise Refused("the run counts %r targets, not %d" % (data.get("targets"), targets))
@@ -224,8 +253,10 @@ def validate(payload: bytes, name: Optional[str] = None) -> Dict:
         if not checkpoint.get("why") or not all(isinstance(w, str) for w in checkpoint["why"]):
             raise Refused("%s says no why" % what)
         stream = checkpoint.get("points") or {}
-        numbers(stream, [len(points), targets, width], what + " points")
-        _scales(stream, len(points), what + " points")
+        flowing = numbers(stream, [len(points), targets, width], what + " points")
+        scales = _scales(stream, len(points), what + " points")
+        _embedded(checkpoint, flowing[:targets * width], scales[0], data["batch"]["x"], spans,
+                  vocab, model["max_len"], width, what)
         _finite(numbers(checkpoint.get("point_grad"), [len(points), targets], what + " point_grad"),
                 what + " point_grad", low=0)
         maps = checkpoint.get("attention") or {}
