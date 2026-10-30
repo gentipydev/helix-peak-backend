@@ -188,6 +188,7 @@ engine's model and optimiser with five changes, each for the page:
 | dropout | 0.2 | **0** | the forward pass drawn is then the forward pass trained, number for number |
 | epochs | 200 cap, stop after 10 idle | 200 steps, no stopping | nothing is held out to stop on |
 | width / ff | 96 / 384 | **16 / 64** | the page writes out every number of an embedding row, and 16 fit across a phone; 4 heads and 4 blocks kept |
+| places | 51 | **40** | as many as the longest of the six reads (`<bos>` and copeptin's 39 residues), from the data: a position row no peptide reads would never move |
 | learning rate | 1e-3 | **1e-2** | at 1e-3 a model 16 wide never passes one nat in 200 steps; at 1e-2 it passes every milestone |
 
 What it records:
@@ -198,7 +199,8 @@ What it records:
   layer's weights and biases;
 - **at each checkpoint**, everything else: the two embedding tables as the
   step found them, whole as float32 (the token embedding, 23 × 16, its padding
-  row zero, and the position embedding, 51 × 16), the residual stream at its ten points (the
+  row zero, and the position embedding, 40 × 16: a row for each place the longest of the six
+  reads, `<bos>` and copeptin's 39 residues), the residual stream at its ten points (the
   embeddings, after each block's attention and feed-forward, and the final
   norm), the gradient reaching each of them, every head's attention map, the
   logits and the probabilities over the 21 tokens that can follow, and the
@@ -224,10 +226,10 @@ base64 in JSON, int8, uint8 or uint16 with their scales where quantised, and
 float32 where kept whole.
 
 ```
-6 peptides, 180 targets | 14,727 parameters | 200 steps on cpu
-loss 3.2051 -> 0.0651 (uniform 3.0445, unigram 2.8564, bigram 2.0434, floor 0.0597)
-checkpoints: 1 (first), 10 (uniform), 18 (unigram), 45 (bigram), 62 (one_nat), 93 (tenth_nat), 200 (last)
-1,165,968 bytes
+6 peptides, 180 targets | 14,551 parameters | 200 steps on cpu
+loss 3.2313 -> 0.0643 (uniform 3.0445, unigram 2.8564, bigram 2.0434, floor 0.0597)
+checkpoints: 1 (first), 11 (uniform), 19 (unigram), 46 (bigram), 63 (one_nat), 94 (tenth_nat), 200 (last)
+1,159,429 bytes
 ```
 
 The floor is the least loss any model reading whole prefixes can reach on

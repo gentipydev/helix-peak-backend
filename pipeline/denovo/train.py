@@ -17,7 +17,7 @@ HERE = Path(__file__).resolve().parent
 if str(HERE.parents[1]) not in sys.path:
     sys.path.insert(0, str(HERE.parents[1]))
 
-from pipeline.denovo.alphabet import EOS_ID, PAD_ID, VOCAB_SIZE
+from pipeline.denovo.alphabet import EOS_ID, MAX_CONTEXT, PAD_ID, VOCAB_SIZE
 from pipeline.denovo.bigram_torch import masked
 from pipeline.denovo.dedup import cluster, split_by_cluster
 from pipeline.denovo.helix_peek_LM import HelixPeekLM, parameter_count
@@ -43,6 +43,7 @@ class Config:
     patience: int = 10
     grad_clip: float = 1.0
     seed: int = 0
+    max_len: int = MAX_CONTEXT
 
 
 def best_device(name: Optional[str] = None) -> torch.device:
@@ -100,6 +101,7 @@ def build(
         num_layers=config.num_layers,
         dim_feedforward=config.dim_feedforward,
         dropout=config.dropout,
+        max_len=config.max_len,
     ).to(device)
     optimizer = torch.optim.AdamW(
         param_groups(model, config.weight_decay), lr=config.learning_rate
