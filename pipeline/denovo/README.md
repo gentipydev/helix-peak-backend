@@ -179,7 +179,7 @@ own. `trace.py` drives `train.build` and `train.train_step`, exactly as
 
 The data is the curated proteins' peptides (`curated_peptides.py`): six
 peptides, 174 residues, from insulin, relaxin and vasopressin. The run is the
-swept model and optimiser with three changes, each for the page:
+engine's model and optimiser with five changes, each for the page:
 
 | | corpus run | recorded run | why |
 |---|---|---|---|
@@ -187,6 +187,8 @@ swept model and optimiser with three changes, each for the page:
 | batch | 64 of 9,367 | all six, every step | one batch, so a step's forward pass is the whole dataset's |
 | dropout | 0.2 | **0** | the forward pass drawn is then the forward pass trained, number for number |
 | epochs | 200 cap, stop after 10 idle | 200 steps, no stopping | nothing is held out to stop on |
+| width / ff | 96 / 384 | **16 / 64** | the page writes out every number of an embedding row, and 16 fit across a phone; 4 heads and 4 blocks kept |
+| learning rate | 1e-3 | **1e-2** | at 1e-3 a model 16 wide never passes one nat in 200 steps; at 1e-2 it passes every milestone |
 
 What it records:
 
@@ -195,8 +197,8 @@ What it records:
   gradient and update norms, each of the 180 targets' loss, and the output
   layer's weights and biases;
 - **at each checkpoint**, everything else: the two embedding tables as the
-  step found them (the token embedding, 23 × 96, its padding row zero, and the
-  position embedding, 51 × 96), the residual stream at its ten points (the
+  step found them (the token embedding, 23 × 16, its padding row zero, and the
+  position embedding, 51 × 16), the residual stream at its ten points (the
   embeddings, after each block's attention and feed-forward, and the final
   norm), the gradient reaching each of them, every head's attention map, the
   logits and the probabilities over the 21 tokens that can follow, and the
@@ -207,7 +209,10 @@ What it records:
 The tables were added on 2026-10-30 for the page's Forward opening, which
 draws each id picking its row. Recording them changed no other byte: the run
 with the two keys taken out of each checkpoint is the run served before
-(sha256 `5488a0e6…`).
+(sha256 `5488a0e6…`). The run was then recorded again 16 wide, also on
+2026-10-30, for the page's Embedding stage, which writes out each row's
+numbers: every byte changed with the model (the run 96 wide was sha256
+`1b964037…`, 3,057,622 bytes).
 
 The checkpoints are chosen by rule: step 1; the first step whose loss is
 below each baseline on these six (uniform, unigram, bigram); the first below
@@ -215,10 +220,10 @@ one nat and below a tenth of one; and the last. Arrays are little-endian
 base64 in JSON, int8, uint8 or uint16 with their scales where quantised.
 
 ```
-6 peptides, 180 targets | 456,887 parameters | 200 steps on cpu
-loss 3.1448 -> 0.0676 (uniform 3.0445, unigram 2.8564, bigram 2.0434, floor 0.0597)
-checkpoints: 1 (first), 8 (uniform), 14 (unigram), 35 (bigram), 55 (one_nat), 100 (tenth_nat), 200 (last)
-3,057,622 bytes
+6 peptides, 180 targets | 14,727 parameters | 200 steps on cpu
+loss 3.2051 -> 0.0651 (uniform 3.0445, unigram 2.8564, bigram 2.0434, floor 0.0597)
+checkpoints: 1 (first), 10 (uniform), 18 (unigram), 45 (bigram), 62 (one_nat), 93 (tenth_nat), 200 (last)
+1,133,219 bytes
 ```
 
 The floor is the least loss any model reading whole prefixes can reach on

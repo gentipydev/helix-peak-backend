@@ -56,9 +56,12 @@ NAME = "curated"
 OUT = HERE / "runs" / NAME / "trace.json"
 CPU = torch.device("cpu")
 
-# The swept model and optimiser, with dropout off: the forward pass drawn is
-# then the forward pass trained, number for number.
-SHOWCASE = replace(Config(), dropout=0.0)
+# The engine's model and optimiser at a width of its own, with dropout off:
+# the forward pass drawn is then the forward pass trained, number for number.
+# The page writes out every number of an embedding row, and 16 of them fit
+# across a phone; at the swept 1e-3 so narrow a model never passes one nat in
+# the run's 200 steps, at 1e-2 it passes every milestone.
+SHOWCASE = replace(Config(), dropout=0.0, d_model=16, dim_feedforward=64, learning_rate=1e-2)
 
 # Small enough to commit as a fixture, and fast enough to pass every milestone
 # up to one nat in its twenty steps.
