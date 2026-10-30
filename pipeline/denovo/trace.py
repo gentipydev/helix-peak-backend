@@ -51,7 +51,7 @@ from pipeline.denovo.sequences import batches, build_dataset, is_modelable
 from pipeline.denovo.tokenizer import decode
 from pipeline.denovo.train import Config, _token_losses, build, train_step
 
-SCHEMA = 1
+SCHEMA = 2
 NAME = "curated"
 OUT = HERE / "runs" / NAME / "trace.json"
 CPU = torch.device("cpu")
@@ -424,8 +424,10 @@ def record(
         checkpoints.append({
             "step": step,
             "why": why,
-            "token_embedding": _int8(kept["token_embedding"]),
-            "position_embedding": _int8(kept["position_embedding"]),
+            # Whole, as float32: the page writes every number of them out
+            # to two places, and their sum is x0 itself.
+            "token_embedding": _array(kept["token_embedding"], "f4"),
+            "position_embedding": _array(kept["position_embedding"], "f4"),
             "points": _int8_each(kept["points"]),
             "point_grad": _array(np.stack(kept["point_grad"]), "f4"),
             "attention": _array(_unit(kept["attention"]), "u1", scale=1.0 / 255),

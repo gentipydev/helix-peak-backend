@@ -197,14 +197,14 @@ What it records:
   gradient and update norms, each of the 180 targets' loss, and the output
   layer's weights and biases;
 - **at each checkpoint**, everything else: the two embedding tables as the
-  step found them (the token embedding, 23 × 16, its padding row zero, and the
-  position embedding, 51 × 16), the residual stream at its ten points (the
+  step found them, whole as float32 (the token embedding, 23 × 16, its padding
+  row zero, and the position embedding, 51 × 16), the residual stream at its ten points (the
   embeddings, after each block's attention and feed-forward, and the final
   norm), the gradient reaching each of them, every head's attention map, the
   logits and the probabilities over the 21 tokens that can follow, and the
   output layer's clipped gradient and its update. `check_trace.py` holds the
   stream's first point to the tables: each target's x0 is its id's token row
-  plus its place's row, to within half a quantisation step of each array.
+  plus its place's row, to within half the stream's quantisation step.
 
 The tables were added on 2026-10-30 for the page's Forward opening, which
 draws each id picking its row. Recording them changed no other byte: the run
@@ -212,18 +212,22 @@ with the two keys taken out of each checkpoint is the run served before
 (sha256 `5488a0e6…`). The run was then recorded again 16 wide, also on
 2026-10-30, for the page's Embedding stage, which writes out each row's
 numbers: every byte changed with the model (the run 96 wide was sha256
-`1b964037…`, 3,057,622 bytes).
+`1b964037…`, 3,057,622 bytes). The same evening the tables were kept whole
+(float32, schema 2) instead of as int8, so that the page can write each number
+to two places and show a position row's hundredths being added: at int8 a
+token row came in steps of 0.03 (sha256 `23ac6af6…` before).
 
 The checkpoints are chosen by rule: step 1; the first step whose loss is
 below each baseline on these six (uniform, unigram, bigram); the first below
 one nat and below a tenth of one; and the last. Arrays are little-endian
-base64 in JSON, int8, uint8 or uint16 with their scales where quantised.
+base64 in JSON, int8, uint8 or uint16 with their scales where quantised, and
+float32 where kept whole.
 
 ```
 6 peptides, 180 targets | 14,727 parameters | 200 steps on cpu
 loss 3.2051 -> 0.0651 (uniform 3.0445, unigram 2.8564, bigram 2.0434, floor 0.0597)
 checkpoints: 1 (first), 10 (uniform), 18 (unigram), 45 (bigram), 62 (one_nat), 93 (tenth_nat), 200 (last)
-1,133,219 bytes
+1,165,968 bytes
 ```
 
 The floor is the least loss any model reading whole prefixes can reach on

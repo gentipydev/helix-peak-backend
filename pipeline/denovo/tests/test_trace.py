@@ -66,8 +66,9 @@ def test_the_embedding_tables_are_the_ones_the_step_read(toy):
                          ("position_embedding", model.positional_embedding[0])):
         spec = first[key]
         assert spec["shape"] == list(weights.shape)
-        kept = stored(spec) * spec["scale"]
-        assert np.abs(kept - weights.detach().numpy()).max() <= spec["scale"] / 2 + 1e-6
+        # Kept whole: the weights as the step found them, float for float.
+        assert spec["dtype"] == "f4"
+        assert np.array_equal(stored(spec), weights.detach().numpy().astype(np.float32))
 
 
 def test_the_committed_fixture_is_a_toy_run():

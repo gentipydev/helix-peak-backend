@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import struct
 import sys
 from pathlib import Path
 
@@ -47,7 +48,7 @@ def test_another_run_is_not_this_one():
 
 def test_a_schema_this_does_not_read_is_refused():
     data = load()
-    data["schema"] = 2
+    data["schema"] = 1
     with pytest.raises(Refused, match="schema"):
         validate(dump(data))
 
@@ -116,12 +117,25 @@ def test_the_padding_row_of_the_token_embedding_is_zero():
         validate(dump(data))
 
 
+def test_the_tables_must_be_kept_whole():
+    data = load()
+    spec = data["checkpoints"][0]["position_embedding"]
+    raw = base64.b64decode(spec["data"])
+    values = struct.unpack("<%df" % (len(raw) // 4), raw)
+    scale = max(abs(v) for v in values) / 127
+    quantized = struct.pack("<%db" % len(values), *(round(v / scale) for v in values))
+    spec.update(dtype="i1", scale=scale, data=base64.b64encode(quantized).decode("ascii"))
+    with pytest.raises(Refused, match="not kept whole"):
+        validate(dump(data))
+
+
 def test_x0_must_be_each_ids_token_row_plus_its_places():
     data = load()
     width = data["model"]["d_model"]
-    # <bos>'s row, which every peptide's first place reads.
+    # <bos>'s row, which every peptide's first place reads: its first number's
+    # top byte, so the float moves far.
     rewrite(data["checkpoints"][0]["token_embedding"],
-            lambda raw: raw.__setitem__(width, (raw[width] + 64) % 256))
+            lambda raw: raw.__setitem__(4 * width + 3, raw[4 * width + 3] ^ 0x40))
     with pytest.raises(Refused, match="token row plus"):
         validate(dump(data))
 

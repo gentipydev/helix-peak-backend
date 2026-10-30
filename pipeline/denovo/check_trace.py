@@ -25,7 +25,7 @@ if str(HERE.parents[1]) not in sys.path:
 from pipeline.denovo.alphabet import AMINO_ACIDS, MAX_LENGTH, MIN_LENGTH, PAD_ID, TOKENS
 from pipeline.denovo.bigram import ALLOWED, framed
 
-SCHEMA = 1
+SCHEMA = 2
 LIMIT = 4_000_000
 DEFAULT = HERE / "runs" / "curated" / "trace.json"
 
@@ -90,24 +90,27 @@ def _rows_sum_to_one(values: Sequence[float], widths: Sequence[int], what: str) 
 
 def _embedded(checkpoint: Dict, x0: Sequence[float], x0_scale: float, inputs: Sequence[Sequence[int]],
               spans: Sequence[int], vocab: int, context: int, width: int, what: str) -> None:
-    """The tables the step read its ids through: the token embedding, its
-    padding row zero, and the position embedding; and the stream's first point
-    each target's token row plus its place's, to within half a step of each of
-    the three arrays."""
+    """The tables the step read its ids through, whole (float32): the token
+    embedding, its padding row zero, and the position embedding; and the
+    stream's first point each target's token row plus its place's, to within
+    half the stream's step."""
     tables = []
     for key, rows in (("token_embedding", vocab), ("position_embedding", context)):
         spec = checkpoint.get(key) or {}
-        tables.append((numbers(spec, [rows, width], "%s %s" % (what, key)),
-                       _scale(spec, "%s %s" % (what, key))))
-    (token, token_scale), (place, place_scale) = tables
+        if spec.get("dtype") != "f4":
+            raise Refused("%s %s is not kept whole" % (what, key))
+        values = numbers(spec, [rows, width], "%s %s" % (what, key))
+        _finite(values, "%s %s" % (what, key))
+        tables.append(values)
+    token, place = tables
     if any(token[PAD_ID * width:(PAD_ID + 1) * width]):
         raise Refused("%s's padding row of the token embedding is not zero" % what)
-    slack = (x0_scale + token_scale + place_scale) / 2 + 1e-6
+    slack = x0_scale / 2 + 1e-5
     target = 0
     for row, span in zip(inputs, spans):
         for i in range(span):
             for d in range(width):
-                made = token[row[i] * width + d] * token_scale + place[i * width + d] * place_scale
+                made = token[row[i] * width + d] + place[i * width + d]
                 if abs(made - x0[target * width + d] * x0_scale) > slack:
                     raise Refused("%s x0 is not each id's token row plus its place's" % what)
             target += 1
