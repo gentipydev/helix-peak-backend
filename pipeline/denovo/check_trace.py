@@ -25,7 +25,7 @@ if str(HERE.parents[1]) not in sys.path:
 from pipeline.denovo.alphabet import AMINO_ACIDS, MAX_LENGTH, MIN_LENGTH, PAD_ID, TOKENS
 from pipeline.denovo.bigram import ALLOWED, framed
 
-SCHEMA = 2
+SCHEMA = 3
 LIMIT = 4_000_000
 DEFAULT = HERE / "runs" / "curated" / "trace.json"
 
@@ -33,6 +33,12 @@ _FORMATS = {"i1": ("b", 1), "u1": ("B", 1), "u2": ("H", 2), "f4": ("f", 4)}
 
 # A row of quantised probabilities sums to 255 give or take half a step a cell.
 _ROUNDING = 0.5
+
+# GELU's least value, at x = -0.7518: no neuron of the feed-forward goes below it.
+_GELU_LEAST = -0.16997
+
+# Float32 against the same sum worked out in Python's doubles.
+_WHOLE = 1e-4
 
 
 class Refused(ValueError):
@@ -88,12 +94,116 @@ def _rows_sum_to_one(values: Sequence[float], widths: Sequence[int], what: str) 
         at += width
 
 
-def _embedded(checkpoint: Dict, x0: Sequence[float], x0_scale: float, inputs: Sequence[Sequence[int]],
+def _whole(spec: Dict, shape: Sequence[int], what: str) -> List[float]:
+    """An array kept whole, as float32, and finite."""
+    if not isinstance(spec, dict) or spec.get("dtype") != "f4":
+        raise Refused("%s is not kept whole" % what)
+    values = numbers(spec, shape, what)
+    _finite(values, what)
+    return values
+
+
+def _scaled(spec: Dict, shape: Sequence[int], what: str) -> List[float]:
+    """An int8 array with its one scale, as the values it stands for."""
+    if not isinstance(spec, dict) or spec.get("dtype") != "i1":
+        raise Refused("%s is not int8" % what)
+    values = numbers(spec, shape, what)
+    scale = _scale(spec, what)
+    return [v * scale for v in values]
+
+
+def _gelu(x: float) -> float:
+    return 0.5 * x * (1 + math.erf(x / math.sqrt(2)))
+
+
+def _blocks(checkpoint: Dict, stream: Sequence[float], attention: Sequence[float], layers: int, heads: int,
+            width: int, ff: int, targets: int, spans: Sequence[int], triangle: int, what: str) -> None:
+    """What each block worked out, as the stages draw it: its queries, keys
+    and values, its scores, each head's mix of values, and its feed-forward's
+    input, neurons and weights. Held to each other and to the stream: softmax
+    of the scores is the block's attention map, each head's mix is its shares
+    of the values, every neuron is GELU of its weighted input, and what the
+    feed-forward adds is what the stream gained across it."""
+    blocks = checkpoint.get("blocks")
+    if not isinstance(blocks, list) or len(blocks) != layers:
+        raise Refused("%s does not keep its %d blocks" % (what, layers))
+    size = width // heads
+    for b, block in enumerate(blocks):
+        named = "%s block %d" % (what, b + 1)
+        if not isinstance(block, dict):
+            raise Refused("%s is not an object" % named)
+        value = _scaled(block.get("value"), [targets, width], named + " value")
+        mixed = _scaled(block.get("mixed"), [targets, width], named + " mixed")
+        for key in ("query", "key"):
+            _scaled(block.get(key), [targets, width], "%s %s" % (named, key))
+        value_step = _scale(block["value"], named + " value")
+        mixed_step = _scale(block["mixed"], named + " mixed")
+        scores = _whole(block.get("scores"), [heads, triangle], named + " scores")
+        maps = attention[b * heads * triangle:(b + 1) * heads * triangle]
+        for h in range(heads):
+            at, first = h * triangle, 0
+            for span in spans:
+                for i in range(span):
+                    row = scores[at:at + i + 1]
+                    top = max(row)
+                    exps = [math.exp(v - top) for v in row]
+                    total = sum(exps)
+                    shares = [e / total for e in exps]
+                    for j, share in enumerate(shares):
+                        if abs(share * 255 - maps[at + j]) > _ROUNDING + 1e-3:
+                            raise Refused("%s scores do not softmax to its attention" % named)
+                    target = first + i
+                    for d in range(h * size, (h + 1) * size):
+                        mix = sum(share * value[(first + j) * width + d] for j, share in enumerate(shares))
+                        if abs(mix - mixed[target * width + d]) > (value_step + mixed_step) / 2 + _WHOLE:
+                            raise Refused("%s mix is not its shares of the values" % named)
+                    at += i + 1
+                first += span
+        ff_input = _whole(block.get("ff_input"), [targets, width], named + " ff_input")
+        hidden = _scaled(block.get("hidden"), [targets, ff], named + " hidden")
+        hidden_step = _scale(block["hidden"], named + " hidden")
+        if min(hidden) < _GELU_LEAST - hidden_step / 2:
+            raise Refused("%s has a neuron under GELU's least" % named)
+        w_in = _whole(block.get("ff_in"), [ff, width], named + " ff_in")
+        b_in = _whole(block.get("ff_in_bias"), [ff], named + " ff_in_bias")
+        w_out = _whole(block.get("ff_out"), [width, ff], named + " ff_out")
+        b_out = _whole(block.get("ff_out_bias"), [width], named + " ff_out_bias")
+        middle, after = stream[(2 * b + 1) * targets * width:], stream[(2 * b + 2) * targets * width:]
+        for t in range(targets):
+            x = ff_input[t * width:(t + 1) * width]
+            neurons = []
+            for u in range(ff):
+                neuron = _gelu(sum(w_in[u * width + d] * x[d] for d in range(width)) + b_in[u])
+                if abs(neuron - hidden[t * ff + u]) > hidden_step / 2 + _WHOLE:
+                    raise Refused("%s neurons are not GELU of their input" % named)
+                neurons.append(neuron)
+            for d in range(width):
+                added = sum(w_out[d * ff + u] * neurons[u] for u in range(ff)) + b_out[d]
+                gained = after[t * width + d] - middle[t * width + d]
+                if abs(added - gained) > _WHOLE:
+                    raise Refused("%s feed-forward does not add what the stream gained" % named)
+
+
+def _readout(checkpoint: Dict, points: int, targets: int, allowed: int, what: str) -> None:
+    """The stream read out early at every point but the last (the final norm
+    is the readout's own): each row a distribution over what can come next,
+    and the last point's the model's own probabilities."""
+    spec = checkpoint.get("readout") or {}
+    _scale(spec, what + " readout")
+    values = numbers(spec, [points - 1, targets, allowed], what + " readout")
+    _rows_sum_to_one(values, [allowed] * ((points - 1) * targets), what + " readout")
+    probs = numbers(checkpoint.get("probs") or {}, [targets, allowed], what + " probs")
+    last = values[(points - 2) * targets * allowed:]
+    if any(abs(a - b) > 1 for a, b in zip(last, probs)):
+        raise Refused("%s readout at the last point is not the model's probabilities" % what)
+
+
+def _embedded(checkpoint: Dict, x0: Sequence[float], inputs: Sequence[Sequence[int]],
               spans: Sequence[int], vocab: int, context: int, width: int, what: str) -> None:
     """The tables the step read its ids through, whole (float32): the token
     embedding, its padding row zero, and the position embedding; and the
-    stream's first point each target's token row plus its place's, to within
-    half the stream's step."""
+    stream's first point, whole too, each target's token row plus its
+    place's."""
     tables = []
     for key, rows in (("token_embedding", vocab), ("position_embedding", context)):
         spec = checkpoint.get(key) or {}
@@ -105,13 +215,12 @@ def _embedded(checkpoint: Dict, x0: Sequence[float], x0_scale: float, inputs: Se
     token, place = tables
     if any(token[PAD_ID * width:(PAD_ID + 1) * width]):
         raise Refused("%s's padding row of the token embedding is not zero" % what)
-    slack = x0_scale / 2 + 1e-5
     target = 0
     for row, span in zip(inputs, spans):
         for i in range(span):
             for d in range(width):
                 made = token[row[i] * width + d] + place[i * width + d]
-                if abs(made - x0[target * width + d] * x0_scale) > slack:
+                if abs(made - x0[target * width + d]) > 1e-5:
                     raise Refused("%s x0 is not each id's token row plus its place's" % what)
             target += 1
 
@@ -255,10 +364,8 @@ def validate(payload: bytes, name: Optional[str] = None) -> Dict:
         what = "step %d" % checkpoint["step"]
         if not checkpoint.get("why") or not all(isinstance(w, str) for w in checkpoint["why"]):
             raise Refused("%s says no why" % what)
-        stream = checkpoint.get("points") or {}
-        flowing = numbers(stream, [len(points), targets, width], what + " points")
-        scales = _scales(stream, len(points), what + " points")
-        _embedded(checkpoint, flowing[:targets * width], scales[0], data["batch"]["x"], spans,
+        flowing = _whole(checkpoint.get("points"), [len(points), targets, width], what + " points")
+        _embedded(checkpoint, flowing[:targets * width], data["batch"]["x"], spans,
                   vocab, model["max_len"], width, what)
         _finite(numbers(checkpoint.get("point_grad"), [len(points), targets], what + " point_grad"),
                 what + " point_grad", low=0)
@@ -267,6 +374,9 @@ def validate(payload: bytes, name: Optional[str] = None) -> Dict:
         values = numbers(maps, [layers, heads, triangle], what + " attention")
         for start in range(0, len(values), triangle):
             _rows_sum_to_one(values[start:start + triangle], rows, what + " attention")
+        _blocks(checkpoint, flowing, values, layers, heads, width, model["dim_feedforward"], targets,
+                spans, triangle, what)
+        _readout(checkpoint, len(points), targets, allowed, what)
         probs = checkpoint.get("probs") or {}
         _scale(probs, what + " probs")
         _rows_sum_to_one(numbers(probs, [targets, allowed], what + " probs"),

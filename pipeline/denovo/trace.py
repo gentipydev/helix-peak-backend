@@ -10,8 +10,11 @@ The run is the engine's own: `train.build` and `train.train_step`, driven as
 out. Read-only hooks watch it. Every step's loss, learning rate, gradient norms,
 per-target losses and output-layer weights are kept, and at each checkpoint so
 is everything else: the embedding tables the step read its ids through, the
-residual stream at every layer, its gradient, every attention map, the logits,
-and the update the step made.
+residual stream at every layer, its gradient, every attention map, what each
+block worked out on the way (its queries, keys, values and scores, each head's
+mix of values, its feed-forward's input, neurons and weights), the stream read
+out early through the final norm and the output layer, the logits, and the
+update the step made.
 
 It is recorded twice. The first pass picks the checkpoints from the losses;
 the second keeps the activations at them and must train to the same losses,
@@ -51,17 +54,19 @@ from pipeline.denovo.sequences import batches, build_dataset, is_modelable
 from pipeline.denovo.tokenizer import decode
 from pipeline.denovo.train import Config, _token_losses, build, train_step
 
-SCHEMA = 2
+SCHEMA = 3
 NAME = "curated"
 OUT = HERE / "runs" / NAME / "trace.json"
 CPU = torch.device("cpu")
 
-# The engine's model and optimiser at a width of its own, with dropout off:
+# The engine's model and optimiser at a size of its own, with dropout off:
 # the forward pass drawn is then the forward pass trained, number for number.
 # The page writes out every number of an embedding row, and 16 of them fit
-# across a phone; at the swept 1e-3 so narrow a model never passes one nat in
-# the run's 200 steps, at 1e-2 it passes every milestone.
-SHOWCASE = replace(Config(), dropout=0.0, d_model=16, dim_feedforward=64, learning_rate=1e-2)
+# across a phone; it walks one block's attention and feed-forward, so two
+# blocks of two heads; at the swept 1e-3 so narrow a model never passes one
+# nat in the run's 200 steps, at 1e-2 it passes every milestone.
+SHOWCASE = replace(Config(), dropout=0.0, d_model=16, dim_feedforward=64, learning_rate=1e-2,
+                   num_layers=2, nhead=2)
 
 # Small enough to commit as a fixture, and fast enough to pass every milestone
 # up to one nat in its twenty steps.
@@ -160,48 +165,70 @@ def milestones(losses: Sequence[float], reference: Dict[str, float]) -> List[Tup
     return sorted(marks.items())
 
 
+def inside(
+    module: torch.nn.MultiheadAttention,
+    query: torch.Tensor,
+    mask: Optional[torch.Tensor],
+    output: torch.Tensor,
+) -> Tuple[Dict[str, torch.Tensor], float]:
+    """What a layer's attention worked out, again from its input and its
+    weights as they stood: the queries, keys and values (heads side by side),
+    every score before softmax (heads apart), the weights, and each head's mix
+    of values before the output projection; and how far the output they give
+    is from the layer's own (a check, not a correction)."""
+    with torch.no_grad():
+        batch, length, width = query.shape
+        heads = module.num_heads
+        size = width // heads
+        made = F.linear(query, module.in_proj_weight, module.in_proj_bias).chunk(3, dim=-1)
+        q, k, v = (t.reshape(batch, length, heads, size).transpose(1, 2) for t in made)
+        scores = q @ k.transpose(-2, -1) / math.sqrt(size)
+        if mask is None:
+            mask = torch.triu(torch.ones(length, length, dtype=torch.bool), diagonal=1)
+        if mask.dtype == torch.bool:
+            masked_scores = scores.masked_fill(mask, float("-inf"))
+        else:
+            masked_scores = scores + mask
+        weights = masked_scores.softmax(dim=-1)
+        mixed = (weights @ v).transpose(1, 2).reshape(batch, length, width)
+        out = F.linear(mixed, module.out_proj.weight, module.out_proj.bias)
+        parts = {"query": made[0], "key": made[1], "value": made[2], "scores": scores,
+                 "weights": weights, "mixed": mixed}
+        return parts, (out - output).abs().max().item()
+
+
 def attention(
     module: torch.nn.MultiheadAttention,
     query: torch.Tensor,
     mask: Optional[torch.Tensor],
     output: torch.Tensor,
 ) -> Tuple[torch.Tensor, float]:
-    """The attention weights a layer used, worked out again from its input and
-    its weights as they stood, and how far the output they give is from the
-    layer's own (a check, not a correction)."""
-    with torch.no_grad():
-        batch, length, width = query.shape
-        heads = module.num_heads
-        size = width // heads
-        q, k, v = F.linear(query, module.in_proj_weight, module.in_proj_bias).chunk(3, dim=-1)
-        q, k, v = (t.reshape(batch, length, heads, size).transpose(1, 2) for t in (q, k, v))
-        scores = q @ k.transpose(-2, -1) / math.sqrt(size)
-        if mask is None:
-            mask = torch.triu(torch.ones(length, length, dtype=torch.bool), diagonal=1)
-        if mask.dtype == torch.bool:
-            scores = scores.masked_fill(mask, float("-inf"))
-        else:
-            scores = scores + mask
-        weights = scores.softmax(dim=-1)
-        mixed = (weights @ v).transpose(1, 2).reshape(batch, length, width)
-        mixed = F.linear(mixed, module.out_proj.weight, module.out_proj.bias)
-        return weights, (mixed - output).abs().max().item()
+    """The attention weights a layer used, worked out again (`inside`), and
+    how far the output they give is from the layer's own."""
+    parts, error = inside(module, query, mask, output)
+    return parts["weights"], error
 
 
 class _Capture:
     """Hooks that only look: the logits at every step and, while `on`, every
-    point of the residual stream with its gradient kept, and every attention map."""
+    point of the residual stream with its gradient kept, every attention map,
+    and what each block worked out on the way (`inside`, the feed-forward's
+    input and its neurons)."""
 
     def __init__(self, model: torch.nn.Module):
         self.on = False
         self.logits: Optional[torch.Tensor] = None
         self.points: Dict[str, torch.Tensor] = {}
         self.attention: Dict[int, torch.Tensor] = {}
+        self.blocks: Dict[int, Dict[str, torch.Tensor]] = {}
         self.error = 0.0
         layers = model.transformer_encoder.layers
         self.handles = [layers[0].register_forward_pre_hook(self._input("x0"))]
         for i, layer in enumerate(layers, start=1):
             self.handles.append(layer.norm2.register_forward_pre_hook(self._input("m%d" % i)))
+            self.handles.append(layer.norm2.register_forward_hook(self._kept(i, "ff_input")))
+            # The neurons as linear2 reads them: GELU's output, dropout being off.
+            self.handles.append(layer.linear2.register_forward_pre_hook(self._kept_input(i, "hidden")))
             self.handles.append(layer.register_forward_hook(self._output("h%d" % i)))
             self.handles.append(layer.self_attn.register_forward_hook(
                 self._attention(i), with_kwargs=True))
@@ -209,7 +236,7 @@ class _Capture:
         self.handles.append(model.lm_head.register_forward_hook(self._logits))
 
     def clear(self) -> None:
-        self.points, self.attention = {}, {}
+        self.points, self.attention, self.blocks = {}, {}, {}
 
     def remove(self) -> None:
         for handle in self.handles:
@@ -229,11 +256,24 @@ class _Capture:
                 self.points[name] = output
         return hook
 
+    def _kept(self, layer: int, name: str) -> Callable:
+        def hook(module, args, output):
+            if self.on:
+                self.blocks.setdefault(layer, {})[name] = output.detach()
+        return hook
+
+    def _kept_input(self, layer: int, name: str) -> Callable:
+        def hook(module, args):
+            if self.on:
+                self.blocks.setdefault(layer, {})[name] = args[0].detach()
+        return hook
+
     def _attention(self, layer: int) -> Callable:
         def hook(module, args, kwargs, output):
             if self.on:
-                weights, error = attention(module, args[0], kwargs.get("attn_mask"), output[0])
-                self.attention[layer] = weights
+                parts, error = inside(module, args[0], kwargs.get("attn_mask"), output[0])
+                self.attention[layer] = parts["weights"]
+                self.blocks.setdefault(layer, {}).update(parts)
                 self.error = max(self.error, error)
         return hook
 
@@ -243,6 +283,26 @@ class _Capture:
 
 def _norm(tensors: Sequence[torch.Tensor]) -> float:
     return math.sqrt(sum(float(t.double().pow(2).sum()) for t in tensors))
+
+
+def readout_names(layers: int) -> List[str]:
+    """The points read out early: every point of the stream before the final
+    norm, which the readout itself applies."""
+    return point_names(layers)[:-1]
+
+
+def readout(model: torch.nn.Module, point: torch.Tensor) -> torch.Tensor:
+    """What the output layer would say if the model stopped at `point`: the
+    final norm and the output layer applied to it, with the weights as they
+    stand, masked and normalised as `probs` is, over the tokens that can come
+    next. Worked out with the modules' weights, not by calling them, so no
+    hook sees it."""
+    with torch.no_grad():
+        norm, head = model.transformer_encoder.norm, model.lm_head
+        normed = F.layer_norm(point, norm.normalized_shape, norm.weight, norm.bias, norm.eps)
+        logits = F.linear(normed, head.weight, head.bias)
+        probabilities = masked(logits.reshape(-1, logits.shape[-1])).softmax(dim=-1)
+        return probabilities.reshape(logits.shape)[..., list(ALLOWED)]
 
 
 @contextlib.contextmanager
@@ -300,6 +360,14 @@ def _run(config: Config, sequences: Sequence[str], capture_at: frozenset) -> Dic
                 lr = optimizer.param_groups[0]["lr"]
                 before = {name: [p.detach().clone() for p in members[name]] for name in groups}
                 weight, bias = head.weight.detach().clone(), head.bias.detach().clone()
+                # Each block's feed-forward as the step found it: the edges the
+                # page draws between its neurons.
+                fed = [{
+                    "ff_in": layer.linear1.weight.detach().clone(),
+                    "ff_in_bias": layer.linear1.bias.detach().clone(),
+                    "ff_out": layer.linear2.weight.detach().clone(),
+                    "ff_out_bias": layer.linear2.bias.detach().clone(),
+                } for layer in model.transformer_encoder.layers] if capture.on else []
                 seen: Dict[str, object] = {}
 
                 def after_backward() -> None:
@@ -310,6 +378,9 @@ def _run(config: Config, sequences: Sequence[str], capture_at: frozenset) -> Dic
                         seen["point_grad"] = {
                             name: tensor.grad.detach().norm(dim=-1)
                             for name, tensor in capture.points.items()}
+                        # Before the weights move: the step's own norm and head.
+                        seen["readout"] = [readout(model, capture.points[name].detach())
+                                           for name in readout_names(config.num_layers)]
 
                 loss, _, norm = train_step(
                     model, optimizer, scheduler, x, y, config.grad_clip, after_backward)
@@ -335,23 +406,38 @@ def _run(config: Config, sequences: Sequence[str], capture_at: frozenset) -> Dic
                     logits = capture.logits
                     probabilities = masked(logits.reshape(-1, logits.shape[-1])).softmax(dim=-1)
                     probabilities = probabilities.reshape(logits.shape)[..., list(ALLOWED)]
-                    maps = []
-                    for layer in range(1, config.num_layers + 1):
+
+                    def triangles(squares: torch.Tensor) -> np.ndarray:
+                        """Each head's batch × length × length, as each
+                        peptide's lower triangle in a row: what reads what."""
                         heads = []
                         for h in range(config.nhead):
                             pieces = []
                             for c in range(len(sequences)):
-                                square = capture.attention[layer][rows[c], h, :spans[c], :spans[c]]
+                                square = squares[rows[c], h, :spans[c], :spans[c]]
                                 pieces.append(square.numpy()[np.tril_indices(spans[c])])
                             heads.append(np.concatenate(pieces))
-                        maps.append(heads)
+                        return np.array(heads)
+
+                    blocks = []
+                    for layer in range(1, config.num_layers + 1):
+                        kept_block = capture.blocks[layer]
+                        blocks.append({
+                            **{key: real(kept_block[key]).numpy()
+                               for key in ("query", "key", "value", "mixed", "ff_input", "hidden")},
+                            "scores": triangles(kept_block["scores"]),
+                            **{key: tensor.numpy() for key, tensor in fed[layer - 1].items()},
+                        })
                     checkpoints[step] = {
                         # As the step found them: the tables its x0 was made from.
                         "token_embedding": before["token_embedding"][0].numpy(),
                         "position_embedding": before["position_embedding"][0][0].numpy(),
                         "points": [real(capture.points[name].detach()).numpy() for name in names],
                         "point_grad": [real(seen["point_grad"][name]).numpy() for name in names],
-                        "attention": np.array(maps),
+                        "attention": np.array([triangles(capture.attention[layer])
+                                               for layer in range(1, config.num_layers + 1)]),
+                        "blocks": blocks,
+                        "readout": np.array([real(r).numpy() for r in seen["readout"]]),
                         "logits": real(logits).numpy(),
                         "probs": real(probabilities).numpy(),
                         "head_grad": head.weight.grad.detach().numpy().copy(),
@@ -428,9 +514,29 @@ def record(
             # to two places, and their sum is x0 itself.
             "token_embedding": _array(kept["token_embedding"], "f4"),
             "position_embedding": _array(kept["position_embedding"], "f4"),
-            "points": _int8_each(kept["points"]),
+            # Whole too: the page writes each point's numbers and what each
+            # part added, and they add up.
+            "points": _array(np.stack(kept["points"]), "f4"),
             "point_grad": _array(np.stack(kept["point_grad"]), "f4"),
             "attention": _array(_unit(kept["attention"]), "u1", scale=1.0 / 255),
+            # What each block worked out: drawn as colours where it is int8,
+            # written out where it is whole.
+            "blocks": [{
+                "query": _int8(block["query"]),
+                "key": _int8(block["key"]),
+                "value": _int8(block["value"]),
+                "scores": _array(block["scores"], "f4"),
+                "mixed": _int8(block["mixed"]),
+                "ff_input": _array(block["ff_input"], "f4"),
+                "hidden": _int8(block["hidden"]),
+                "ff_in": _array(block["ff_in"], "f4"),
+                "ff_in_bias": _array(block["ff_in_bias"], "f4"),
+                "ff_out": _array(block["ff_out"], "f4"),
+                "ff_out_bias": _array(block["ff_out_bias"], "f4"),
+            } for block in kept["blocks"]],
+            # The stream read out early (`readout`), at every point before
+            # the final norm: the last is `probs`.
+            "readout": _array(_unit(kept["readout"]), "u1", scale=1.0 / 255),
             "logits": _int8(kept["logits"]),
             "probs": _array(_unit(kept["probs"]), "u1", scale=1.0 / 255),
             "head_grad": _int8(kept["head_grad"]),

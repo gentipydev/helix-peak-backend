@@ -47,10 +47,11 @@ def test_another_run_is_not_this_one():
 
 
 def test_a_schema_this_does_not_read_is_refused():
-    data = load()
-    data["schema"] = 1
-    with pytest.raises(Refused, match="schema"):
-        validate(dump(data))
+    for schema in (1, 2):
+        data = load()
+        data["schema"] = schema
+        with pytest.raises(Refused, match="schema"):
+            validate(dump(data))
 
 
 def test_a_vocabulary_not_the_models_is_refused():
@@ -159,3 +160,81 @@ def test_main_says_why_it_refused(tmp_path, capsys):
     assert check_trace.main([str(bad)]) == 1
     assert "REFUSED" in capsys.readouterr().err
     assert check_trace.main([str(FIXTURE)]) == 0
+
+
+def test_the_stream_must_be_kept_whole():
+    data = load()
+    spec = data["checkpoints"][0]["points"]
+    raw = base64.b64decode(spec["data"])
+    values = struct.unpack("<%df" % (len(raw) // 4), raw)
+    scale = max(abs(v) for v in values) / 127
+    quantized = struct.pack("<%db" % len(values), *(round(v / scale) for v in values))
+    spec.update(dtype="i1", scales=[scale] * spec["shape"][0], data=base64.b64encode(quantized).decode("ascii"))
+    with pytest.raises(Refused, match="points is not kept whole"):
+        validate(dump(data))
+
+
+def test_a_checkpoint_without_its_blocks_is_refused():
+    data = load()
+    del data["checkpoints"][0]["blocks"]
+    with pytest.raises(Refused, match="blocks"):
+        validate(dump(data))
+
+
+def test_scores_that_do_not_softmax_to_the_map_are_refused():
+    data = load()
+    # The second place's two scores (after <bos>'s one): swap their bytes.
+    spec = data["checkpoints"][-1]["blocks"][0]["scores"]
+    rewrite(spec, lambda raw: raw.__setitem__(slice(4, 12), raw[8:12] + raw[4:8]))
+    with pytest.raises(Refused, match="do not softmax"):
+        validate(dump(data))
+
+
+def test_a_mix_that_is_not_the_shares_of_the_values_is_refused():
+    data = load()
+    rewrite(data["checkpoints"][-1]["blocks"][1]["mixed"],
+            lambda raw: raw.__setitem__(0, (raw[0] + 64) % 256))
+    with pytest.raises(Refused, match="shares of the values"):
+        validate(dump(data))
+
+
+def test_neurons_that_are_not_gelu_of_their_input_are_refused():
+    data = load()
+    rewrite(data["checkpoints"][-1]["blocks"][0]["hidden"],
+            lambda raw: raw.__setitem__(3, (raw[3] + 40) % 128))
+    with pytest.raises(Refused, match="GELU"):
+        validate(dump(data))
+
+
+def test_a_feed_forward_that_does_not_add_what_the_stream_gained_is_refused():
+    data = load()
+    rewrite(data["checkpoints"][-1]["blocks"][1]["ff_out_bias"],
+            lambda raw: raw.__setitem__(3, raw[3] ^ 0x40))
+    with pytest.raises(Refused, match="what the stream gained"):
+        validate(dump(data))
+
+
+def test_a_readout_row_must_sum_to_one():
+    data = load()
+    rewrite(data["checkpoints"][0]["readout"], lambda raw: raw.__setitem__(slice(0, 21), bytes(21)))
+    with pytest.raises(Refused, match="readout has a row"):
+        validate(dump(data))
+
+
+def test_the_last_readout_must_be_the_models_probabilities():
+    data = load()
+    spec = data["checkpoints"][-1]["readout"]
+    targets, allowed = spec["shape"][1], spec["shape"][2]
+    last = (spec["shape"][0] - 1) * targets * allowed
+    # The last point's first row, its two largest shares swapped: still sums to one.
+
+    def swap(raw):
+        row = list(raw[last:last + allowed])
+        first = max(range(allowed), key=row.__getitem__)
+        second = max((i for i in range(allowed) if i != first), key=row.__getitem__)
+        row[first], row[second] = row[second], row[first]
+        raw[last:last + allowed] = bytes(row)
+
+    rewrite(spec, swap)
+    with pytest.raises(Refused, match="not the model's probabilities"):
+        validate(dump(data))

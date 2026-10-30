@@ -187,24 +187,47 @@ engine's model and optimiser with five changes, each for the page:
 | batch | 64 of 9,367 | all six, every step | one batch, so a step's forward pass is the whole dataset's |
 | dropout | 0.2 | **0** | the forward pass drawn is then the forward pass trained, number for number |
 | epochs | 200 cap, stop after 10 idle | 200 steps, no stopping | nothing is held out to stop on |
-| width / ff | 96 / 384 | **16 / 64** | the page writes out every number of an embedding row, and 16 fit across a phone; 4 heads and 4 blocks kept |
+| width / ff | 96 / 384 | **16 / 64** | the page writes out every number of an embedding row, and 16 fit across a phone |
+| blocks / heads | 4 / 4 | **2 / 2** | the page walks one block's attention, head by head, and its feed-forward, then the whole pass layer to layer; two of each tell it without repeating it |
 | learning rate | 1e-3 | **1e-2** | at 1e-3 a model 16 wide never passes one nat in 200 steps; at 1e-2 it passes every milestone |
 
 What it records:
 
 - **every step**: the loss, residues and `<eos>` apart, the learning rate used,
-  the gradient norm before clipping and the clip applied, 16 parameter groups'
+  the gradient norm before clipping and the clip applied, 10 parameter groups'
   gradient and update norms, each of the 180 targets' loss, and the output
   layer's weights and biases;
-- **at each checkpoint**, everything else: the two embedding tables as the
-  step found them, whole as float32 (the token embedding, 23 × 16, its padding
-  row zero, and the position embedding, 51 × 16), the residual stream at its ten points (the
-  embeddings, after each block's attention and feed-forward, and the final
-  norm), the gradient reaching each of them, every head's attention map, the
-  logits and the probabilities over the 21 tokens that can follow, and the
-  output layer's clipped gradient and its update. `check_trace.py` holds the
-  stream's first point to the tables: each target's x0 is its id's token row
-  plus its place's row, to within half the stream's quantisation step.
+- **at each checkpoint**, everything else:
+  - the two embedding tables as the step found them, whole as float32 (the
+    token embedding, 23 × 16, its padding row zero, and the position
+    embedding, 51 × 16);
+  - the residual stream at its six points (x0, after each block's attention
+    and feed-forward, and the final norm), whole as float32, so that what a
+    part adds and what the stream then holds add up to the last digit;
+  - the gradient reaching each point;
+  - every head's attention map;
+  - what each block worked out on the way (schema 3, for the page's
+    Attention and Feed-forward stages):
+    - its queries, keys and values, heads side by side, as int8;
+    - every score before softmax, as float32;
+    - each head's mix of values before the output projection, as int8;
+    - the feed-forward's input after its LayerNorm, as float32;
+    - its 64 neurons after GELU, as int8;
+    - its two weight matrices and biases as the step found them, as float32;
+  - the stream **read out early** at x0 and after each part: the final norm
+    and the output layer applied with the step's own weights, what the model
+    would say if it stopped there, as probabilities over the 21 tokens that
+    can follow; the last of them is the model's own output;
+  - the logits and the probabilities over the 21 tokens that can follow;
+  - the output layer's clipped gradient and its update.
+
+`check_trace.py` holds these to each other:
+- each target's x0 is its id's token row plus its place's row;
+- softmax of each block's scores is its attention map;
+- each head's mix is its shares of the values;
+- every neuron is GELU of its weighted input;
+- what the feed-forward adds is what the stream gained across it;
+- the last readout is the model's own output.
 
 The tables were added on 2026-10-30 for the page's Forward opening, which
 draws each id picking its row. Recording them changed no other byte: the run
@@ -217,6 +240,22 @@ numbers: every byte changed with the model (the run 96 wide was sha256
 to two places and show a position row's hundredths being added: at int8 a
 token row came in steps of 0.03 (sha256 `23ac6af6…` before).
 
+On 2026-10-30, later still, the run was recorded again at two blocks of two
+heads, for the page's Forward, now three stages (Attention, Feed-forward, and
+the pass layer to layer). It also kept each block's insides and the early
+readout, and kept the stream whole (schema 3). Every byte changed with the
+model: the 4 × 4 run was sha256 `419014ae…`, 1,165,968 bytes, 14,727
+parameters.
+
+At step 200 the readout shows the inference layer by layer. At insulin A's
+C11, whose next token is S:
+- x0 says T 64%;
+- after block 1, T 94%;
+- after block 2, S 100%.
+
+Insulin A's places whose top readout is right go 3 → 5 → 11 → 11 → 21 of 22.
+At step 1, none at any layer.
+
 The checkpoints are chosen by rule: step 1; the first step whose loss is
 below each baseline on these six (uniform, unigram, bigram); the first below
 one nat and below a tenth of one; and the last. Arrays are little-endian
@@ -224,10 +263,10 @@ base64 in JSON, int8, uint8 or uint16 with their scales where quantised, and
 float32 where kept whole.
 
 ```
-6 peptides, 180 targets | 14,727 parameters | 200 steps on cpu
-loss 3.2051 -> 0.0651 (uniform 3.0445, unigram 2.8564, bigram 2.0434, floor 0.0597)
-checkpoints: 1 (first), 10 (uniform), 18 (unigram), 45 (bigram), 62 (one_nat), 93 (tenth_nat), 200 (last)
-1,165,968 bytes
+6 peptides, 180 targets | 8,167 parameters | 200 steps on cpu
+loss 3.2197 -> 0.0645 (uniform 3.0445, unigram 2.8564, bigram 2.0434, floor 0.0597)
+checkpoints: 1 (first), 13 (uniform), 21 (unigram), 49 (bigram), 66 (one_nat), 95 (tenth_nat), 200 (last)
+2,599,744 bytes
 ```
 
 The floor is the least loss any model reading whole prefixes can reach on
