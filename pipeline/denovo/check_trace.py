@@ -25,7 +25,7 @@ if str(HERE.parents[1]) not in sys.path:
 from pipeline.denovo.alphabet import AMINO_ACIDS, MAX_LENGTH, MIN_LENGTH, PAD_ID, TOKENS
 from pipeline.denovo.bigram import ALLOWED, framed
 
-SCHEMA = 3
+SCHEMA = 4
 LIMIT = 4_000_000
 DEFAULT = HERE / "runs" / "curated" / "trace.json"
 
@@ -39,6 +39,9 @@ _GELU_LEAST = -0.16997
 
 # Float32 against the same sum worked out in Python's doubles.
 _WHOLE = 1e-4
+
+# The engine's LayerNorm's epsilon (`nn.TransformerEncoderLayer`'s default).
+_NORM_EPS = 1e-5
 
 
 class Refused(ValueError):
@@ -118,12 +121,17 @@ def _gelu(x: float) -> float:
 
 def _blocks(checkpoint: Dict, stream: Sequence[float], attention: Sequence[float], layers: int, heads: int,
             width: int, ff: int, targets: int, spans: Sequence[int], triangle: int, what: str) -> None:
-    """What each block worked out, as the stages draw it: its queries, keys
-    and values, its scores, each head's mix of values, and its feed-forward's
-    input, neurons and weights. Held to each other and to the stream: softmax
-    of the scores is the block's attention map, each head's mix is its shares
-    of the values, every neuron is GELU of its weighted input, and what the
-    feed-forward adds is what the stream gained across it."""
+    """What each block worked out, as the stages draw it: its row evened out
+    by its first LayerNorm, that norm's scale and shift, the weights that make
+    the queries, keys and values, those, its scores, each head's mix of values,
+    and its feed-forward's input, neurons and weights. Held to each other and
+    to the stream: the evened row is the stream before the block, less its
+    mean, over its spread, scaled and shifted; the queries, keys and values are
+    the weights' sums of it; each score is a query times a key, number by
+    number, summed, over the root of a head's size; softmax of the scores is the
+    block's attention map, each head's mix is its shares of the values, every
+    neuron is GELU of its weighted input, and what the feed-forward adds is
+    what the stream gained across it."""
     blocks = checkpoint.get("blocks")
     if not isinstance(blocks, list) or len(blocks) != layers:
         raise Refused("%s does not keep its %d blocks" % (what, layers))
@@ -132,13 +140,46 @@ def _blocks(checkpoint: Dict, stream: Sequence[float], attention: Sequence[float
         named = "%s block %d" % (what, b + 1)
         if not isinstance(block, dict):
             raise Refused("%s is not an object" % named)
-        value = _scaled(block.get("value"), [targets, width], named + " value")
+        gain = _whole(block.get("norm1_weight"), [width], named + " norm1_weight")
+        shift = _whole(block.get("norm1_bias"), [width], named + " norm1_bias")
+        evened = _whole(block.get("attn_input"), [targets, width], named + " attn_input")
+        before = stream[2 * b * targets * width:]
+        for t in range(targets):
+            row = before[t * width:(t + 1) * width]
+            mean = sum(row) / width
+            spread = math.sqrt(sum((v - mean) ** 2 for v in row) / width + _NORM_EPS)
+            for d in range(width):
+                if abs((row[d] - mean) / spread * gain[d] + shift[d] - evened[t * width + d]) > _WHOLE:
+                    raise Refused("%s attn_input is not the stream evened out" % named)
+        made = _whole(block.get("attn_in"), [3 * width, width], named + " attn_in")
+        made_bias = _whole(block.get("attn_in_bias"), [3 * width], named + " attn_in_bias")
+        query = _whole(block.get("query"), [targets, width], named + " query")
+        key = _whole(block.get("key"), [targets, width], named + " key")
+        value = _whole(block.get("value"), [targets, width], named + " value")
+        for part, kept in enumerate((query, key, value)):
+            for t in range(targets):
+                x = evened[t * width:(t + 1) * width]
+                for d in range(width):
+                    out = part * width + d
+                    total = sum(made[out * width + e] * x[e] for e in range(width)) + made_bias[out]
+                    if abs(total - kept[t * width + d]) > _WHOLE:
+                        raise Refused("%s %s is not its weights' sum of the evened row"
+                                      % (named, ("query", "key", "value")[part]))
         mixed = _scaled(block.get("mixed"), [targets, width], named + " mixed")
-        for key in ("query", "key"):
-            _scaled(block.get(key), [targets, width], "%s %s" % (named, key))
-        value_step = _scale(block["value"], named + " value")
         mixed_step = _scale(block["mixed"], named + " mixed")
         scores = _whole(block.get("scores"), [heads, triangle], named + " scores")
+        root = math.sqrt(size)
+        for h in range(heads):
+            at, first = h * triangle, 0
+            for span in spans:
+                for i in range(span):
+                    q = query[(first + i) * width + h * size:(first + i) * width + (h + 1) * size]
+                    for j in range(i + 1):
+                        k = key[(first + j) * width + h * size:(first + j) * width + (h + 1) * size]
+                        if abs(sum(a * c for a, c in zip(q, k)) / root - scores[at + j]) > _WHOLE:
+                            raise Refused("%s scores are not query times key over the root of a head" % named)
+                    at += i + 1
+                first += span
         maps = attention[b * heads * triangle:(b + 1) * heads * triangle]
         for h in range(heads):
             at, first = h * triangle, 0
@@ -155,7 +196,7 @@ def _blocks(checkpoint: Dict, stream: Sequence[float], attention: Sequence[float
                     target = first + i
                     for d in range(h * size, (h + 1) * size):
                         mix = sum(share * value[(first + j) * width + d] for j, share in enumerate(shares))
-                        if abs(mix - mixed[target * width + d]) > (value_step + mixed_step) / 2 + _WHOLE:
+                        if abs(mix - mixed[target * width + d]) > mixed_step / 2 + _WHOLE:
                             raise Refused("%s mix is not its shares of the values" % named)
                     at += i + 1
                 first += span

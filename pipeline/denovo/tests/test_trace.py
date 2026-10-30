@@ -229,8 +229,11 @@ def test_the_stream_is_kept_whole_and_x0_is_the_two_tables_added(toy):
 def test_each_block_keeps_what_it_worked_out(toy):
     targets, width, ff = toy["targets"], TOY.d_model, TOY.dim_feedforward
     triangle = sum(n * (n + 1) // 2 for n in (len(s) + 1 for s in TOY_SEQUENCES))
-    shapes = {"query": ("i1", [targets, width]), "key": ("i1", [targets, width]),
-              "value": ("i1", [targets, width]), "mixed": ("i1", [targets, width]),
+    shapes = {"norm1_weight": ("f4", [width]), "norm1_bias": ("f4", [width]),
+              "attn_input": ("f4", [targets, width]), "attn_in": ("f4", [3 * width, width]),
+              "attn_in_bias": ("f4", [3 * width]),
+              "query": ("f4", [targets, width]), "key": ("f4", [targets, width]),
+              "value": ("f4", [targets, width]), "mixed": ("i1", [targets, width]),
               "scores": ("f4", [TOY.nhead, triangle]), "ff_input": ("f4", [targets, width]),
               "hidden": ("i1", [targets, ff]), "ff_in": ("f4", [ff, width]),
               "ff_in_bias": ("f4", [ff]), "ff_out": ("f4", [width, ff]), "ff_out_bias": ("f4", [width])}
@@ -258,8 +261,38 @@ def test_the_scores_softmax_to_the_attention_maps_and_mix_the_values(toy):
                     assert np.abs(shares - maps[b, h, at:at + n]).max() <= 0.5 / 255 + 1e-6
                     first = target - (n - 1)
                     mix = shares @ value[first:target + 1, h * size:(h + 1) * size]
-                    tolerance = (block["value"]["scale"] + block["mixed"]["scale"]) / 2 + 1e-5
+                    tolerance = block["mixed"]["scale"] / 2 + 1e-5
                     assert np.abs(mix - mixed[target, h * size:(h + 1) * size]).max() <= tolerance
+
+
+def test_the_queries_keys_and_values_are_the_weights_sums_of_the_evened_row(toy):
+    spans = [len(s) + 1 for s in TOY_SEQUENCES]
+    size = TOY.d_model // TOY.nhead
+    for checkpoint in toy["checkpoints"]:
+        points = stored(checkpoint["points"])
+        for b, block in enumerate(checkpoint["blocks"]):
+            # The row evened out: less its mean, over its spread, then scaled
+            # and shifted by the norm's own numbers.
+            before = points[2 * b]
+            z = (before - before.mean(axis=-1, keepdims=True)) / np.sqrt(before.var(axis=-1, keepdims=True) + 1e-5)
+            evened = z * stored(block["norm1_weight"]) + stored(block["norm1_bias"])
+            assert np.abs(evened - stored(block["attn_input"])).max() < 1e-5
+            made = stored(block["attn_input"]) @ stored(block["attn_in"]).T + stored(block["attn_in_bias"])
+            q, k, v = np.split(made, 3, axis=-1)
+            for kept, again in ((block["query"], q), (block["key"], k), (block["value"], v)):
+                assert np.abs(stored(kept) - again).max() < 1e-5
+            # Each score: a head's slice of a query times one of a key, over
+            # the root of the slice.
+            scores = stored(block["scores"])
+            starts = [sum(spans[:c]) for c in range(len(spans))]
+            for h in range(TOY.nhead):
+                at = 0
+                for c, span in enumerate(spans):
+                    for i in range(span):
+                        for j in range(i + 1):
+                            dot = q[starts[c] + i, h * size:(h + 1) * size] @ k[starts[c] + j, h * size:(h + 1) * size]
+                            assert abs(dot / math.sqrt(size) - scores[h, at + j]) < 1e-5
+                        at += i + 1
 
 
 def test_the_neurons_are_gelu_of_their_input_and_add_what_the_stream_gained(toy):
@@ -278,6 +311,9 @@ def test_the_feed_forward_weights_are_the_ones_the_step_read(toy):
                         dim_feedforward=TOY.dim_feedforward, dropout=TOY.dropout)
     first = toy["checkpoints"][0]
     for block, layer in zip(first["blocks"], model.transformer_encoder.layers):
+        assert np.array_equal(stored(block["norm1_weight"]), layer.norm1.weight.detach().numpy())
+        assert np.array_equal(stored(block["attn_in"]), layer.self_attn.in_proj_weight.detach().numpy())
+        assert np.array_equal(stored(block["attn_in_bias"]), layer.self_attn.in_proj_bias.detach().numpy())
         assert np.array_equal(stored(block["ff_in"]), layer.linear1.weight.detach().numpy())
         assert np.array_equal(stored(block["ff_out_bias"]), layer.linear2.bias.detach().numpy())
 
@@ -315,8 +351,11 @@ def test_inside_is_the_layers_own_attention_taken_apart():
     model(torch.tensor([[1, 5, 9, 13, 2]]))
     parts = seen["parts"]
     assert seen["error"] < 1e-5
-    for key in ("query", "key", "value", "mixed"):
+    for key in ("attn_input", "query", "key", "value", "mixed"):
         assert parts[key].shape == (1, 5, 16)
+    # Its input is the row its block's first LayerNorm evened out.
+    x0 = model.token_embedding(torch.tensor([[1, 5, 9, 13, 2]])) + model.positional_embedding[:, :5]
+    assert torch.allclose(parts["attn_input"], layer.norm1(x0))
     assert parts["scores"].shape == parts["weights"].shape == (1, 2, 5, 5)
     # Softmax of the scores, under the mask, is the weights.
     lower = torch.ones(5, 5, dtype=torch.bool).tril()

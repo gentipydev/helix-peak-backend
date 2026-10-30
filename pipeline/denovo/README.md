@@ -206,9 +206,13 @@ What it records:
     part adds and what the stream then holds add up to the last digit;
   - the gradient reaching each point;
   - every head's attention map;
-  - what each block worked out on the way (schema 3, for the page's
-    Attention and Feed-forward stages):
-    - its queries, keys and values, heads side by side, as int8;
+  - what each block worked out on the way (schema 4, for the page's
+    Scores, Attention and Feed-forward stages):
+    - its row evened out by its first LayerNorm, the row attention reads, and
+      that norm's scale and shift, as float32;
+    - the weights and biases that make the queries, keys and values from it
+      (`in_proj`, 48 × 16 and 48) as the step found them, as float32;
+    - its queries, keys and values, heads side by side, as float32;
     - every score before softmax, as float32;
     - each head's mix of values before the output projection, as int8;
     - the feed-forward's input after its LayerNorm, as float32;
@@ -223,6 +227,11 @@ What it records:
 
 `check_trace.py` holds these to each other:
 - each target's x0 is its id's token row plus its place's row;
+- each block's evened row is the stream before it, less its mean, over its
+  spread, then scaled and shifted by the norm's own numbers;
+- its queries, keys and values are those weights' sums of the evened row;
+- each score is a head's slice of a query times one of a key, summed, over
+  the root of the slice's size;
 - softmax of each block's scores is its attention map;
 - each head's mix is its shares of the values;
 - every neuron is GELU of its weighted input;
@@ -246,6 +255,16 @@ the pass layer to layer). It also kept each block's insides and the early
 readout, and kept the stream whole (schema 3). Every byte changed with the
 model: the 4 × 4 run was sha256 `419014ae…`, 1,165,968 bytes, 14,727
 parameters.
+
+The same night the run was kept again as schema 4, for the page's Scores
+stage, which writes out how each row is evened out and how its query, key
+and value are made. Each block now also keeps its evened row, its first
+LayerNorm's scale and shift and the query/key/value weights, and the queries,
+keys and values themselves are whole rather than int8, so a score written out
+is their sum. The training did not change: apart from the schema, every key
+and array of the schema 3 run (sha256 `da3018b1…`, 2,599,744 bytes) is byte
+for byte the same, and the float32 queries, keys and values quantise back to
+its int8 exactly. The run is 3,364,499 bytes (sha256 `50196fd0…`).
 
 At step 200 the readout shows the inference layer by layer. At insulin A's
 C11, whose next token is S:

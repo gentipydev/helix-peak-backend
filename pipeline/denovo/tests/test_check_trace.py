@@ -47,7 +47,7 @@ def test_another_run_is_not_this_one():
 
 
 def test_a_schema_this_does_not_read_is_refused():
-    for schema in (1, 2):
+    for schema in (1, 2, 3):
         data = load()
         data["schema"] = schema
         with pytest.raises(Refused, match="schema"):
@@ -181,11 +181,47 @@ def test_a_checkpoint_without_its_blocks_is_refused():
         validate(dump(data))
 
 
-def test_scores_that_do_not_softmax_to_the_map_are_refused():
+def test_a_row_that_is_not_the_stream_evened_out_is_refused():
+    data = load()
+    rewrite(data["checkpoints"][-1]["blocks"][0]["attn_input"], lambda raw: raw.__setitem__(2, raw[2] ^ 0x40))
+    with pytest.raises(Refused, match="not the stream evened out"):
+        validate(dump(data))
+
+
+def test_a_layernorm_scale_that_is_not_the_one_used_is_refused():
+    data = load()
+    rewrite(data["checkpoints"][-1]["blocks"][1]["norm1_weight"], lambda raw: raw.__setitem__(2, raw[2] ^ 0x40))
+    with pytest.raises(Refused, match="not the stream evened out"):
+        validate(dump(data))
+
+
+def test_queries_keys_and_values_must_be_the_weights_sums_of_the_evened_row():
+    for key, named in (("attn_in", "query"), ("key", "key"), ("value", "value")):
+        data = load()
+        # A mantissa bit of the first number of a query's weights, or of the
+        # first key or value: a change of up to a half, never a NaN.
+        rewrite(data["checkpoints"][-1]["blocks"][0][key], lambda raw: raw.__setitem__(2, raw[2] ^ 0x40))
+        with pytest.raises(Refused, match="%s is not its weights' sum" % named):
+            validate(dump(data))
+
+
+def test_scores_that_are_not_query_times_key_are_refused():
     data = load()
     # The second place's two scores (after <bos>'s one): swap their bytes.
     spec = data["checkpoints"][-1]["blocks"][0]["scores"]
     rewrite(spec, lambda raw: raw.__setitem__(slice(4, 12), raw[8:12] + raw[4:8]))
+    with pytest.raises(Refused, match="query times key"):
+        validate(dump(data))
+
+
+def test_a_map_that_is_not_softmax_of_the_scores_is_refused():
+    data = load()
+    # Block 1, head 1, the second place's row of two shares: swapped, it still
+    # sums to one.
+    spec = data["checkpoints"][-1]["attention"]
+    raw = base64.b64decode(spec["data"])
+    assert raw[1] != raw[2]
+    rewrite(spec, lambda raw: raw.__setitem__(slice(1, 3), bytes([raw[2], raw[1]])))
     with pytest.raises(Refused, match="do not softmax"):
         validate(dump(data))
 

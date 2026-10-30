@@ -11,8 +11,10 @@ out. Read-only hooks watch it. Every step's loss, learning rate, gradient norms,
 per-target losses and output-layer weights are kept, and at each checkpoint so
 is everything else: the embedding tables the step read its ids through, the
 residual stream at every layer, its gradient, every attention map, what each
-block worked out on the way (its queries, keys, values and scores, each head's
-mix of values, its feed-forward's input, neurons and weights), the stream read
+block worked out on the way (its row evened out by its first LayerNorm, that
+norm's scale and shift, the weights that make the queries, keys and values from
+it, the queries, keys, values and scores, each head's mix of values, its
+feed-forward's input, neurons and weights), the stream read
 out early through the final norm and the output layer, the logits, and the
 update the step made.
 
@@ -54,7 +56,7 @@ from pipeline.denovo.sequences import batches, build_dataset, is_modelable
 from pipeline.denovo.tokenizer import decode
 from pipeline.denovo.train import Config, _token_losses, build, train_step
 
-SCHEMA = 3
+SCHEMA = 4
 NAME = "curated"
 OUT = HERE / "runs" / NAME / "trace.json"
 CPU = torch.device("cpu")
@@ -172,7 +174,8 @@ def inside(
     output: torch.Tensor,
 ) -> Tuple[Dict[str, torch.Tensor], float]:
     """What a layer's attention worked out, again from its input and its
-    weights as they stood: the queries, keys and values (heads side by side),
+    weights as they stood: its input (the row its block's first LayerNorm
+    evened out), the queries, keys and values (heads side by side),
     every score before softmax (heads apart), the weights, and each head's mix
     of values before the output projection; and how far the output they give
     is from the layer's own (a check, not a correction)."""
@@ -192,8 +195,8 @@ def inside(
         weights = masked_scores.softmax(dim=-1)
         mixed = (weights @ v).transpose(1, 2).reshape(batch, length, width)
         out = F.linear(mixed, module.out_proj.weight, module.out_proj.bias)
-        parts = {"query": made[0], "key": made[1], "value": made[2], "scores": scores,
-                 "weights": weights, "mixed": mixed}
+        parts = {"attn_input": query.detach(), "query": made[0], "key": made[1], "value": made[2],
+                 "scores": scores, "weights": weights, "mixed": mixed}
         return parts, (out - output).abs().max().item()
 
 
@@ -360,9 +363,15 @@ def _run(config: Config, sequences: Sequence[str], capture_at: frozenset) -> Dic
                 lr = optimizer.param_groups[0]["lr"]
                 before = {name: [p.detach().clone() for p in members[name]] for name in groups}
                 weight, bias = head.weight.detach().clone(), head.bias.detach().clone()
-                # Each block's feed-forward as the step found it: the edges the
-                # page draws between its neurons.
+                # Each block's weights as the step found them: its first
+                # LayerNorm's scale and shift and the weights that make the
+                # queries, keys and values, which the page writes out; and its
+                # feed-forward, the edges the page draws between its neurons.
                 fed = [{
+                    "norm1_weight": layer.norm1.weight.detach().clone(),
+                    "norm1_bias": layer.norm1.bias.detach().clone(),
+                    "attn_in": layer.self_attn.in_proj_weight.detach().clone(),
+                    "attn_in_bias": layer.self_attn.in_proj_bias.detach().clone(),
                     "ff_in": layer.linear1.weight.detach().clone(),
                     "ff_in_bias": layer.linear1.bias.detach().clone(),
                     "ff_out": layer.linear2.weight.detach().clone(),
@@ -424,7 +433,8 @@ def _run(config: Config, sequences: Sequence[str], capture_at: frozenset) -> Dic
                         kept_block = capture.blocks[layer]
                         blocks.append({
                             **{key: real(kept_block[key]).numpy()
-                               for key in ("query", "key", "value", "mixed", "ff_input", "hidden")},
+                               for key in ("attn_input", "query", "key", "value", "mixed",
+                                           "ff_input", "hidden")},
                             "scores": triangles(kept_block["scores"]),
                             **{key: tensor.numpy() for key, tensor in fed[layer - 1].items()},
                         })
@@ -520,11 +530,18 @@ def record(
             "point_grad": _array(np.stack(kept["point_grad"]), "f4"),
             "attention": _array(_unit(kept["attention"]), "u1", scale=1.0 / 255),
             # What each block worked out: drawn as colours where it is int8,
-            # written out where it is whole.
+            # written out where it is whole. The evened row, the weights that
+            # make the queries, keys and values from it, and those, are whole:
+            # the page writes them out, and a score is their sum.
             "blocks": [{
-                "query": _int8(block["query"]),
-                "key": _int8(block["key"]),
-                "value": _int8(block["value"]),
+                "norm1_weight": _array(block["norm1_weight"], "f4"),
+                "norm1_bias": _array(block["norm1_bias"], "f4"),
+                "attn_input": _array(block["attn_input"], "f4"),
+                "attn_in": _array(block["attn_in"], "f4"),
+                "attn_in_bias": _array(block["attn_in_bias"], "f4"),
+                "query": _array(block["query"], "f4"),
+                "key": _array(block["key"], "f4"),
+                "value": _array(block["value"], "f4"),
                 "scores": _array(block["scores"], "f4"),
                 "mixed": _int8(block["mixed"]),
                 "ff_input": _array(block["ff_input"], "f4"),
