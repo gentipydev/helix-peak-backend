@@ -206,7 +206,7 @@ What it records:
     part adds and what the stream then holds add up to the last digit;
   - the gradient reaching each point;
   - every head's attention map;
-  - what each block worked out on the way (schema 4, for the page's
+  - what each block worked out on the way (schemas 4 and 5, for the page's
     Scores, Attention and Feed-forward stages):
     - its row evened out by its first LayerNorm, the row attention reads, and
       that norm's scale and shift, as float32;
@@ -214,7 +214,9 @@ What it records:
       (`in_proj`, 48 × 16 and 48) as the step found them, as float32;
     - its queries, keys and values, heads side by side, as float32;
     - every score before softmax, as float32;
-    - each head's mix of values before the output projection, as int8;
+    - each head's mix of values before the output projection, as float32;
+    - the output weights and biases that mix the heads' answers back into one
+      row (`out_proj`, 16 × 16 and 16) as the step found them, as float32;
     - the feed-forward's input after its LayerNorm, as float32;
     - its 64 neurons after GELU, as int8;
     - its two weight matrices and biases as the step found them, as float32;
@@ -234,6 +236,8 @@ What it records:
   the root of the slice's size;
 - softmax of each block's scores is its attention map;
 - each head's mix is its shares of the values;
+- what attention adds is the output weights' sum of the heads' mix, what the
+  stream gained across it;
 - every neuron is GELU of its weighted input;
 - what the feed-forward adds is what the stream gained across it;
 - the last readout is the model's own output.
@@ -266,6 +270,16 @@ and array of the schema 3 run (sha256 `da3018b1…`, 2,599,744 bytes) is byte
 for byte the same, and the float32 queries, keys and values quantise back to
 its int8 exactly. The run is 3,364,499 bytes (sha256 `50196fd0…`).
 
+On 2026-11-01 it was kept again as schema 5, for the page's Attention stage,
+which draws how the heads' answers are mixed back into one row. Each block now
+also keeps its attention's output weights and biases (`out_proj`), and the
+heads' mix is whole rather than int8, so what the page's strings carry adds up
+to the row it writes: at insulin A's C11, step 1, the first number is 0.1135,
+the sum of 16 products, its bias still 0. The training did not change: with the
+two new keys taken out of each block and the mix quantised back to int8, the
+run is the schema 4 run byte for byte. The run is 3,547,245 bytes (sha256
+`dbee2f90…`).
+
 At step 200 the readout shows the inference layer by layer. At insulin A's
 C11, whose next token is S:
 - x0 says T 64%;
@@ -285,7 +299,7 @@ float32 where kept whole.
 6 peptides, 180 targets | 8,167 parameters | 200 steps on cpu
 loss 3.2197 -> 0.0645 (uniform 3.0445, unigram 2.8564, bigram 2.0434, floor 0.0597)
 checkpoints: 1 (first), 13 (uniform), 21 (unigram), 49 (bigram), 66 (one_nat), 95 (tenth_nat), 200 (last)
-2,599,744 bytes
+3,547,245 bytes
 ```
 
 The floor is the least loss any model reading whole prefixes can reach on

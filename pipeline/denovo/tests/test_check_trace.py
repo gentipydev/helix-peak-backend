@@ -47,7 +47,7 @@ def test_another_run_is_not_this_one():
 
 
 def test_a_schema_this_does_not_read_is_refused():
-    for schema in (1, 2, 3):
+    for schema in (1, 2, 3, 4):
         data = load()
         data["schema"] = schema
         with pytest.raises(Refused, match="schema"):
@@ -228,10 +228,51 @@ def test_a_map_that_is_not_softmax_of_the_scores_is_refused():
 
 def test_a_mix_that_is_not_the_shares_of_the_values_is_refused():
     data = load()
-    rewrite(data["checkpoints"][-1]["blocks"][1]["mixed"],
-            lambda raw: raw.__setitem__(0, (raw[0] + 64) % 256))
+    # A mantissa bit of the first number of the mix: a change of up to a half.
+    rewrite(data["checkpoints"][-1]["blocks"][1]["mixed"], lambda raw: raw.__setitem__(2, raw[2] ^ 0x40))
     with pytest.raises(Refused, match="shares of the values"):
         validate(dump(data))
+
+
+def quantized(spec: dict) -> None:
+    """`spec` stored as int8 with one scale, as schema 4 kept the mix."""
+    raw = base64.b64decode(spec["data"])
+    values = struct.unpack("<%df" % (len(raw) // 4), raw)
+    scale = max(abs(v) for v in values) / 127
+    packed = struct.pack("<%db" % len(values), *(round(v / scale) for v in values))
+    spec.update(dtype="i1", scale=scale, data=base64.b64encode(packed).decode("ascii"))
+
+
+def test_the_mix_must_be_kept_whole():
+    data = load()
+    quantized(data["checkpoints"][0]["blocks"][0]["mixed"])
+    with pytest.raises(Refused, match="mixed is not kept whole"):
+        validate(dump(data))
+
+
+def test_a_block_without_its_output_weights_is_refused():
+    for key in ("attn_out", "attn_out_bias"):
+        data = load()
+        del data["checkpoints"][0]["blocks"][1][key]
+        with pytest.raises(Refused, match="%s is not kept whole" % key):
+            validate(dump(data))
+
+
+def test_the_output_weights_must_be_kept_whole():
+    data = load()
+    quantized(data["checkpoints"][-1]["blocks"][0]["attn_out"])
+    with pytest.raises(Refused, match="attn_out is not kept whole"):
+        validate(dump(data))
+
+
+def test_output_weights_that_do_not_add_what_the_stream_gained_are_refused():
+    for b, key in ((0, "attn_out"), (1, "attn_out_bias")):
+        data = load()
+        # A mantissa bit of the first weight, or of the first bias (trained by
+        # the last step, so not zero): a change of up to a half.
+        rewrite(data["checkpoints"][-1]["blocks"][b][key], lambda raw: raw.__setitem__(2, raw[2] ^ 0x40))
+        with pytest.raises(Refused, match="attention does not add what the stream gained"):
+            validate(dump(data))
 
 
 def test_neurons_that_are_not_gelu_of_their_input_are_refused():

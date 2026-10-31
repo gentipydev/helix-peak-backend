@@ -233,7 +233,8 @@ def test_each_block_keeps_what_it_worked_out(toy):
               "attn_input": ("f4", [targets, width]), "attn_in": ("f4", [3 * width, width]),
               "attn_in_bias": ("f4", [3 * width]),
               "query": ("f4", [targets, width]), "key": ("f4", [targets, width]),
-              "value": ("f4", [targets, width]), "mixed": ("i1", [targets, width]),
+              "value": ("f4", [targets, width]), "mixed": ("f4", [targets, width]),
+              "attn_out": ("f4", [width, width]), "attn_out_bias": ("f4", [width]),
               "scores": ("f4", [TOY.nhead, triangle]), "ff_input": ("f4", [targets, width]),
               "hidden": ("i1", [targets, ff]), "ff_in": ("f4", [ff, width]),
               "ff_in_bias": ("f4", [ff]), "ff_out": ("f4", [width, ff]), "ff_out_bias": ("f4", [width])}
@@ -261,8 +262,8 @@ def test_the_scores_softmax_to_the_attention_maps_and_mix_the_values(toy):
                     assert np.abs(shares - maps[b, h, at:at + n]).max() <= 0.5 / 255 + 1e-6
                     first = target - (n - 1)
                     mix = shares @ value[first:target + 1, h * size:(h + 1) * size]
-                    tolerance = block["mixed"]["scale"] / 2 + 1e-5
-                    assert np.abs(mix - mixed[target, h * size:(h + 1) * size]).max() <= tolerance
+                    # Whole: the mix is its shares of the values to float32's own rounding.
+                    assert np.abs(mix - mixed[target, h * size:(h + 1) * size]).max() < 1e-5
 
 
 def test_the_queries_keys_and_values_are_the_weights_sums_of_the_evened_row(toy):
@@ -305,6 +306,16 @@ def test_the_neurons_are_gelu_of_their_input_and_add_what_the_stream_gained(toy)
             assert np.abs(added - (points[2 * b + 2] - points[2 * b + 1])).max() < 1e-5
 
 
+def test_what_attention_adds_is_its_output_weights_sum_of_the_mix(toy):
+    for checkpoint in toy["checkpoints"]:
+        points = stored(checkpoint["points"])
+        for b, block in enumerate(checkpoint["blocks"]):
+            # The heads' answers side by side, through the output weights: what
+            # the stream gained across the block's attention.
+            added = stored(block["mixed"]) @ stored(block["attn_out"]).T + stored(block["attn_out_bias"])
+            assert np.abs(added - (points[2 * b + 1] - points[2 * b])).max() < 1e-5
+
+
 def test_the_feed_forward_weights_are_the_ones_the_step_read(toy):
     torch.manual_seed(TOY.seed)
     model = HelixPeekLM(d_model=TOY.d_model, nhead=TOY.nhead, num_layers=TOY.num_layers,
@@ -314,6 +325,8 @@ def test_the_feed_forward_weights_are_the_ones_the_step_read(toy):
         assert np.array_equal(stored(block["norm1_weight"]), layer.norm1.weight.detach().numpy())
         assert np.array_equal(stored(block["attn_in"]), layer.self_attn.in_proj_weight.detach().numpy())
         assert np.array_equal(stored(block["attn_in_bias"]), layer.self_attn.in_proj_bias.detach().numpy())
+        assert np.array_equal(stored(block["attn_out"]), layer.self_attn.out_proj.weight.detach().numpy())
+        assert np.array_equal(stored(block["attn_out_bias"]), layer.self_attn.out_proj.bias.detach().numpy())
         assert np.array_equal(stored(block["ff_in"]), layer.linear1.weight.detach().numpy())
         assert np.array_equal(stored(block["ff_out_bias"]), layer.linear2.bias.detach().numpy())
 

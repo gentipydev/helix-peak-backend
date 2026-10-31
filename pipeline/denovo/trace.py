@@ -13,8 +13,9 @@ is everything else: the embedding tables the step read its ids through, the
 residual stream at every layer, its gradient, every attention map, what each
 block worked out on the way (its row evened out by its first LayerNorm, that
 norm's scale and shift, the weights that make the queries, keys and values from
-it, the queries, keys, values and scores, each head's mix of values, its
-feed-forward's input, neurons and weights), the stream read
+it, the queries, keys, values and scores, each head's mix of values, the output
+weights that mix the heads back into one row, its feed-forward's input, neurons
+and weights), the stream read
 out early through the final norm and the output layer, the logits, and the
 update the step made.
 
@@ -56,7 +57,7 @@ from pipeline.denovo.sequences import batches, build_dataset, is_modelable
 from pipeline.denovo.tokenizer import decode
 from pipeline.denovo.train import Config, _token_losses, build, train_step
 
-SCHEMA = 4
+SCHEMA = 5
 NAME = "curated"
 OUT = HERE / "runs" / NAME / "trace.json"
 CPU = torch.device("cpu")
@@ -364,14 +365,17 @@ def _run(config: Config, sequences: Sequence[str], capture_at: frozenset) -> Dic
                 before = {name: [p.detach().clone() for p in members[name]] for name in groups}
                 weight, bias = head.weight.detach().clone(), head.bias.detach().clone()
                 # Each block's weights as the step found them: its first
-                # LayerNorm's scale and shift and the weights that make the
-                # queries, keys and values, which the page writes out; and its
+                # LayerNorm's scale and shift, the weights that make the
+                # queries, keys and values and those that mix the heads' answers
+                # back into one row, which the page writes out; and its
                 # feed-forward, the edges the page draws between its neurons.
                 fed = [{
                     "norm1_weight": layer.norm1.weight.detach().clone(),
                     "norm1_bias": layer.norm1.bias.detach().clone(),
                     "attn_in": layer.self_attn.in_proj_weight.detach().clone(),
                     "attn_in_bias": layer.self_attn.in_proj_bias.detach().clone(),
+                    "attn_out": layer.self_attn.out_proj.weight.detach().clone(),
+                    "attn_out_bias": layer.self_attn.out_proj.bias.detach().clone(),
                     "ff_in": layer.linear1.weight.detach().clone(),
                     "ff_in_bias": layer.linear1.bias.detach().clone(),
                     "ff_out": layer.linear2.weight.detach().clone(),
@@ -532,7 +536,9 @@ def record(
             # What each block worked out: drawn as colours where it is int8,
             # written out where it is whole. The evened row, the weights that
             # make the queries, keys and values from it, and those, are whole:
-            # the page writes them out, and a score is their sum.
+            # the page writes them out, and a score is their sum. So are the
+            # heads' mix and the output weights that make what attention
+            # adds from it, which the page writes out too.
             "blocks": [{
                 "norm1_weight": _array(block["norm1_weight"], "f4"),
                 "norm1_bias": _array(block["norm1_bias"], "f4"),
@@ -543,7 +549,9 @@ def record(
                 "key": _array(block["key"], "f4"),
                 "value": _array(block["value"], "f4"),
                 "scores": _array(block["scores"], "f4"),
-                "mixed": _int8(block["mixed"]),
+                "mixed": _array(block["mixed"], "f4"),
+                "attn_out": _array(block["attn_out"], "f4"),
+                "attn_out_bias": _array(block["attn_out_bias"], "f4"),
                 "ff_input": _array(block["ff_input"], "f4"),
                 "hidden": _int8(block["hidden"]),
                 "ff_in": _array(block["ff_in"], "f4"),

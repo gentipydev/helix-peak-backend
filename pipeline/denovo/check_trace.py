@@ -25,7 +25,7 @@ if str(HERE.parents[1]) not in sys.path:
 from pipeline.denovo.alphabet import AMINO_ACIDS, MAX_LENGTH, MIN_LENGTH, PAD_ID, TOKENS
 from pipeline.denovo.bigram import ALLOWED, framed
 
-SCHEMA = 4
+SCHEMA = 5
 LIMIT = 4_000_000
 DEFAULT = HERE / "runs" / "curated" / "trace.json"
 
@@ -124,14 +124,16 @@ def _blocks(checkpoint: Dict, stream: Sequence[float], attention: Sequence[float
     """What each block worked out, as the stages draw it: its row evened out
     by its first LayerNorm, that norm's scale and shift, the weights that make
     the queries, keys and values, those, its scores, each head's mix of values,
-    and its feed-forward's input, neurons and weights. Held to each other and
-    to the stream: the evened row is the stream before the block, less its
-    mean, over its spread, scaled and shifted; the queries, keys and values are
-    the weights' sums of it; each score is a query times a key, number by
-    number, summed, over the root of a head's size; softmax of the scores is the
-    block's attention map, each head's mix is its shares of the values, every
-    neuron is GELU of its weighted input, and what the feed-forward adds is
-    what the stream gained across it."""
+    the output weights that mix the heads back into one row, and its
+    feed-forward's input, neurons and weights. Held to each other and to the
+    stream: the evened row is the stream before the block, less its mean, over
+    its spread, scaled and shifted; the queries, keys and values are the
+    weights' sums of it; each score is a query times a key, number by number,
+    summed, over the root of a head's size; softmax of the scores is the
+    block's attention map, each head's mix is its shares of the values, what
+    attention adds is the output weights' sum of the mix, what the stream
+    gained across it; every neuron is GELU of its weighted input, and what the
+    feed-forward adds is what the stream gained across it."""
     blocks = checkpoint.get("blocks")
     if not isinstance(blocks, list) or len(blocks) != layers:
         raise Refused("%s does not keep its %d blocks" % (what, layers))
@@ -165,8 +167,7 @@ def _blocks(checkpoint: Dict, stream: Sequence[float], attention: Sequence[float
                     if abs(total - kept[t * width + d]) > _WHOLE:
                         raise Refused("%s %s is not its weights' sum of the evened row"
                                       % (named, ("query", "key", "value")[part]))
-        mixed = _scaled(block.get("mixed"), [targets, width], named + " mixed")
-        mixed_step = _scale(block["mixed"], named + " mixed")
+        mixed = _whole(block.get("mixed"), [targets, width], named + " mixed")
         scores = _whole(block.get("scores"), [heads, triangle], named + " scores")
         root = math.sqrt(size)
         for h in range(heads):
@@ -196,10 +197,20 @@ def _blocks(checkpoint: Dict, stream: Sequence[float], attention: Sequence[float
                     target = first + i
                     for d in range(h * size, (h + 1) * size):
                         mix = sum(share * value[(first + j) * width + d] for j, share in enumerate(shares))
-                        if abs(mix - mixed[target * width + d]) > mixed_step / 2 + _WHOLE:
+                        if abs(mix - mixed[target * width + d]) > _WHOLE:
                             raise Refused("%s mix is not its shares of the values" % named)
                     at += i + 1
                 first += span
+        out = _whole(block.get("attn_out"), [width, width], named + " attn_out")
+        out_bias = _whole(block.get("attn_out_bias"), [width], named + " attn_out_bias")
+        read = stream[(2 * b + 1) * targets * width:]
+        for t in range(targets):
+            joined = mixed[t * width:(t + 1) * width]
+            for d in range(width):
+                added = sum(out[d * width + e] * joined[e] for e in range(width)) + out_bias[d]
+                gained = read[t * width + d] - before[t * width + d]
+                if abs(added - gained) > _WHOLE:
+                    raise Refused("%s attention does not add what the stream gained" % named)
         ff_input = _whole(block.get("ff_input"), [targets, width], named + " ff_input")
         hidden = _scaled(block.get("hidden"), [targets, ff], named + " hidden")
         hidden_step = _scale(block["hidden"], named + " hidden")
