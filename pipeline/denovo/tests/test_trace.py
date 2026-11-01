@@ -168,6 +168,26 @@ def test_the_update_is_how_far_the_head_moved(toy):
         assert np.abs(moved - update).max() <= tolerance
 
 
+def test_the_logits_are_the_last_row_times_the_output_layer_the_step_found(toy):
+    weights = stored(toy["steps"]["head_weight"])
+    scales = toy["steps"]["head_weight"]["scales"]
+    bias = stored(toy["steps"]["head_bias"])
+    torch.manual_seed(TOY.seed)
+    model = HelixPeekLM(d_model=TOY.d_model, nhead=TOY.nhead, num_layers=TOY.num_layers,
+                        dim_feedforward=TOY.dim_feedforward, dropout=TOY.dropout)
+    # At step 1 the output layer is the one the model starts with, whole.
+    assert np.array_equal(stored(toy["checkpoints"][0]["head_weight"]), model.lm_head.weight.detach().numpy())
+    for checkpoint in toy["checkpoints"]:
+        step = checkpoint["step"]
+        assert checkpoint["head_weight"]["dtype"] == checkpoint["logits"]["dtype"] == "f4"
+        weight = stored(checkpoint["head_weight"])
+        # The step's own int8 copy of it rounds it.
+        assert np.abs(weight - weights[step - 1] * scales[step - 1]).max() <= scales[step - 1] / 2 + 1e-7
+        last = stored(checkpoint["points"])[-1]
+        made = last @ weight.T + bias[step - 1]
+        assert np.abs(made - stored(checkpoint["logits"])).max() < 1e-5
+
+
 def test_the_probabilities_are_over_what_can_come_next(toy):
     for checkpoint in toy["checkpoints"]:
         probs = stored(checkpoint["probs"]) * checkpoint["probs"]["scale"]

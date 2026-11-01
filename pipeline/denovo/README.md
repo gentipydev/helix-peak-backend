@@ -224,7 +224,9 @@ What it records:
     and the output layer applied with the step's own weights, what the model
     would say if it stopped there, as probabilities over the 21 tokens that
     can follow; the last of them is the model's own output;
-  - the logits and the probabilities over the 21 tokens that can follow;
+  - the output layer's weights as the step found them (23 × 16) and its
+    logits, whole as float32 (schema 6, for the page's Predict stage), and the
+    probabilities over the 21 tokens that can follow;
   - the output layer's clipped gradient and its update.
 
 `check_trace.py` holds these to each other:
@@ -240,7 +242,10 @@ What it records:
   stream gained across it;
 - every neuron is GELU of its weighted input;
 - what the feed-forward adds is what the stream gained across it;
-- the last readout is the model's own output.
+- the last readout is the model's own output;
+- the output layer's weights are the ones the step's own int8 copy rounds,
+  each logit is the last point's row times a token's weights, summed, plus its
+  bias, and softmax of a row's logits over the 21 is its probabilities.
 
 The tables were added on 2026-10-30 for the page's Forward opening, which
 draws each id picking its row. Recording them changed no other byte: the run
@@ -280,6 +285,19 @@ two new keys taken out of each block and the mix quantised back to int8, the
 run is the schema 4 run byte for byte. The run is 3,547,245 bytes (sha256
 `dbee2f90…`).
 
+On 2026-11-02 it was kept again as schema 6, for the page's Predict stage,
+which writes a logit out as the last row's numbers times a token's weights,
+summed, plus its bias, and then works softmax out. Each checkpoint now also
+keeps the output layer's weights as the step found them, and the logits are
+whole rather than int8, so a logit written out is its sum and the shares the
+page works out are the model's own: at insulin A's C11, step 1, K's logit is
+1.0014 (its bias −0.0315), e to it 2.72 of the 21's 27.12, 10%; at step 200,
+S's is 9.1397, 99.7%. At int8 a logit at step 200 came in steps of 0.08, and
+`<bos>`'s six first residues (16.5% to 16.6% each) printed alike. The training
+did not change: with the new key taken out of each checkpoint and the logits
+quantised back to int8, the run is the schema 5 run byte for byte. The run is
+3,677,099 bytes (sha256 `e6ea54a1…`).
+
 At step 200 the readout shows the inference layer by layer. At insulin A's
 C11, whose next token is S:
 - x0 says T 64%;
@@ -299,7 +317,7 @@ float32 where kept whole.
 6 peptides, 180 targets | 8,167 parameters | 200 steps on cpu
 loss 3.2197 -> 0.0645 (uniform 3.0445, unigram 2.8564, bigram 2.0434, floor 0.0597)
 checkpoints: 1 (first), 13 (uniform), 21 (unigram), 49 (bigram), 66 (one_nat), 95 (tenth_nat), 200 (last)
-3,547,245 bytes
+3,677,099 bytes
 ```
 
 The floor is the least loss any model reading whole prefixes can reach on

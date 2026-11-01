@@ -16,8 +16,8 @@ norm's scale and shift, the weights that make the queries, keys and values from
 it, the queries, keys, values and scores, each head's mix of values, the output
 weights that mix the heads back into one row, its feed-forward's input, neurons
 and weights), the stream read
-out early through the final norm and the output layer, the logits, and the
-update the step made.
+out early through the final norm and the output layer, the output layer's
+weights as the step found them, the logits, and the update the step made.
 
 It is recorded twice. The first pass picks the checkpoints from the losses;
 the second keeps the activations at them and must train to the same losses,
@@ -57,7 +57,7 @@ from pipeline.denovo.sequences import batches, build_dataset, is_modelable
 from pipeline.denovo.tokenizer import decode
 from pipeline.denovo.train import Config, _token_losses, build, train_step
 
-SCHEMA = 5
+SCHEMA = 6
 NAME = "curated"
 OUT = HERE / "runs" / NAME / "trace.json"
 CPU = torch.device("cpu")
@@ -452,6 +452,9 @@ def _run(config: Config, sequences: Sequence[str], capture_at: frozenset) -> Dic
                                                for layer in range(1, config.num_layers + 1)]),
                         "blocks": blocks,
                         "readout": np.array([real(r).numpy() for r in seen["readout"]]),
+                        # The output layer as the step found it: its logits
+                        # are the last point times it, plus its bias.
+                        "head_weight": weight.numpy(),
                         "logits": real(logits).numpy(),
                         "probs": real(probabilities).numpy(),
                         "head_grad": head.weight.grad.detach().numpy().copy(),
@@ -562,7 +565,12 @@ def record(
             # The stream read out early (`readout`), at every point before
             # the final norm: the last is `probs`.
             "readout": _array(_unit(kept["readout"]), "u1", scale=1.0 / 255),
-            "logits": _int8(kept["logits"]),
+            # The output layer's weights as the step found them, and the
+            # logits, whole: the page writes a logit out as the last row's
+            # numbers times a token's weights, summed, plus its bias, and
+            # softmax of the logits makes its shares.
+            "head_weight": _array(kept["head_weight"], "f4"),
+            "logits": _array(kept["logits"], "f4"),
             "probs": _array(_unit(kept["probs"]), "u1", scale=1.0 / 255),
             "head_grad": _int8(kept["head_grad"]),
             "head_update": _int8(kept["head_update"]),

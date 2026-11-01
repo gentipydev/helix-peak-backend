@@ -25,7 +25,7 @@ if str(HERE.parents[1]) not in sys.path:
 from pipeline.denovo.alphabet import AMINO_ACIDS, MAX_LENGTH, MIN_LENGTH, PAD_ID, TOKENS
 from pipeline.denovo.bigram import ALLOWED, framed
 
-SCHEMA = 5
+SCHEMA = 6
 LIMIT = 4_000_000
 DEFAULT = HERE / "runs" / "curated" / "trace.json"
 
@@ -250,6 +250,39 @@ def _readout(checkpoint: Dict, points: int, targets: int, allowed: int, what: st
         raise Refused("%s readout at the last point is not the model's probabilities" % what)
 
 
+def _output(checkpoint: Dict, stream: Sequence[float], points: int, targets: int, width: int,
+            vocab: int, kept: Sequence[float], scale: float, bias: Sequence[float], what: str) -> None:
+    """The output layer as the step found it, and the logits it made, both
+    whole (float32), as the page's Predict stage writes them out: the weights
+    the step's own int8 copy of them ([kept], [scale]) rounds, each logit the
+    last point's row times a token's weights, summed, plus its [bias], and
+    softmax of each row's logits over what can come next the model's
+    probabilities."""
+    weight = _whole(checkpoint.get("head_weight"), [vocab, width], what + " head_weight")
+    if any(abs(w - q * scale) > scale / 2 + 1e-7 for w, q in zip(weight, kept)):
+        raise Refused("%s head_weight is not the output layer the step found" % what)
+    logits = _whole(checkpoint.get("logits"), [targets, vocab], what + " logits")
+    last = stream[(points - 1) * targets * width:]
+    for t in range(targets):
+        row = last[t * width:(t + 1) * width]
+        for v in range(vocab):
+            made = sum(weight[v * width + d] * row[d] for d in range(width)) + bias[v]
+            if abs(made - logits[t * vocab + v]) > _WHOLE:
+                raise Refused("%s logits are not the last row times the output layer" % what)
+    allowed = len(ALLOWED)
+    probs = numbers(checkpoint.get("probs") or {}, [targets, allowed], what + " probs")
+    for t in range(targets):
+        row = [logits[t * vocab + v] for v in ALLOWED]
+        top = max(row)
+        powers = [math.exp(x - top) for x in row]
+        total = sum(powers)
+        for k, power in enumerate(powers):
+            # Kept to the nearest 255th: half a step either way, and float32's
+            # own rounding of the softmax at a half.
+            if abs(power / total * 255 - probs[t * allowed + k]) > _ROUNDING + 1e-3:
+                raise Refused("%s probabilities are not softmax of the logits" % what)
+
+
 def _embedded(checkpoint: Dict, x0: Sequence[float], inputs: Sequence[Sequence[int]],
               spans: Sequence[int], vocab: int, context: int, width: int, what: str) -> None:
     """The tables the step read its ids through, whole (float32): the token
@@ -400,9 +433,10 @@ def validate(payload: bytes, name: Optional[str] = None) -> Dict:
             raise Refused("step %d's targets average %.4f, its loss is %.4f"
                           % (step + 1, mean, loss[step]))
     head = steps.get("head_weight") or {}
-    numbers(head, [count, vocab, width], "head_weight")
-    _scales(head, count, "head_weight")
-    _finite(numbers(steps.get("head_bias"), [count, vocab], "head_bias"), "head_bias")
+    head_weights = numbers(head, [count, vocab, width], "head_weight")
+    head_scales = _scales(head, count, "head_weight")
+    head_bias = numbers(steps.get("head_bias"), [count, vocab], "head_bias")
+    _finite(head_bias, "head_bias")
 
     checkpoints = data.get("checkpoints")
     if not isinstance(checkpoints, list) or not checkpoints:
@@ -433,8 +467,11 @@ def validate(payload: bytes, name: Optional[str] = None) -> Dict:
         _scale(probs, what + " probs")
         _rows_sum_to_one(numbers(probs, [targets, allowed], what + " probs"),
                          [allowed] * targets, what + " probs")
-        for key, shape in (("logits", [targets, vocab]), ("head_grad", [vocab, width]),
-                           ("head_update", [vocab, width])):
+        s = checkpoint["step"] - 1
+        _output(checkpoint, flowing, len(points), targets, width, vocab,
+                head_weights[s * vocab * width:(s + 1) * vocab * width], head_scales[s],
+                head_bias[s * vocab:(s + 1) * vocab], what)
+        for key, shape in (("head_grad", [vocab, width]), ("head_update", [vocab, width])):
             spec = checkpoint.get(key) or {}
             numbers(spec, shape, "%s %s" % (what, key))
             _scale(spec, "%s %s" % (what, key))

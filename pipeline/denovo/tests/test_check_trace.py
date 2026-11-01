@@ -47,7 +47,7 @@ def test_another_run_is_not_this_one():
 
 
 def test_a_schema_this_does_not_read_is_refused():
-    for schema in (1, 2, 3, 4):
+    for schema in (1, 2, 3, 4, 5):
         data = load()
         data["schema"] = schema
         with pytest.raises(Refused, match="schema"):
@@ -314,4 +314,60 @@ def test_the_last_readout_must_be_the_models_probabilities():
 
     rewrite(spec, swap)
     with pytest.raises(Refused, match="not the model's probabilities"):
+        validate(dump(data))
+
+
+def test_a_checkpoint_without_its_output_layer_is_refused():
+    data = load()
+    del data["checkpoints"][0]["head_weight"]
+    with pytest.raises(Refused, match="head_weight is not kept whole"):
+        validate(dump(data))
+
+
+def test_the_output_layer_and_its_logits_must_be_kept_whole():
+    for key in ("head_weight", "logits"):
+        data = load()
+        quantized(data["checkpoints"][-1][key])
+        with pytest.raises(Refused, match="%s is not kept whole" % key):
+            validate(dump(data))
+
+
+def test_an_output_layer_not_the_one_the_step_found_is_refused():
+    data = load()
+    # A mantissa bit of the first weight: a change of up to a half, far past
+    # the half step the step's own int8 copy of it allows.
+    rewrite(data["checkpoints"][-1]["head_weight"], lambda raw: raw.__setitem__(2, raw[2] ^ 0x40))
+    with pytest.raises(Refused, match="not the output layer the step found"):
+        validate(dump(data))
+
+
+def test_logits_that_are_not_the_last_row_times_the_output_layer_are_refused():
+    data = load()
+    rewrite(data["checkpoints"][-1]["logits"], lambda raw: raw.__setitem__(2, raw[2] ^ 0x40))
+    with pytest.raises(Refused, match="logits are not the last row times the output layer"):
+        validate(dump(data))
+
+
+def test_probabilities_that_are_not_softmax_of_the_logits_are_refused():
+    data = load()
+    checkpoint = data["checkpoints"][-1]
+    allowed = checkpoint["probs"]["shape"][1]
+    targets = checkpoint["probs"]["shape"][0]
+    # The first row's two largest shares swapped, in the probabilities and in
+    # the last readout alike: each still sums to one and the two still agree,
+    # but neither is softmax of the logits any more.
+
+    def swap(at):
+        def change(raw):
+            row = list(raw[at:at + allowed])
+            top = max(range(allowed), key=row.__getitem__)
+            second = max((i for i in range(allowed) if i != top), key=row.__getitem__)
+            row[top], row[second] = row[second], row[top]
+            raw[at:at + allowed] = bytes(row)
+        return change
+
+    rewrite(checkpoint["probs"], swap(0))
+    readout = checkpoint["readout"]
+    rewrite(readout, swap((readout["shape"][0] - 1) * targets * allowed))
+    with pytest.raises(Refused, match="probabilities are not softmax of the logits"):
         validate(dump(data))
