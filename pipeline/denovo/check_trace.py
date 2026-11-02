@@ -25,8 +25,8 @@ if str(HERE.parents[1]) not in sys.path:
 from pipeline.denovo.alphabet import AMINO_ACIDS, MAX_LENGTH, MIN_LENGTH, PAD_ID, TOKENS
 from pipeline.denovo.bigram import ALLOWED, framed
 
-SCHEMA = 6
-LIMIT = 4_000_000
+SCHEMA = 7
+LIMIT = 5_000_000
 DEFAULT = HERE / "runs" / "curated" / "trace.json"
 
 _FORMATS = {"i1": ("b", 1), "u1": ("B", 1), "u2": ("H", 2), "f4": ("f", 4)}
@@ -283,6 +283,38 @@ def _output(checkpoint: Dict, stream: Sequence[float], points: int, targets: int
                 raise Refused("%s probabilities are not softmax of the logits" % what)
 
 
+def _gradient(checkpoint: Dict, norms: Sequence[float], answers: Sequence[int], points: int,
+              targets: int, width: int, vocab: int, what: str) -> None:
+    """The loss's gradient at each point of the stream, whole (float32), as the
+    page's Backward stage writes it out: at each point and place as long as
+    the norm `point_grad` keeps ([norms]); and at the last point, which only
+    the output layer reads, the output layer's weights times p − y, each
+    place's probabilities less one at what came next ([answers]), over the
+    targets the loss is the mean of."""
+    grads = _whole(checkpoint.get("stream_grad"), [points, targets, width], what + " stream_grad")
+    for k in range(points * targets):
+        length = math.sqrt(sum(g * g for g in grads[k * width:(k + 1) * width]))
+        if abs(length - norms[k]) > 1e-5 * norms[k] + 1e-12:
+            raise Refused("%s stream_grad is not as long as point_grad" % what)
+    weight = _whole(checkpoint.get("head_weight"), [vocab, width], what + " head_weight")
+    logits = _whole(checkpoint.get("logits"), [targets, vocab], what + " logits")
+    last = (points - 1) * targets
+    for t in range(targets):
+        row = [logits[t * vocab + v] for v in ALLOWED]
+        top = max(row)
+        powers = [math.exp(x - top) for x in row]
+        total = sum(powers)
+        error = [0.0] * vocab
+        for v, power in zip(ALLOWED, powers):
+            error[v] = power / total
+        error[answers[t]] -= 1
+        for d in range(width):
+            made = sum(weight[v * width + d] * error[v] for v in range(vocab)) / targets
+            if abs(made - grads[(last + t) * width + d]) > 1e-4 * norms[last + t] + 1e-9:
+                raise Refused("%s stream_grad at the last point is not the output layer's weights "
+                              "times p - y" % what)
+
+
 def _embedded(checkpoint: Dict, x0: Sequence[float], inputs: Sequence[Sequence[int]],
               spans: Sequence[int], vocab: int, context: int, width: int, what: str) -> None:
     """The tables the step read its ids through, whole (float32): the token
@@ -446,6 +478,8 @@ def validate(payload: bytes, name: Optional[str] = None) -> Dict:
         raise Refused("the checkpoints are not steps 1 to %d in order" % count)
     triangle = sum(span * (span + 1) // 2 for span in spans)
     rows = [i + 1 for span in spans for i in range(span)]
+    # What came next at each target, the batch's y less its padding.
+    answers = [token for row, span in zip(data["batch"]["y"], spans) for token in row[:span]]
     for checkpoint in checkpoints:
         what = "step %d" % checkpoint["step"]
         if not checkpoint.get("why") or not all(isinstance(w, str) for w in checkpoint["why"]):
@@ -453,8 +487,8 @@ def validate(payload: bytes, name: Optional[str] = None) -> Dict:
         flowing = _whole(checkpoint.get("points"), [len(points), targets, width], what + " points")
         _embedded(checkpoint, flowing[:targets * width], data["batch"]["x"], spans,
                   vocab, model["max_len"], width, what)
-        _finite(numbers(checkpoint.get("point_grad"), [len(points), targets], what + " point_grad"),
-                what + " point_grad", low=0)
+        norms = numbers(checkpoint.get("point_grad"), [len(points), targets], what + " point_grad")
+        _finite(norms, what + " point_grad", low=0)
         maps = checkpoint.get("attention") or {}
         _scale(maps, what + " attention")
         values = numbers(maps, [layers, heads, triangle], what + " attention")
@@ -471,6 +505,7 @@ def validate(payload: bytes, name: Optional[str] = None) -> Dict:
         _output(checkpoint, flowing, len(points), targets, width, vocab,
                 head_weights[s * vocab * width:(s + 1) * vocab * width], head_scales[s],
                 head_bias[s * vocab:(s + 1) * vocab], what)
+        _gradient(checkpoint, norms, answers, len(points), targets, width, vocab, what)
         for key, shape in (("head_grad", [vocab, width]), ("head_update", [vocab, width])):
             spec = checkpoint.get(key) or {}
             numbers(spec, shape, "%s %s" % (what, key))

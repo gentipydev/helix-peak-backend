@@ -204,7 +204,9 @@ What it records:
   - the residual stream at its six points (x0, after each block's attention
     and feed-forward, and the final norm), whole as float32, so that what a
     part adds and what the stream then holds add up to the last digit;
-  - the gradient reaching each point;
+  - the loss's gradient reaching each point, its norm and, since schema 7,
+    the gradient itself, whole as float32 (points × targets × 16, for the
+    page's Backward stage);
   - every head's attention map;
   - what each block worked out on the way (schemas 4 and 5, for the page's
     Scores, Attention and Feed-forward stages):
@@ -245,7 +247,10 @@ What it records:
 - the last readout is the model's own output;
 - the output layer's weights are the ones the step's own int8 copy rounds,
   each logit is the last point's row times a token's weights, summed, plus its
-  bias, and softmax of a row's logits over the 21 is its probabilities.
+  bias, and softmax of a row's logits over the 21 is its probabilities;
+- each point's gradient is as long as its kept norm, and at the last point it
+  is the output layer's weights times p − y (each place's probabilities less
+  one at what came next), over the 180 targets.
 
 The tables were added on 2026-10-30 for the page's Forward opening, which
 draws each id picking its row. Recording them changed no other byte: the run
@@ -298,6 +303,19 @@ did not change: with the new key taken out of each checkpoint and the logits
 quantised back to int8, the run is the schema 5 run byte for byte. The run is
 3,677,099 bytes (sha256 `e6ea54a1…`).
 
+On 2026-11-02 it was kept again as schema 7, for the page's Backward stage,
+which climbs the stream back from the output layer to x0 and writes each
+point's gradient out, what each part sends back being the difference of two
+of them. Each checkpoint now also keeps the loss's gradient at each of the six
+points, whole (`stream_grad`, points × targets × 16, float32), beside its
+norm. `check_trace.py` holds each row to its norm and the last point's to the
+output layer's weights times p − y over the 180 targets (insulin A's C11 at
+step 1: S's p − y is −0.987, the row's gradient times 180 has norm 0.64).
+The training did not change: with the new key taken out of each checkpoint,
+the run is the schema 6 run byte for byte. The run is 4,322,625 bytes (sha256
+`17d5a41b…`), so the size the app is asked to fetch went from 4,000,000 to
+5,000,000 bytes (`check_trace.LIMIT`).
+
 At step 200 the readout shows the inference layer by layer. At insulin A's
 C11, whose next token is S:
 - x0 says T 64%;
@@ -317,7 +335,7 @@ float32 where kept whole.
 6 peptides, 180 targets | 8,167 parameters | 200 steps on cpu
 loss 3.2197 -> 0.0645 (uniform 3.0445, unigram 2.8564, bigram 2.0434, floor 0.0597)
 checkpoints: 1 (first), 13 (uniform), 21 (unigram), 49 (bigram), 66 (one_nat), 95 (tenth_nat), 200 (last)
-3,677,099 bytes
+4,322,625 bytes
 ```
 
 The floor is the least loss any model reading whole prefixes can reach on

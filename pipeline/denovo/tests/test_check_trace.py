@@ -47,7 +47,7 @@ def test_another_run_is_not_this_one():
 
 
 def test_a_schema_this_does_not_read_is_refused():
-    for schema in (1, 2, 3, 4, 5):
+    for schema in (1, 2, 3, 4, 5, 6):
         data = load()
         data["schema"] = schema
         with pytest.raises(Refused, match="schema"):
@@ -370,4 +370,36 @@ def test_probabilities_that_are_not_softmax_of_the_logits_are_refused():
     readout = checkpoint["readout"]
     rewrite(readout, swap((readout["shape"][0] - 1) * targets * allowed))
     with pytest.raises(Refused, match="probabilities are not softmax of the logits"):
+        validate(dump(data))
+
+
+def test_a_checkpoint_without_the_stream_gradient_is_refused():
+    data = load()
+    del data["checkpoints"][0]["stream_grad"]
+    with pytest.raises(Refused, match="stream_grad is not kept whole"):
+        validate(dump(data))
+
+
+def test_a_stream_gradient_not_as_long_as_its_norm_is_refused():
+    data = load()
+    rewrite(data["checkpoints"][-1]["stream_grad"], lambda raw: raw.__setitem__(2, raw[2] ^ 0x40))
+    with pytest.raises(Refused, match="stream_grad is not as long as point_grad"):
+        validate(dump(data))
+
+
+def test_a_last_gradient_that_is_not_the_weights_times_p_less_y_is_refused():
+    data = load()
+    spec = data["checkpoints"][0]["stream_grad"]
+    points, targets, width = spec["shape"]
+    at = (points - 1) * targets * width * 4
+    # The last point's first two numbers swapped at the first place: the row
+    # as long as before, so only the output layer's sum can tell.
+
+    def swap(raw):
+        first, second = bytes(raw[at:at + 4]), bytes(raw[at + 4:at + 8])
+        assert first != second
+        raw[at:at + 4], raw[at + 4:at + 8] = second, first
+
+    rewrite(spec, swap)
+    with pytest.raises(Refused, match="not the output layer's weights times p - y"):
         validate(dump(data))

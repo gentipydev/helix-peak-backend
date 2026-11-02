@@ -10,7 +10,8 @@ The run is the engine's own: `train.build` and `train.train_step`, driven as
 out. Read-only hooks watch it. Every step's loss, learning rate, gradient norms,
 per-target losses and output-layer weights are kept, and at each checkpoint so
 is everything else: the embedding tables the step read its ids through, the
-residual stream at every layer, its gradient, every attention map, what each
+residual stream at every layer, its gradient whole and its norm, every
+attention map, what each
 block worked out on the way (its row evened out by its first LayerNorm, that
 norm's scale and shift, the weights that make the queries, keys and values from
 it, the queries, keys, values and scores, each head's mix of values, the output
@@ -57,7 +58,7 @@ from pipeline.denovo.sequences import batches, build_dataset, is_modelable
 from pipeline.denovo.tokenizer import decode
 from pipeline.denovo.train import Config, _token_losses, build, train_step
 
-SCHEMA = 6
+SCHEMA = 7
 NAME = "curated"
 OUT = HERE / "runs" / NAME / "trace.json"
 CPU = torch.device("cpu")
@@ -391,6 +392,11 @@ def _run(config: Config, sequences: Sequence[str], capture_at: frozenset) -> Dic
                         seen["point_grad"] = {
                             name: tensor.grad.detach().norm(dim=-1)
                             for name, tensor in capture.points.items()}
+                        # Whole, for the page to climb the stream with: the
+                        # loss's gradient at each point, a number a column.
+                        seen["stream_grad"] = {
+                            name: tensor.grad.detach().clone()
+                            for name, tensor in capture.points.items()}
                         # Before the weights move: the step's own norm and head.
                         seen["readout"] = [readout(model, capture.points[name].detach())
                                            for name in readout_names(config.num_layers)]
@@ -448,6 +454,7 @@ def _run(config: Config, sequences: Sequence[str], capture_at: frozenset) -> Dic
                         "position_embedding": before["position_embedding"][0][0].numpy(),
                         "points": [real(capture.points[name].detach()).numpy() for name in names],
                         "point_grad": [real(seen["point_grad"][name]).numpy() for name in names],
+                        "stream_grad": [real(seen["stream_grad"][name]).numpy() for name in names],
                         "attention": np.array([triangles(capture.attention[layer])
                                                for layer in range(1, config.num_layers + 1)]),
                         "blocks": blocks,
@@ -535,6 +542,10 @@ def record(
             # part added, and they add up.
             "points": _array(np.stack(kept["points"]), "f4"),
             "point_grad": _array(np.stack(kept["point_grad"]), "f4"),
+            # The gradient itself at each point, whole: the page writes its
+            # numbers on each rung of the climb back, and what each part
+            # sends back is the difference of two of them.
+            "stream_grad": _array(np.stack(kept["stream_grad"]), "f4"),
             "attention": _array(_unit(kept["attention"]), "u1", scale=1.0 / 255),
             # What each block worked out: drawn as colours where it is int8,
             # written out where it is whole. The evened row, the weights that

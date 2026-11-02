@@ -394,3 +394,24 @@ def test_inside_is_the_layers_own_attention_taken_apart():
     lower = torch.ones(5, 5, dtype=torch.bool).tril()
     again = parts["scores"].masked_fill(~lower, float("-inf")).softmax(dim=-1)
     assert torch.allclose(again, parts["weights"])
+
+
+def test_the_stream_gradient_is_kept_whole_and_as_long_as_its_norm(toy):
+    targets = toy["targets"]
+    answers = [token for row, sequence in zip(toy["batch"]["y"], TOY_SEQUENCES)
+               for token in row[:len(sequence) + 1]]
+    for checkpoint in toy["checkpoints"]:
+        spec = checkpoint["stream_grad"]
+        assert spec["dtype"] == "f4"
+        grads = stored(spec)
+        assert np.allclose(np.linalg.norm(grads, axis=-1), stored(checkpoint["point_grad"]), rtol=1e-5)
+        # At the last point only the output layer reads the row: its weights
+        # times p - y, over the targets the loss is the mean of.
+        logits = stored(checkpoint["logits"])
+        allowed = list(check_trace.ALLOWED)
+        shares = np.zeros_like(logits)
+        powers = np.exp(logits[:, allowed] - logits[:, allowed].max(axis=1, keepdims=True))
+        shares[:, allowed] = powers / powers.sum(axis=1, keepdims=True)
+        shares[np.arange(targets), answers] -= 1
+        made = shares @ stored(checkpoint["head_weight"]) / targets
+        assert np.allclose(made, grads[-1], rtol=1e-4, atol=1e-9)
