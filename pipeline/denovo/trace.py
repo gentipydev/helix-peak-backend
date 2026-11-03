@@ -18,7 +18,9 @@ it, the queries, keys, values and scores, each head's mix of values, the output
 weights that mix the heads back into one row, its feed-forward's input, neurons
 and weights), the stream read
 out early through the final norm and the output layer, the output layer's
-weights as the step found them, the logits, and the update the step made.
+weights as the step found them, the logits, its clipped gradient, the
+optimiser's running averages for it as the step found them, and the update
+the step made.
 
 It is recorded twice. The first pass picks the checkpoints from the losses;
 the second keeps the activations at them and must train to the same losses,
@@ -58,7 +60,7 @@ from pipeline.denovo.sequences import batches, build_dataset, is_modelable
 from pipeline.denovo.tokenizer import decode
 from pipeline.denovo.train import Config, _token_losses, build, train_step
 
-SCHEMA = 7
+SCHEMA = 8
 NAME = "curated"
 OUT = HERE / "runs" / NAME / "trace.json"
 CPU = torch.device("cpu")
@@ -310,6 +312,18 @@ def readout(model: torch.nn.Module, point: torch.Tensor) -> torch.Tensor:
         return probabilities.reshape(logits.shape)[..., list(ALLOWED)]
 
 
+def adam_settings(optimizer: torch.optim.Optimizer, parameter: torch.nn.Parameter) -> Dict:
+    """What the optimiser steps `parameter` with: its group's betas, epsilon
+    and weight decay. The page works the step out from these and the running
+    averages kept, so a variant whose step is not plain AdamW's is refused."""
+    group = next(g for g in optimizer.param_groups if any(p is parameter for p in g["params"]))
+    if not isinstance(optimizer, torch.optim.AdamW) or group.get("amsgrad") or group.get("maximize"):
+        raise ValueError("the output layer is not stepped by plain AdamW")
+    beta1, beta2 = group["betas"]
+    return {"name": "AdamW", "betas": [float(beta1), float(beta2)], "eps": float(group["eps"]),
+            "weight_decay": float(group["weight_decay"])}
+
+
 @contextlib.contextmanager
 def deterministic() -> Iterator[None]:
     """One thread and deterministic kernels, so a run records the same bytes
@@ -339,6 +353,7 @@ def _run(config: Config, sequences: Sequence[str], capture_at: frozenset) -> Dic
         members[group_of(name)].append(parameter)
     names = point_names(config.num_layers)
     head = model.lm_head
+    settings = adam_settings(optimizer, head.weight)
     canonical = {sequence: i for i, sequence in enumerate(sequences)}
     spans = [len(sequence) + 1 for sequence in sequences]
 
@@ -400,6 +415,13 @@ def _run(config: Config, sequences: Sequence[str], capture_at: frozenset) -> Dic
                         # Before the weights move: the step's own norm and head.
                         seen["readout"] = [readout(model, capture.points[name].detach())
                                            for name in readout_names(config.num_layers)]
+                        # The optimiser's running averages for the output
+                        # layer's weights as the step found them, of the
+                        # gradient and of its square: none yet at step 1.
+                        state = optimizer.state.get(head.weight) or {}
+                        seen["adam"] = [state[key].detach().clone() if key in state
+                                        else torch.zeros_like(head.weight)
+                                        for key in ("exp_avg", "exp_avg_sq")]
 
                 loss, _, norm = train_step(
                     model, optimizer, scheduler, x, y, config.grad_clip, after_backward)
@@ -464,7 +486,10 @@ def _run(config: Config, sequences: Sequence[str], capture_at: frozenset) -> Dic
                         "head_weight": weight.numpy(),
                         "logits": real(logits).numpy(),
                         "probs": real(probabilities).numpy(),
+                        # Clipped, as the optimiser read it.
                         "head_grad": head.weight.grad.detach().numpy().copy(),
+                        "head_adam_mean": seen["adam"][0].numpy(),
+                        "head_adam_square": seen["adam"][1].numpy(),
                         "head_update": (head.weight.detach() - weight).numpy(),
                     }
     finally:
@@ -472,6 +497,7 @@ def _run(config: Config, sequences: Sequence[str], capture_at: frozenset) -> Dic
     if capture.error > ATTENTION_TOLERANCE:
         raise RuntimeError("the attention worked out again is %.2e from the layer's own" % capture.error)
     return {"steps": kept, "checkpoints": checkpoints, "batch": batch,
+            "optimizer": settings,
             "parameters": parameter_count(model),
             "group_sizes": [sum(p.numel() for p in members[name]) for name in groups]}
 
@@ -583,8 +609,16 @@ def record(
             "head_weight": _array(kept["head_weight"], "f4"),
             "logits": _array(kept["logits"], "f4"),
             "probs": _array(_unit(kept["probs"]), "u1", scale=1.0 / 255),
-            "head_grad": _int8(kept["head_grad"]),
-            "head_update": _int8(kept["head_update"]),
+            # Whole (schema 8, for the page's Update stage): the output
+            # layer's clipped gradient, the optimiser's running averages for
+            # it as the step found them, of the gradient and of its square,
+            # and the update the step made, which the page works out from
+            # those as AdamW does. At int8, step 200's update came in steps
+            # of 1.2e-8, and its smallest rounded to nothing.
+            "head_grad": _array(kept["head_grad"], "f4"),
+            "head_adam_mean": _array(kept["head_adam_mean"], "f4"),
+            "head_adam_square": _array(kept["head_adam_square"], "f4"),
+            "head_update": _array(kept["head_update"], "f4"),
         })
 
     token_loss = np.clip(np.rint(np.stack(steps["token_loss"]) / LOSS_SCALE), 0, 65535)
@@ -603,6 +637,9 @@ def record(
             "parameters": played["parameters"],
         },
         "config": asdict(config),
+        # How the optimiser steps the output layer's weights, from its own
+        # param group: the page works that step out from these.
+        "optimizer": played["optimizer"],
         "peptides": [
             {"sequence": p.sequence, "sources": [asdict(s) for s in p.sources]}
             for p in peptides

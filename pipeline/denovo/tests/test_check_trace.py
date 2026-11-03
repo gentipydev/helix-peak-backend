@@ -47,7 +47,7 @@ def test_another_run_is_not_this_one():
 
 
 def test_a_schema_this_does_not_read_is_refused():
-    for schema in (1, 2, 3, 4, 5, 6):
+    for schema in (1, 2, 3, 4, 5, 6, 7):
         data = load()
         data["schema"] = schema
         with pytest.raises(Refused, match="schema"):
@@ -402,4 +402,71 @@ def test_a_last_gradient_that_is_not_the_weights_times_p_less_y_is_refused():
 
     rewrite(spec, swap)
     with pytest.raises(Refused, match="not the output layer's weights times p - y"):
+        validate(dump(data))
+
+
+def largest(spec: dict) -> int:
+    """Where a float32 array holds its largest number: a place a bit flip
+    moves far, never a zero the flip would leave a speck."""
+    raw = base64.b64decode(spec["data"])
+    values = struct.unpack("<%df" % (len(raw) // 4), raw)
+    return max(range(len(values)), key=lambda i: abs(values[i]))
+
+
+def flip(spec: dict) -> None:
+    """The top mantissa bit of the array's largest number: a change of up to a half."""
+    at = 4 * largest(spec) + 2
+    rewrite(spec, lambda raw: raw.__setitem__(at, raw[at] ^ 0x40))
+
+
+def test_a_run_that_does_not_name_its_optimizer_is_refused():
+    data = load()
+    del data["optimizer"]
+    with pytest.raises(Refused, match="stepped by AdamW"):
+        validate(dump(data))
+
+
+def test_adams_betas_must_be_two_numbers_under_one():
+    data = load()
+    data["optimizer"]["betas"] = [0.9, 1.0]
+    with pytest.raises(Refused, match="betas"):
+        validate(dump(data))
+
+
+def test_the_output_layers_step_must_be_kept_whole():
+    for key in ("head_grad", "head_adam_mean", "head_adam_square", "head_update"):
+        data = load()
+        # The last checkpoint's: at the first the running averages are zero.
+        quantized(data["checkpoints"][-1][key])
+        with pytest.raises(Refused, match="%s is not kept whole" % key):
+            validate(dump(data))
+
+
+def test_a_gradient_that_is_not_the_places_p_less_y_times_their_rows_is_refused():
+    data = load()
+    flip(data["checkpoints"][-1]["head_grad"])
+    with pytest.raises(Refused, match="head_grad is not each place's p - y times its last row"):
+        validate(dump(data))
+
+
+def test_running_averages_not_the_ones_the_step_found_are_refused():
+    for key in ("head_adam_mean", "head_adam_square"):
+        data = load()
+        flip(data["checkpoints"][-1][key])
+        with pytest.raises(Refused, match="not AdamW's step"):
+            validate(dump(data))
+
+
+def test_running_averages_before_the_first_step_are_refused():
+    data = load()
+    spec = data["checkpoints"][0]["head_adam_square"]
+    rewrite(spec, lambda raw: raw.__setitem__(slice(0, 4), struct.pack("<f", 1e-6)))
+    with pytest.raises(Refused, match="before its first step"):
+        validate(dump(data))
+
+
+def test_an_update_that_is_not_adamws_step_is_refused():
+    data = load()
+    flip(data["checkpoints"][0]["head_update"])
+    with pytest.raises(Refused, match="head_update is not AdamW's step"):
         validate(dump(data))

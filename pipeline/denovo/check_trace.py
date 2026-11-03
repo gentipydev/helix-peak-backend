@@ -25,7 +25,7 @@ if str(HERE.parents[1]) not in sys.path:
 from pipeline.denovo.alphabet import AMINO_ACIDS, MAX_LENGTH, MIN_LENGTH, PAD_ID, TOKENS
 from pipeline.denovo.bigram import ALLOWED, framed
 
-SCHEMA = 7
+SCHEMA = 8
 LIMIT = 5_000_000
 DEFAULT = HERE / "runs" / "curated" / "trace.json"
 
@@ -315,6 +315,80 @@ def _gradient(checkpoint: Dict, norms: Sequence[float], answers: Sequence[int], 
                               "times p - y" % what)
 
 
+def _optimizer(data: Dict) -> Dict:
+    """How the run says the output layer's weights are stepped: AdamW, with
+    two betas under one, an epsilon over zero and a decay of at least zero."""
+    spec = data.get("optimizer")
+    if not isinstance(spec, dict) or spec.get("name") != "AdamW":
+        raise Refused("the run does not say its output layer is stepped by AdamW")
+    betas = spec.get("betas")
+    if (not isinstance(betas, list) or len(betas) != 2
+            or not all(isinstance(b, (int, float)) and 0 <= b < 1 for b in betas)):
+        raise Refused("AdamW's betas are not two numbers under one")
+    for key in ("eps", "weight_decay"):
+        value = spec.get(key)
+        if not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+            raise Refused("AdamW has no %s" % key)
+    if spec["eps"] <= 0:
+        raise Refused("AdamW's epsilon is not over zero")
+    return spec
+
+
+def _update(checkpoint: Dict, stream: Sequence[float], answers: Sequence[int], optimizer: Dict,
+            rate: float, clip: float, step: int, points: int, targets: int, width: int, vocab: int,
+            what: str) -> None:
+    """The output layer's step, whole (float32), as the page's Update stage
+    works it out:
+    - its gradient is each place's p − y times its last row, averaged over
+      the targets, times the clip;
+    - the optimiser's running averages of it and of its square are as the
+      step found them, none before the first step;
+    - the update is AdamW's: the weight decayed by the rate times the decay,
+      less the rate times the running mean over the running size, both
+      brought up to date with this gradient and corrected for starting at
+      zero."""
+    grad = _whole(checkpoint.get("head_grad"), [vocab, width], what + " head_grad")
+    mean = _whole(checkpoint.get("head_adam_mean"), [vocab, width], what + " head_adam_mean")
+    square = _whole(checkpoint.get("head_adam_square"), [vocab, width], what + " head_adam_square")
+    update = _whole(checkpoint.get("head_update"), [vocab, width], what + " head_update")
+    weight = _whole(checkpoint.get("head_weight"), [vocab, width], what + " head_weight")
+    if any(v < 0 for v in square):
+        raise Refused("%s has a running average of a square under zero" % what)
+    if step == 1 and (any(mean) or any(square)):
+        raise Refused("%s has running averages before its first step" % what)
+    logits = _whole(checkpoint.get("logits"), [targets, vocab], what + " logits")
+    last = stream[(points - 1) * targets * width:]
+    made = [0.0] * (vocab * width)
+    for t in range(targets):
+        row = [logits[t * vocab + v] for v in ALLOWED]
+        top = max(row)
+        powers = [math.exp(x - top) for x in row]
+        total = sum(powers)
+        error = [0.0] * vocab
+        for v, power in zip(ALLOWED, powers):
+            error[v] = power / total
+        error[answers[t]] -= 1
+        for v in range(vocab):
+            if error[v]:
+                for d in range(width):
+                    made[v * width + d] += error[v] * last[t * width + d]
+    made = [m * clip / targets for m in made]
+    largest = max(abs(m) for m in made)
+    if any(abs(m - g) > 1e-4 * largest + 1e-9 for m, g in zip(made, grad)):
+        raise Refused("%s head_grad is not each place's p - y times its last row, averaged" % what)
+    beta1, beta2 = optimizer["betas"]
+    eps, decay = optimizer["eps"], optimizer["weight_decay"]
+    first, second = 1 - beta1 ** step, 1 - beta2 ** step
+    for g, m, v, w, moved in zip(grad, mean, square, weight, update):
+        running = beta1 * m + (1 - beta1) * g
+        size = beta2 * v + (1 - beta2) * g * g
+        adam = rate / first * running / (math.sqrt(size) / math.sqrt(second) + eps)
+        # Float32 steps the weight, then the update is the difference: a few
+        # of the weight's last bits, and the rest's own rounding.
+        if abs(-rate * decay * w - adam - moved) > 4e-7 * abs(w) + 1e-5 * abs(adam) + 1e-12:
+            raise Refused("%s head_update is not AdamW's step" % what)
+
+
 def _embedded(checkpoint: Dict, x0: Sequence[float], inputs: Sequence[Sequence[int]],
               spans: Sequence[int], vocab: int, context: int, width: int, what: str) -> None:
     """The tables the step read its ids through, whole (float32): the token
@@ -407,6 +481,7 @@ def validate(payload: bytes, name: Optional[str] = None) -> Dict:
     width, heads, layers = model["d_model"], model["nhead"], model["num_layers"]
     if width % heads:
         raise Refused("%d does not split into %d heads" % (width, heads))
+    optimizer = _optimizer(data)
 
     sequences = _peptides(data)
     _batch(data, sequences)
@@ -506,10 +581,8 @@ def validate(payload: bytes, name: Optional[str] = None) -> Dict:
                 head_weights[s * vocab * width:(s + 1) * vocab * width], head_scales[s],
                 head_bias[s * vocab:(s + 1) * vocab], what)
         _gradient(checkpoint, norms, answers, len(points), targets, width, vocab, what)
-        for key, shape in (("head_grad", [vocab, width]), ("head_update", [vocab, width])):
-            spec = checkpoint.get(key) or {}
-            numbers(spec, shape, "%s %s" % (what, key))
-            _scale(spec, "%s %s" % (what, key))
+        _update(checkpoint, flowing, answers, optimizer, rates[s], clip[s], checkpoint["step"],
+                len(points), targets, width, vocab, what)
 
     return {
         "schema": SCHEMA,

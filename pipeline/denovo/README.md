@@ -229,7 +229,10 @@ What it records:
   - the output layer's weights as the step found them (23 × 16) and its
     logits, whole as float32 (schema 6, for the page's Predict stage), and the
     probabilities over the 21 tokens that can follow;
-  - the output layer's clipped gradient and its update.
+  - the output layer's clipped gradient, AdamW's two running averages for
+    it as the step found them (of the gradient and of its square), and the
+    update the step made, all whole as float32 (schema 8, for the page's
+    Update stage).
 
 `check_trace.py` holds these to each other:
 - each target's x0 is its id's token row plus its place's row;
@@ -250,7 +253,11 @@ What it records:
   bias, and softmax of a row's logits over the 21 is its probabilities;
 - each point's gradient is as long as its kept norm, and at the last point it
   is the output layer's weights times p − y (each place's probabilities less
-  one at what came next), over the 180 targets.
+  one at what came next), over the 180 targets;
+- the output layer's gradient is each place's p − y times its last row,
+  averaged over the 180 targets, times the clip; its running averages are
+  zero before the first step; and its update is AdamW's step from them, with
+  the run's own betas, epsilon and decay (`optimizer`).
 
 The tables were added on 2026-10-30 for the page's Forward opening, which
 draws each id picking its row. Recording them changed no other byte: the run
@@ -315,6 +322,22 @@ The training did not change: with the new key taken out of each checkpoint,
 the run is the schema 6 run byte for byte. The run is 4,322,625 bytes (sha256
 `17d5a41b…`), so the size the app is asked to fetch went from 4,000,000 to
 5,000,000 bytes (`check_trace.LIMIT`).
+
+On 2026-11-03 it was kept again as schema 8, for the page's Update stage,
+which works out each output weight's step as AdamW takes it: the gradient's
+running mean over its running size, times the rate, against the gradient,
+and the decay. Each checkpoint now also keeps AdamW's two running averages
+for the output layer's weights as the step found them (`head_adam_mean`,
+`head_adam_square`, 23 × 16, float32), and the clipped gradient and the
+update whole (float32, no longer int8: at int8, step 200's update came in
+steps of 1.2e-8 and its smallest rounded to nothing). The run names its
+optimiser's settings (`optimizer`: AdamW, betas, epsilon, the output layer's
+decay). At step 1 there is nothing to remember yet, so every output weight
+the loss reaches moves by the rate, 1.0e-4, against its gradient's sign
+(insulin A's S from number 6: −0.0598 → −0.0597). The training did not
+change: with the new keys taken out, the gradient and the update quantised
+back to int8 and the schema set to 7, the run is the schema 7 run byte for
+byte. The run is 4,371,213 bytes (sha256 `ddc4622f…`).
 
 At step 200 the readout shows the inference layer by layer. At insulin A's
 C11, whose next token is S:

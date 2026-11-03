@@ -163,9 +163,35 @@ def test_the_update_is_how_far_the_head_moved(toy):
         if step == toy["steps"]["count"]:
             continue
         moved = weights[step] * scales[step] - weights[step - 1] * scales[step - 1]
-        update = stored(checkpoint["head_update"]) * checkpoint["head_update"]["scale"]
-        tolerance = scales[step] + scales[step - 1] + checkpoint["head_update"]["scale"]
+        update = stored(checkpoint["head_update"])
+        assert checkpoint["head_update"]["dtype"] == "f4"
+        tolerance = (scales[step] + scales[step - 1]) / 2 + 1e-7
         assert np.abs(moved - update).max() <= tolerance
+
+
+def test_the_update_is_adamws_step_from_the_running_averages_the_step_found(toy):
+    optimizer = toy["optimizer"]
+    assert optimizer["name"] == "AdamW"
+    assert optimizer["weight_decay"] == TOY.weight_decay
+    beta1, beta2 = optimizer["betas"]
+    eps = optimizer["eps"]
+    rates = stored(toy["steps"]["lr"])
+    for checkpoint in toy["checkpoints"]:
+        step = checkpoint["step"]
+        grad = stored(checkpoint["head_grad"])
+        mean, square = stored(checkpoint["head_adam_mean"]), stored(checkpoint["head_adam_square"])
+        if step == 1:
+            # Nothing to remember yet: the step is the rate, against the
+            # gradient's sign, and the decay.
+            assert not mean.any() and not square.any()
+        mean = beta1 * mean + (1 - beta1) * grad
+        square = beta2 * square + (1 - beta2) * grad ** 2
+        ratio = (mean / (1 - beta1 ** step)) / (np.sqrt(square / (1 - beta2 ** step)) + eps)
+        if step == 1:
+            assert np.allclose(ratio, np.sign(grad), atol=1e-4)
+        weight = stored(checkpoint["head_weight"])
+        made = -rates[step - 1] * (optimizer["weight_decay"] * weight + ratio)
+        assert np.abs(made - stored(checkpoint["head_update"])).max() <= 1e-6 * rates[step - 1] + 4e-7 * np.abs(weight).max()
 
 
 def test_the_logits_are_the_last_row_times_the_output_layer_the_step_found(toy):
