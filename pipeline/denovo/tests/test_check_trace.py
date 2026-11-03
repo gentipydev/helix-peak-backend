@@ -47,7 +47,7 @@ def test_another_run_is_not_this_one():
 
 
 def test_a_schema_this_does_not_read_is_refused():
-    for schema in (1, 2, 3, 4, 5, 6, 7):
+    for schema in (1, 2, 3, 4, 5, 6, 7, 8):
         data = load()
         data["schema"] = schema
         with pytest.raises(Refused, match="schema"):
@@ -353,15 +353,19 @@ def test_probabilities_that_are_not_softmax_of_the_logits_are_refused():
     checkpoint = data["checkpoints"][-1]
     allowed = checkpoint["probs"]["shape"][1]
     targets = checkpoint["probs"]["shape"][0]
-    # The first row's two largest shares swapped, in the probabilities and in
-    # the last readout alike: each still sums to one and the two still agree,
-    # but neither is softmax of the logits any more.
+    answer = data["allowed"].index(data["batch"]["y"][0][0])
+    # The first row's two largest shares but the answer's swapped, in the
+    # probabilities, in the last readout and in the step's own row alike: each
+    # still sums to one, the three still agree and what came next keeps its
+    # share, but none is softmax of the logits any more.
 
     def swap(at):
         def change(raw):
             row = list(raw[at:at + allowed])
-            top = max(range(allowed), key=row.__getitem__)
-            second = max((i for i in range(allowed) if i != top), key=row.__getitem__)
+            others = [i for i in range(allowed) if i != answer]
+            top = max(others, key=row.__getitem__)
+            second = max((i for i in others if i != top), key=row.__getitem__)
+            assert row[top] != row[second]
             row[top], row[second] = row[second], row[top]
             raw[at:at + allowed] = bytes(row)
         return change
@@ -369,7 +373,64 @@ def test_probabilities_that_are_not_softmax_of_the_logits_are_refused():
     rewrite(checkpoint["probs"], swap(0))
     readout = checkpoint["readout"]
     rewrite(readout, swap((readout["shape"][0] - 1) * targets * allowed))
+    rewrite(data["steps"]["probs"], swap((checkpoint["step"] - 1) * targets * allowed))
     with pytest.raises(Refused, match="probabilities are not softmax of the logits"):
+        validate(dump(data))
+
+
+def test_a_run_without_every_steps_probabilities_is_refused():
+    data = load()
+    del data["steps"]["probs"]
+    with pytest.raises(Refused, match="steps probs"):
+        validate(dump(data))
+
+
+def test_every_steps_probabilities_must_sum_to_one():
+    data = load()
+
+    def change(raw):
+        raw[0] = (raw[0] + 60) % 256
+
+    rewrite(data["steps"]["probs"], change)
+    with pytest.raises(Refused, match="steps probs has a row summing"):
+        validate(dump(data))
+
+
+def test_every_steps_share_at_what_came_next_must_be_its_targets_loss():
+    data = load()
+    kept = {checkpoint["step"] for checkpoint in data["checkpoints"]}
+    step = next(s for s in range(1, data["steps"]["count"] + 1) if s not in kept)
+    targets, allowed = data["targets"], len(data["allowed"])
+    answer = data["allowed"].index(data["batch"]["y"][0][0])
+    # A step no checkpoint keeps: the first place's share at what came next
+    # swapped with another of a different size, its row still summing to one.
+
+    def change(raw):
+        at = (step - 1) * targets * allowed
+        other = next(i for i in range(allowed) if raw[at + i] != raw[at + answer])
+        raw[at + answer], raw[at + other] = raw[at + other], raw[at + answer]
+
+    rewrite(data["steps"]["probs"], change)
+    with pytest.raises(Refused, match="gives what came next"):
+        validate(dump(data))
+
+
+def test_a_checkpoints_probabilities_must_be_its_steps_own():
+    data = load()
+    checkpoint = data["checkpoints"][0]
+    allowed = len(data["allowed"])
+    # Two shares of a row of the checkpoint's copy, one 255th apart, swapped:
+    # its row still sums to one and its last readout agrees within the 255th
+    # it is allowed, but it is no longer the step's own row, byte for byte.
+
+    def change(raw):
+        at, i, j = next((r * allowed, i, j) for r in range(len(raw) // allowed)
+                        for i in range(allowed) for j in range(allowed)
+                        if raw[r * allowed + j] == raw[r * allowed + i] + 1)
+        raw[at + i], raw[at + j] = raw[at + j], raw[at + i]
+
+    rewrite(checkpoint["probs"], change)
+    with pytest.raises(Refused, match="probs are not that step's own"):
         validate(dump(data))
 
 

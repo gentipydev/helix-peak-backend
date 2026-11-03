@@ -195,8 +195,9 @@ What it records:
 
 - **every step**: the loss, residues and `<eos>` apart, the learning rate used,
   the gradient norm before clipping and the clip applied, 10 parameter groups'
-  gradient and update norms, each of the 180 targets' loss, and the output
-  layer's weights and biases;
+  gradient and update norms, each of the 180 targets' loss, the output
+  layer's weights and biases, and (schema 9) the model's probabilities over
+  the 21 tokens that can come next at every place;
 - **at each checkpoint**, everything else:
   - the two embedding tables as the step found them, whole as float32 (the
     token embedding, 23 × 16, its padding row zero, and the position
@@ -339,6 +340,22 @@ change: with the new keys taken out, the gradient and the update quantised
 back to int8 and the schema set to 7, the run is the schema 7 run byte for
 byte. The run is 4,371,213 bytes (sha256 `ddc4622f…`).
 
+On 2026-11-03 it was kept again as schema 9, for the page's Loop stage, which
+draws Predict's map of guesses at every one of the 200 steps: the peptide in
+focus going from scattered guesses, to L (the commonest residue) at 80 of 180
+places at step 21, to the residue before, to every place but each first sure
+by step 95. Every step now also keeps the probabilities over the 21 tokens
+that can come next at each of the 180 places (`steps.probs`, 200 × 180 × 21,
+uint8 in 255ths), worked out from the logits each step makes anyway and
+quantised as a checkpoint's `probs` is, so a kept step's row is that
+checkpoint's byte for byte. `check_trace.py` holds that, every row to one,
+and the share at what came next to the target's own loss (within the two
+roundings, 0.5/255 and half of 1/4096 nat). The training did not change: with
+`steps.probs` taken out and the schema set to 8, the run is the schema 8 run
+byte for byte, and so is the toy. The run is 5,379,295 bytes (sha256
+`83cc0cc2…`), so the size the app is asked to fetch went from 5,000,000 to
+6,000,000 bytes (`check_trace.LIMIT`).
+
 At step 200 the readout shows the inference layer by layer. At insulin A's
 C11, whose next token is S:
 - x0 says T 64%;
@@ -358,7 +375,7 @@ float32 where kept whole.
 6 peptides, 180 targets | 8,167 parameters | 200 steps on cpu
 loss 3.2197 -> 0.0645 (uniform 3.0445, unigram 2.8564, bigram 2.0434, floor 0.0597)
 checkpoints: 1 (first), 13 (uniform), 21 (unigram), 49 (bigram), 66 (one_nat), 95 (tenth_nat), 200 (last)
-4,322,625 bytes
+5,379,295 bytes
 ```
 
 The floor is the least loss any model reading whole prefixes can reach on

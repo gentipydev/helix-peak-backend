@@ -8,8 +8,9 @@
 The run is the engine's own: `train.build` and `train.train_step`, driven as
 `train.run` drives them, on the curated proteins' peptides, with nothing held
 out. Read-only hooks watch it. Every step's loss, learning rate, gradient norms,
-per-target losses and output-layer weights are kept, and at each checkpoint so
-is everything else: the embedding tables the step read its ids through, the
+per-target losses, output-layer weights and probabilities at every place are
+kept, and at each checkpoint so is everything else: the embedding tables the
+step read its ids through, the
 residual stream at every layer, its gradient whole and its norm, every
 attention map, what each
 block worked out on the way (its row evened out by its first LayerNorm, that
@@ -60,7 +61,7 @@ from pipeline.denovo.sequences import batches, build_dataset, is_modelable
 from pipeline.denovo.tokenizer import decode
 from pipeline.denovo.train import Config, _token_losses, build, train_step
 
-SCHEMA = 8
+SCHEMA = 9
 NAME = "curated"
 OUT = HERE / "runs" / NAME / "trace.json"
 CPU = torch.device("cpu")
@@ -312,6 +313,13 @@ def readout(model: torch.nn.Module, point: torch.Tensor) -> torch.Tensor:
         return probabilities.reshape(logits.shape)[..., list(ALLOWED)]
 
 
+def probabilities(logits: torch.Tensor) -> torch.Tensor:
+    """The model's guess at every place: softmax of its logits over the tokens
+    that can come next, `masked` setting the others aside."""
+    flat = masked(logits.reshape(-1, logits.shape[-1])).softmax(dim=-1)
+    return flat.reshape(logits.shape)[..., list(ALLOWED)]
+
+
 def adam_settings(optimizer: torch.optim.Optimizer, parameter: torch.nn.Parameter) -> Dict:
     """What the optimiser steps `parameter` with: its group's betas, epsilon
     and weight decay. The page works the step out from these and the running
@@ -359,7 +367,7 @@ def _run(config: Config, sequences: Sequence[str], capture_at: frozenset) -> Dic
 
     kept: Dict[str, list] = {key: [] for key in (
         "loss", "residue_loss", "eos_loss", "lr", "grad_norm", "clip",
-        "group_grad", "group_update", "token_loss", "head_weight", "head_bias")}
+        "group_grad", "group_update", "token_loss", "head_weight", "head_bias", "probs")}
     checkpoints: Dict[int, Dict] = {}
     batch = None
     try:
@@ -442,11 +450,12 @@ def _run(config: Config, sequences: Sequence[str], capture_at: frozenset) -> Dic
                 kept["token_loss"].append(per_target.numpy().copy())
                 kept["head_weight"].append(weight.numpy())
                 kept["head_bias"].append(bias.numpy())
+                # Every step's guess at every place (schema 9, for the page's
+                # Loop): what a checkpoint keeps as `probs`, the same numbers.
+                kept["probs"].append(real(probabilities(capture.logits)).numpy().copy())
 
                 if capture.on:
                     logits = capture.logits
-                    probabilities = masked(logits.reshape(-1, logits.shape[-1])).softmax(dim=-1)
-                    probabilities = probabilities.reshape(logits.shape)[..., list(ALLOWED)]
 
                     def triangles(squares: torch.Tensor) -> np.ndarray:
                         """Each head's batch × length × length, as each
@@ -485,7 +494,7 @@ def _run(config: Config, sequences: Sequence[str], capture_at: frozenset) -> Dic
                         # are the last point times it, plus its bias.
                         "head_weight": weight.numpy(),
                         "logits": real(logits).numpy(),
-                        "probs": real(probabilities).numpy(),
+                        "probs": real(probabilities(logits)).numpy(),
                         # Clipped, as the optimiser read it.
                         "head_grad": head.weight.grad.detach().numpy().copy(),
                         "head_adam_mean": seen["adam"][0].numpy(),
@@ -666,6 +675,11 @@ def record(
             "token_loss": _array(token_loss, "u2", scale=LOSS_SCALE),
             "head_weight": _int8_each(steps["head_weight"]),
             "head_bias": _array(np.stack(steps["head_bias"]), "f4"),
+            # Every step's probabilities over the tokens that can come next,
+            # quantised as a checkpoint's `probs` is, so a kept step's row is
+            # that checkpoint's byte for byte: the page's Loop draws the map
+            # of guesses at every step from them.
+            "probs": _array(_unit(np.stack(steps["probs"])), "u1", scale=1.0 / 255),
         },
         "checkpoints": checkpoints,
         "provenance": {

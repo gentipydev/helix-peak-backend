@@ -221,6 +221,24 @@ def test_the_probabilities_are_over_what_can_come_next(toy):
         assert np.allclose(probs.sum(axis=1), 1.0, atol=21 / 255)
 
 
+def test_every_steps_probabilities_are_kept_and_a_checkpoints_are_its_steps(toy):
+    spec = toy["steps"]["probs"]
+    assert spec["dtype"] == "u1" and spec["scale"] == 1.0 / 255
+    probs = stored(spec)
+    assert probs.shape == (TOY.max_epochs, toy["targets"], 21)
+    assert np.allclose(scaled(spec).sum(axis=-1), 1.0, atol=21 / 255)
+    for checkpoint in toy["checkpoints"]:
+        assert np.array_equal(probs[checkpoint["step"] - 1], stored(checkpoint["probs"]))
+    # The share each step gave what came next is the target's own loss.
+    spans = [len(s) + 1 for s in TOY_SEQUENCES]
+    answers = [token for row, span in zip(toy["batch"]["y"], spans) for token in row[:span]]
+    columns = [toy["allowed"].index(token) for token in answers]
+    given = scaled(spec)[:, np.arange(len(columns)), columns]
+    losses = toy["steps"]["token_loss"]
+    lost = np.exp(-scaled(losses))
+    assert np.abs(given - lost).max() <= 0.5 / 255 + losses["scale"] / 2 + 1e-6
+
+
 def test_every_weight_is_in_one_group(toy):
     model = HelixPeekLM(d_model=TOY.d_model, nhead=TOY.nhead, num_layers=TOY.num_layers,
                         dim_feedforward=TOY.dim_feedforward)

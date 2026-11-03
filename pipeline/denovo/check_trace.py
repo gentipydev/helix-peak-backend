@@ -25,8 +25,8 @@ if str(HERE.parents[1]) not in sys.path:
 from pipeline.denovo.alphabet import AMINO_ACIDS, MAX_LENGTH, MIN_LENGTH, PAD_ID, TOKENS
 from pipeline.denovo.bigram import ALLOWED, framed
 
-SCHEMA = 8
-LIMIT = 5_000_000
+SCHEMA = 9
+LIMIT = 6_000_000
 DEFAULT = HERE / "runs" / "curated" / "trace.json"
 
 _FORMATS = {"i1": ("b", 1), "u1": ("B", 1), "u2": ("H", 2), "f4": ("f", 4)}
@@ -95,6 +95,28 @@ def _rows_sum_to_one(values: Sequence[float], widths: Sequence[int], what: str) 
         if abs(total - 255) > _ROUNDING * width + 1:
             raise Refused("%s has a row summing to %d of 255" % (what, total))
         at += width
+
+
+def _step_probabilities(spec: Dict, token_loss: Sequence[float], token_scale: float,
+                        answers: Sequence[int], count: int, targets: int,
+                        allowed: int) -> List[float]:
+    """Every step's probabilities over the tokens that can come next, as
+    stored, in 255ths: each row adds up to one, and the share at what came
+    next is the target's own loss, within the two roundings."""
+    if abs(_scale(spec, "steps probs") - 1.0 / 255) > 1e-12:
+        raise Refused("steps probs is not in 255ths")
+    values = numbers(spec, [count, targets, allowed], "steps probs")
+    _rows_sum_to_one(values, [allowed] * (count * targets), "steps probs")
+    bound = _ROUNDING / 255 + token_scale / 2 + 1e-6
+    columns = [list(ALLOWED).index(token) for token in answers]
+    for step in range(count):
+        for t, column in enumerate(columns):
+            given = values[(step * targets + t) * allowed + column] / 255
+            lost = math.exp(-token_loss[step * targets + t] * token_scale)
+            if abs(given - lost) > bound:
+                raise Refused("step %d gives what came next at target %d %.4f; its loss says %.4f"
+                              % (step + 1, t, given, lost))
+    return values
 
 
 def _whole(spec: Dict, shape: Sequence[int], what: str) -> List[float]:
@@ -539,6 +561,10 @@ def validate(payload: bytes, name: Optional[str] = None) -> Dict:
         if abs(mean - loss[step]) > 2e-3:
             raise Refused("step %d's targets average %.4f, its loss is %.4f"
                           % (step + 1, mean, loss[step]))
+    # What came next at each target, the batch's y less its padding.
+    answers = [token for row, span in zip(data["batch"]["y"], spans) for token in row[:span]]
+    step_probs = _step_probabilities(steps.get("probs") or {}, token_loss, token_scale, answers,
+                                     count, targets, allowed)
     head = steps.get("head_weight") or {}
     head_weights = numbers(head, [count, vocab, width], "head_weight")
     head_scales = _scales(head, count, "head_weight")
@@ -553,8 +579,6 @@ def validate(payload: bytes, name: Optional[str] = None) -> Dict:
         raise Refused("the checkpoints are not steps 1 to %d in order" % count)
     triangle = sum(span * (span + 1) // 2 for span in spans)
     rows = [i + 1 for span in spans for i in range(span)]
-    # What came next at each target, the batch's y less its padding.
-    answers = [token for row, span in zip(data["batch"]["y"], spans) for token in row[:span]]
     for checkpoint in checkpoints:
         what = "step %d" % checkpoint["step"]
         if not checkpoint.get("why") or not all(isinstance(w, str) for w in checkpoint["why"]):
@@ -574,9 +598,13 @@ def validate(payload: bytes, name: Optional[str] = None) -> Dict:
         _readout(checkpoint, len(points), targets, allowed, what)
         probs = checkpoint.get("probs") or {}
         _scale(probs, what + " probs")
-        _rows_sum_to_one(numbers(probs, [targets, allowed], what + " probs"),
-                         [allowed] * targets, what + " probs")
+        kept_probs = numbers(probs, [targets, allowed], what + " probs")
+        _rows_sum_to_one(kept_probs, [allowed] * targets, what + " probs")
         s = checkpoint["step"] - 1
+        # The step's own row of every step's probabilities, byte for byte.
+        if (abs(_scale(probs, what + " probs") - 1.0 / 255) > 1e-12
+                or kept_probs != step_probs[s * targets * allowed:(s + 1) * targets * allowed]):
+            raise Refused("%s probs are not that step's own" % what)
         _output(checkpoint, flowing, len(points), targets, width, vocab,
                 head_weights[s * vocab * width:(s + 1) * vocab * width], head_scales[s],
                 head_bias[s * vocab:(s + 1) * vocab], what)
