@@ -69,3 +69,116 @@ def test_a_venv_or_baked_data_never_goes_up():
                  "locus/fixtures/chromalias_hg38_five.json", "resolver/__pycache__/resolve.cpython-312.pyc"):
         assert modal_app.not_code(Path(path)), path
     assert not modal_app.not_code(Path("resolver/worker.py"))
+
+
+# ------------------------------------------------- what starts the GPU
+
+
+def _minutes(interval: str) -> int:
+    number, unit = interval.split()
+    assert unit == "minutes"
+    return int(number)
+
+
+def test_no_call_outlives_the_reapers_patience_with_its_claim():
+    from pipeline.resolver import store
+
+    assert modal_app.SCORE_TIMEOUT < _minutes(store.STALE_BAKE) * 60
+    assert modal_app.SWEEP_TIMEOUT < _minutes(store.STALE_RESOLVE) * 60
+
+
+class _Sweeps:
+    """`worker.sweep` as a sequence of what each call resolved."""
+
+    def __init__(self, *rounds):
+        self.rounds = list(rounds)
+        self.limits = []
+
+    def __call__(self, conn, storage, *, limit):
+        self.limits.append(limit)
+        resolved = self.rounds.pop(0) if self.rounds else []
+        return {"resolved": resolved, "constraint_queued": 0, "structure_queued": 0}
+
+
+def test_requests_are_resolved_one_at_a_time_until_none_is_left():
+    sweeps = _Sweeps([{"gene": "B2M", "state": "done"}], [{"gene": "SLN", "state": "refused"}])
+    summary = modal_app.resolve_queued(None, None, sweep=sweeps)
+    assert [r["gene"] for r in summary["resolved"]] == ["B2M", "SLN"]
+    assert sweeps.limits == [1, 1, 1]
+
+
+def test_a_request_put_back_on_the_queue_ends_the_sweep():
+    sweeps = _Sweeps([{"gene": "B2M", "state": "queued"}], [{"gene": "B2M", "state": "done"}])
+    summary = modal_app.resolve_queued(None, None, sweep=sweeps)
+    assert summary["resolved"] == [{"gene": "B2M", "state": "queued"}]
+    assert sweeps.limits == [1]
+
+
+def test_a_sweep_takes_at_most_its_limit():
+    sweeps = _Sweeps(*[[{"gene": f"G{i}", "state": "done"}] for i in range(20)])
+    summary = modal_app.resolve_queued(None, None, sweep=sweeps)
+    assert len(summary["resolved"]) == modal_app.SWEEP_LIMIT
+
+
+def test_score_goes_on_only_after_a_bake_it_did_not_put_back():
+    assert not modal_app.goes_on([])
+    assert not modal_app.goes_on([{"slug": "b2m", "state": "queued"}])
+    for state in ("ready", "refused", "stopped"):
+        assert modal_app.goes_on([{"slug": "b2m", "state": state}])
+
+
+# The functions as defined, kept before a test stands a fake in for `score`.
+SWEEP, SCORE = modal_app.sweep, modal_app.score
+
+
+class _Conn:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class _Spawns:
+    def __init__(self):
+        self.count = 0
+
+    def spawn(self):
+        self.count += 1
+
+
+@pytest.fixture
+def body(monkeypatch):
+    """The functions' bodies run here, on fakes: no Modal, no database."""
+    from pipeline.resolver import store, worker
+
+    spawned = _Spawns()
+    monkeypatch.setattr(modal_app, "_connect", lambda: (_Conn(), object()))
+    monkeypatch.setattr(modal_app, "score", spawned)
+    monkeypatch.setattr(modal_app.socket, "setdefaulttimeout", lambda seconds: None)
+    monkeypatch.setattr(worker, "sweep", _Sweeps())
+    state = {"claimable": 0, "scored": []}
+    monkeypatch.setattr(store, "claimable_bakes", lambda conn, kind: state["claimable"])
+    monkeypatch.setattr(worker, "score_all", lambda conn, storage, limit: state["scored"])
+    state["spawned"] = spawned
+    return state
+
+
+@pytest.mark.parametrize("claimable, spawns", [(0, 0), (2, 1)])
+def test_a_sweep_starts_the_gpu_only_for_a_bake_it_can_take(body, claimable, spawns):
+    body["claimable"] = claimable
+    summary = SWEEP.local()
+    assert summary["constraint_claimable"] == claimable
+    assert body["spawned"].count == spawns
+
+
+@pytest.mark.parametrize("scored, claimable, spawns", [
+    ([], 3, 0),                                        # nothing it could take
+    ([{"slug": "b2m", "state": "queued"}], 3, 0),       # put back: the next sweep tries again
+    ([{"slug": "b2m", "state": "ready"}], 0, 0),        # nothing more waits
+    ([{"slug": "b2m", "state": "ready"}], 1, 1),        # the next, in a call of its own
+])
+def test_score_starts_itself_again_only_while_a_bake_waits(body, scored, claimable, spawns):
+    body["scored"], body["claimable"] = scored, claimable
+    assert SCORE.local() == scored
+    assert body["spawned"].count == spawns

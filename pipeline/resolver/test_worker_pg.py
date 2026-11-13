@@ -1221,6 +1221,38 @@ def test_clinvar_waits_for_avi_and_the_scoring_waits_for_both(conn, offline):
     assert store.claim_bake(conn, "constraint")["kind"] == "constraint"
 
 
+def test_a_curated_proteins_bake_is_queued_but_not_claimable(conn):
+    conn.execute(
+        """
+        insert into protein (slug, gene, uniprot, accession, display, summary, residues, exons,
+            chains, bridges, regions, disulfides, provenance, resolver_version, catalog_order)
+        values ('insulin', 'INS', 'P01308', 'NG_007114', 'Insulin', 'Curated.', 110, 3, 3, 3,
+                '[]', '[]', '{}', 0, 0)
+        """)
+    conn.execute("insert into bake_job (slug, kind) values ('insulin', 'constraint')")
+    assert store.queued_bakes(conn, "constraint") == 1
+    assert store.claimable_bakes(conn, "constraint") == 0
+
+
+def test_a_scoring_is_claimable_only_once_its_evidence_is_over(conn, offline):
+    _resolved_with_evidence_queued(conn, offline, Storage())
+
+    def claimable():
+        return [store.claimable_bakes(conn, kind) for kind in ("impact", "clinvar", "constraint")]
+
+    assert store.queued_bakes(conn, "constraint") == 1
+    assert claimable() == [1, 0, 0]
+    impact = store.claim_bake(conn, "impact")
+    assert claimable() == [0, 0, 0]
+    conn.execute("update bake_job set state = 'done' where id = %s", (impact["id"],))
+    assert claimable() == [0, 1, 0]
+    clinvar = store.claim_bake(conn, "clinvar")
+    conn.execute("update bake_job set state = 'failed' where id = %s", (clinvar["id"],))
+    assert claimable() == [0, 0, 1]
+    assert store.claim_bake(conn, "constraint")["kind"] == "constraint"
+    assert claimable() == [0, 0, 0]
+
+
 def test_the_evidence_lands_ready_and_the_scoring_after_it(conn, offline, data):
     storage = Storage()
     _resolved_with_evidence_queued(conn, offline, storage)

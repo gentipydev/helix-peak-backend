@@ -323,6 +323,24 @@ def requeue_request(conn, request_id: int) -> None:
 # ------------------------------------------------------------ bakes
 
 
+# The bakes `claim_bake` may take: queued, of one kind, for a protein resolved
+# on demand, with nothing it waits for (`WAITS_FOR`) queued or running for that
+# protein. `claimable_bakes` counts the same rows.
+_CLAIMABLE = """
+            from bake_job j
+            join protein p on p.slug = j.slug
+            where j.state = 'queued' and j.kind = %(kind)s and p.resolver_version > 0
+              and not exists (
+                  select 1 from bake_job w
+                  where w.slug = j.slug and w.kind = any(%(waits)s::text[])
+                    and w.state in ('queued', 'running'))
+"""
+
+
+def _claimable(kind: str) -> dict:
+    return {"kind": kind, "waits": list(WAITS_FOR.get(kind, ()))}
+
+
 def claim_bake(conn, kind: str) -> Optional[dict]:
     """The oldest queued bake of this kind for a protein resolved on demand,
     once nothing it waits for (`WAITS_FOR`) is queued or running for that
@@ -332,28 +350,32 @@ def claim_bake(conn, kind: str) -> Optional[dict]:
     `Target` from, so a job for one of them is left where it is.
     """
     row = conn.execute(
-        """
+        f"""
         update bake_job
         set state = 'running', attempts = attempts + 1, started_at = now()
         where id = (
-            select j.id from bake_job j
-            join protein p on p.slug = j.slug
-            where j.state = 'queued' and j.kind = %(kind)s and p.resolver_version > 0
-              and not exists (
-                  select 1 from bake_job w
-                  where w.slug = j.slug and w.kind = any(%(waits)s::text[])
-                    and w.state in ('queued', 'running'))
+            select j.id {_CLAIMABLE}
             order by j.requested_at
             for update of j skip locked
             limit 1
         )
         returning id, slug, kind, attempts, refresh
         """,
-        {"kind": kind, "waits": list(WAITS_FOR.get(kind, ()))},
+        _claimable(kind),
     ).fetchone()
     if row is None:
         return None
     return dict(zip(("id", "slug", "kind", "attempts", "refresh"), row))
+
+
+def claimable_bakes(conn, kind: str) -> int:
+    """How many queued bakes of this kind `claim_bake` could take now.
+
+    `queued_bakes` counts every queued row, a curated protein's and one still
+    waiting for its evidence among them. Modal starts a GPU only for these:
+    one started for the others would find nothing to take, every five minutes.
+    """
+    return conn.execute(f"select count(*) {_CLAIMABLE}", _claimable(kind)).fetchone()[0]
 
 
 def queued_bakes(conn, kind: str) -> int:

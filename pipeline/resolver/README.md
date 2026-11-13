@@ -487,9 +487,12 @@ keep the models after the switch, one of:
 4. `scripts/resolver_worker.sh uninstall`
 5. Optionally the wake, step 4 of "Deploying, once".
 
-The two may run at once during the switch: every claim is `FOR UPDATE SKIP
-LOCKED`, so they never take the same request or the same bake. Day to day, run
-one.
+The two may run at once: every claim is `FOR UPDATE SKIP LOCKED`, so they never
+take the same request or the same bake. Modal starts its GPU only for a
+constraint bake it can take (`store.claimable_bakes`), never for one still
+waiting on the Mac's AVI and ClinVar or for one of the twenty's, and works one
+protein a call, as the Mac does: a request or bake put back on the queue waits
+for the next sweep rather than spending its three tries at once.
 
 A track scored after the switch names `cuda` as its `generation.device` where
 the Mac's name `mps`. The app does not read it, and nothing is scored again.
