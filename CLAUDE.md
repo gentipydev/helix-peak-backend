@@ -126,13 +126,18 @@ path under `pipeline/data/`; that is the only link, and it is a path, not an imp
 
 `pipeline/resolver/` (Phase 6) is the one part of `pipeline/` that runs unattended: on Modal,
 with the uploader's credentials and the Atlas's key in a Modal secret, calling the record
-builder, the fold's, AVI's and ClinVar's bakers and the ESM-2 scorer unchanged. A protein it resolves is a `protein` row with a null `catalog_order` and
+builder, the locus bake, the fold's, AVI's and ClinVar's bakers and the ESM-2 scorer unchanged. A protein it resolves is a `protein` row with a null `catalog_order` and
 `resolver_version` 1, so it never joins `/catalog`. It may never write over a curated row
 (the upsert is guarded), and a change to a baker it calls needs the same sha256 proof:
 `structure/bake.py` is one of them now (its `export` and `assemble` make every model), and so
 are `folding/bake_folding.py` and `folding/check_folding.py` (every experimental fold made on
 demand), and `impact/bake_impact.py` and `clinvar/bake_clinvar.py` (every protein's variant
-evidence).
+evidence). `locus/bake_locus.py` makes every protein's locus, the zoom's way in, in the resolve
+itself (`worker.make_locus`, schema 3), from the index row and one pinned snapshot of its inputs
+(`locus/inputs.py`: Atlas 25.1, UCSC, MANE, HGNC, NCBI's scaffold placements; never the live
+Atlas). A change to it is held by the census (`locus/survey.py`, then the app's
+`test/zoom_catalogue_check.dart`); the curated loci, schema 2, are held field for field, since a
+locus re-bake was never byte-for-byte (`pipeline/locus/README.md`).
 
 Modal's app (`modal_app.py`) makes everything the bullets below say of the Mac's worker, so a
 protein is built with the Mac off: its `fold` and `evidence` functions run the Mac's own drivers
@@ -181,6 +186,12 @@ runs, these things follow for anyone working in this checkout:
   and ClinVar in the worker's own process, its raw responses deleted once the bake is done.
   AVI refused refuses ClinVar too: its records are placed by AVI's map. `RESOLVER_EVIDENCE=0`
   turns it off; `scripts/queue_evidence.py` queues it for a protein built without it.
+- And each protein's locus, as it resolves it, written with its record. The snapshot is read
+  beside the code (`pipeline/data/locus_inputs/`, by `inputs.py`'s own path, never the worker's
+  data directory), and Modal's sweep carries it in its image: build it before a deploy
+  (`pipeline/locus/snapshot.py`). Where it cannot be read, the locus is left absent and the
+  build goes on. `scripts/queue_locus.py` makes it at once for a protein built before
+  (2026-11-13: B2M and PFN1).
 
 ## The peptide model's recorded run
 

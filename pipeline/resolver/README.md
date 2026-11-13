@@ -66,7 +66,12 @@ rule; in short:
 - **Prose** is templated from the index ("Made by BRCA1 on chromosome 17. Built
   on demand from UniProt P38398 and MANE Select NM_007294.4, not curated by
   hand."), and `provenance.prose` says `templated`.
-- **Tracks**: `record` ready, `constraint` pending until the GPU has scored it,
+- **Tracks**: `record` ready; `locus`, the zoom's way in, ready in the same
+  transaction, made from the index row and the pinned snapshot of the locus
+  bake's inputs (`worker.make_locus`, `pipeline/locus/README.md`) or refused
+  with the reader's sentence for the seven genes the Atlas cannot place, and
+  absent only where the worker could not read the snapshot (its outcome says
+  why); `constraint` pending until the GPU has scored it,
   where the worker makes models `structure` pending until its model is made
   (seconds), and where it makes the variant evidence `impact` and `clinvar`
   pending until AlphaGenome's scores and ClinVar's records are in (minutes).
@@ -657,6 +662,23 @@ Modal), or again after a refusal, without SQL by hand:
 One transaction a protein, a ready track left as it is, and one of the twenty
 refused. A protein opened while its evidence is pending keeps it missing until
 the app restarts, so queue it while nobody walks it.
+
+The locus for a protein built before the resolver made one (2026-11-13), or
+again:
+
+```sh
+.venv/bin/python scripts/queue_locus.py --dry-run --all   # what it would write; reads only
+.venv/bin/python scripts/queue_locus.py B2M PFN1          # or --all
+```
+
+- Nothing is queued: a locus is a pure function of its index row and the
+  pinned snapshot, so each is made at once (`worker.make_locus`) and written
+  in a transaction of its own, ready or refused.
+- Only a protein built on demand is touched (`catalog_order` null).
+- It needs the snapshot on this machine (`pipeline/locus/snapshot.py`).
+- On 2026-11-13 it gave B2M and PFN1 theirs.
+- `check_built.py` holds a protein's locus to the bytes the snapshot makes
+  from its index row today, and calls an absent one wrong.
 
 On a Mac, `scripts/resolver_worker.sh status` prints the counts by state, what
 the proteins built on demand draw now and how their last searches ended
