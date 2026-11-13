@@ -16,7 +16,11 @@ fetched), held to `check_locus` with the record the resolver would cut for it
 the resolver names it.
 
 Under OUT: `locus/<slug>_locus.json` for each track, `refused.json`,
-`failed.json`, and `summary.json`, whose numbers it also prints.
+`failed.json`, and `summary.json`, whose numbers it also prints. With
+`--gff` (MANE v1.5's genomic GFF, `MANE_GFF`), also `records/<slug>_record.json`:
+a record per protein in the record track's own shape, its exons MANE's and
+its bases made up, for the app's check of every protein's zoom
+(`helix-peek/test/zoom_catalogue_check.dart`).
 """
 
 from __future__ import annotations
@@ -24,6 +28,7 @@ from __future__ import annotations
 import argparse
 import collections
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -79,6 +84,86 @@ def save_dump(folder: Path, rows: list, release: dict, proteins: list) -> None:
     (folder / "protein.json").write_text(json.dumps(proteins))
 
 
+MANE_GFF = ("https://ftp.ncbi.nlm.nih.gov/refseq/MANE/MANE_human/release_1.5/"
+            "MANE.GRCh38.v1.5.refseq_genomic.gff.gz")
+
+# A RefSeq transcript as MANE's GFF files a copy of it: `NM_000937.5-2`.
+_COPY = re.compile(r"^(N[MR]_\d+\.\d+)-\d+$")
+
+
+def _accession(named: str) -> str:
+    """The transcript's accession, without the number of the copy."""
+    found = _COPY.match(named)
+    return found.group(1) if found else named
+
+
+def read_gff(path: Path) -> dict:
+    """MANE's transcripts, by RefSeq accession: the mRNA's span and strand,
+    and its exons and its coding stretches, as the genome numbers them."""
+    import gzip
+
+    found: dict = {}
+    with gzip.open(path, "rt", encoding="utf-8") as stream:
+        for line in stream:
+            if line.startswith("#"):
+                continue
+            columns = line.rstrip("\n").split("\t")
+            if len(columns) < 9 or columns[2] not in ("mRNA", "exon", "CDS"):
+                continue
+            attributes = dict(item.split("=", 1) for item in columns[8].split(";")
+                              if "=" in item)
+            named = attributes.get("ID" if columns[2] == "mRNA" else "Parent", "")
+            if not named.startswith("rna-"):
+                continue
+            # A transcript MANE annotates on a patch scaffold is filed as a
+            # copy of its accession (`rna-NM_000937.5-2`).
+            entry = found.setdefault(_accession(named[4:]), {"exons": [], "cds": []})
+            start, end = int(columns[3]), int(columns[4])
+            if columns[2] == "mRNA":
+                entry.update(start=start, end=end, strand=1 if columns[6] == "+" else -1)
+            else:
+                entry["exons" if columns[2] == "exon" else "cds"].append((start, end))
+    return found
+
+
+# A run of bases, made up: the census's records are drawn at the DNA's stop,
+# whose letters are only ever the record's own.
+_BASES = "ACGTTGCAAGCTGATCCTAGGATCCAGTCAGTTCAAGCTTGGCCATGCATCGATCGTACGTAAGGCTTACGG"
+
+
+def record_of(row: dict, transcript: dict) -> dict:
+    """A record for the app's check of the census, in the record track's own
+    shape (`mock/build_gene_record.py`'s): MANE Select's exons and coding
+    stretches on the gene's own strand, numbered from its 5′ end, its bases
+    made up, and its introns shortened past the gene page's budget exactly as
+    the builder shortens a real record's (`intron_scale`, `compress`). Raises
+    ValueError where its exons alone are over the budget, as the builder does."""
+    from pipeline.mock import build_gene_record as builder
+    from pipeline.targets import GENE_PAGE_BUDGET_BP
+
+    start, end, strand = transcript["start"], transcript["end"], transcript["strand"]
+
+    def own(a: int, b: int) -> tuple[int, int]:
+        return (a - start + 1, b - start + 1) if strand > 0 else (end - b + 1, end - a + 1)
+
+    exons = sorted(own(a, b) for a, b in transcript["exons"])
+    coding = sorted(own(a, b) for a, b in transcript["cds"])
+    span = end - start + 1
+    payload = {
+        "gene": row["gene"],
+        "location": {"start": 1, "end": span, "strand": 1},
+        "sequence": (_BASES * (span // len(_BASES) + 1))[:span],
+        "exons": [{"number": n, "start": a, "end": b} for n, (a, b) in enumerate(exons, 1)],
+        "transcript": {"segments": [{"start": a, "end": b} for a, b in exons]},
+        "protein": {"segments": [{"start": a, "end": b} for a, b in coding],
+                    "translation": "M" * max(1, row.get("length") or 1),
+                    "product": row.get("name")},
+        "peptides": [],
+    }
+    scale = builder.intron_scale(payload, GENE_PAGE_BUDGET_BP)
+    return builder.compress(payload, scale) if scale < 1.0 else payload
+
+
 def target_for(row: dict, slug: str) -> Target:
     """The `Target` the resolver makes for [row], as far as the check reads it:
     its names and the record it would cut (`source_for`)."""
@@ -88,14 +173,18 @@ def target_for(row: dict, slug: str) -> Target:
 
 
 def survey(rows: list, release: dict, proteins: list, snapshot: locus_inputs.Inputs,
-           out: Path) -> dict:
-    """Bake and check every buildable row; write each track under [out]."""
+           out: Path, gff: dict | None = None) -> dict:
+    """Bake and check every buildable row; write each track under [out], and
+    with [gff] (`read_gff`) a record for each, for the app's check."""
     curated = {p["gene"]: p["slug"] for p in proteins if p.get("catalog_order") is not None}
     offered = [row for row in rows if row["buildable"]]
     folder = out / "locus"
     folder.mkdir(parents=True, exist_ok=True)
     uniprot_source = {"release": release["uniprot"]}
     tracks, refused, failed, problems = {}, [], [], []
+    records, unrecorded = 0, []
+    if gff is not None:
+        (out / "records").mkdir(parents=True, exist_ok=True)
     for row in offered:
         slug = curated.get(row["gene"]) or slug_for(row["gene"])
         try:
@@ -113,10 +202,24 @@ def survey(rows: list, release: dict, proteins: list, snapshot: locus_inputs.Inp
         problems += check_locus.problems_of(target, track)
         (folder / f"{slug}_locus.json").write_bytes(bake_locus.encode(track))
         tracks[slug] = track
+        if gff is not None:
+            transcript = gff.get(row["refseq_nuc"] or "")
+            if transcript is None:
+                unrecorded.append((slug, "MANE's GFF has no transcript " + str(row["refseq_nuc"])))
+                continue
+            try:
+                record = record_of(row, transcript)
+            except ValueError as exc:
+                unrecorded.append((slug, str(exc)))
+                continue
+            (out / "records" / f"{slug}_record.json").write_text(
+                json.dumps(record, separators=(",", ":")))
+            records += 1
     (out / "refused.json").write_text(json.dumps(refused, indent=1))
     (out / "failed.json").write_text(json.dumps(failed, indent=1))
     return {"offered": len(offered), "curated": sorted(curated.values()), "tracks": tracks,
-            "refused": refused, "failed": failed, "problems": problems}
+            "refused": refused, "failed": failed, "problems": problems,
+            "records": records, "unrecorded": unrecorded}
 
 
 def _tied(levels: dict) -> bool:
@@ -155,6 +258,8 @@ def summary_of(found: dict) -> dict:
     curated = set(found["curated"])
     ties = {slug: ties_of(t) for slug, t in tracks.items()}
     return {
+        "records": found.get("records", 0),
+        "unrecorded": found.get("unrecorded", []),
         "v3_changed": len(changed),
         "v3_changed_from": dict(count(str(v2[slug]["tissue_from"]) for slug in changed)),
         "v3_changed_matched_by_mane": sum(
@@ -198,6 +303,8 @@ def main(arguments: list[str] | None = None) -> int:
     parser.add_argument("--save-dump", type=Path, default=None)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--gene-info", type=Path, default=None)
+    parser.add_argument("--gff", type=Path, default=None,
+                        help="MANE v1.5's genomic GFF: writes a record for the app's check")
     args = parser.parse_args(arguments)
 
     rows, release, proteins = (read_live(BACKEND / ".env") if args.live
@@ -206,7 +313,8 @@ def main(arguments: list[str] | None = None) -> int:
         save_dump(args.save_dump, rows, release, proteins)
     snapshot = locus_inputs.load()
     args.out.mkdir(parents=True, exist_ok=True)
-    found = survey(rows, release, proteins, snapshot, args.out)
+    found = survey(rows, release, proteins, snapshot, args.out,
+                   read_gff(args.gff) if args.gff else None)
     summary = {"index": release, "locus_inputs": snapshot.sha256, **summary_of(found)}
     if args.gene_info:
         verdicts = verify_locus.verify(list(found["tracks"].values()), snapshot,
@@ -216,7 +324,7 @@ def main(arguments: list[str] | None = None) -> int:
     (args.out / "summary.json").write_text(json.dumps(summary, indent=1, default=str))
     for key, value in summary.items():
         if key in ("ncbi_differences", "atlas_named_otherwise", "placed", "check_problems",
-                   "v3_tied_genes", "no_tissue"):
+                   "v3_tied_genes", "no_tissue", "unrecorded"):
             print(f"{key}: {len(value)}")
             for item in value[:40]:
                 print(f"    {item}")
