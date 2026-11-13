@@ -250,8 +250,12 @@ the constraint track goes from `pending` to `ready`. A resolved protein has a
 row like any other but never joins `/catalog`, which stays the twenty.
 
 Two readers asking for one gene make one request. A request costs GPU time and
-the service has no auth, so a day's are capped (`RESOLVES_PER_DAY`, default
-50; past it, 429). After writing a request the service calls the resolver's
+the service has no auth, so asks are capped, each past its cap a 429 (`SECURITY.md`):
+a day's (`RESOLVES_PER_DAY`, default 20) and one install's
+(`RESOLVES_PER_INSTALL_PER_DAY`, default 5), counted in `spend_ledger`, which no discard
+deletes, with a stopped protein's scoring asked again counted too; the proteins held
+(`MAX_BUILT_PROTEINS`, default 200); and Modal's budget (`app/budget.py`), which must
+still hold a whole build's worst case. After writing a request the service calls the resolver's
 wake URL (`MODAL_WAKE_URL`, with a Modal proxy auth token in `MODAL_KEY` and
 `MODAL_SECRET`); unset, the resolver's five-minute schedule takes it. A Mac's
 worker is not woken: it asks the queue every minute.
@@ -259,14 +263,19 @@ worker is not woken: it asks the queue every minute.
 
 ## Rate limiting
 
-Not implemented here, and not needed yet: Biopython already sleeps ~0.37s between
-calls to stay under NCBI's 3 requests/second limit for keyless clients. Add a real
-limiter once this serves more than one developer.
+`app/guard.py` holds every request, before a route sees it, to a body of 16 KB
+(`MAX_BODY_BYTES`) and to so many requests a minute: 240 a client
+(`REQUESTS_PER_MINUTE`), 30 of them POSTs (`POSTS_PER_MINUTE`), 3,000 for the
+whole service (`SERVICE_REQUESTS_PER_MINUTE`); past one, a 429 with `Retry-After`.
+`/health` and `/health/db` are never counted. `/gene/{id}/{gene}` reads NCBI at
+most 60 times an hour (`GENE_FETCHES_PER_HOUR`), and Biopython still spaces its
+calls ~0.37 s apart. `SECURITY.md` has every limit and why.
 
 ## CORS
 
-`allow_origins=["*"]`, so `flutter run -d chrome` works. That is fine for a local
-single-user dev service and should be tightened before this is exposed anywhere.
+`allow_origins=["*"]` with no credentials: the service has no cookies or
+accounts, so a page elsewhere can read only what anyone can, and
+`flutter run -d chrome` works.
 
 ## Deliberately not built
 
@@ -278,8 +287,10 @@ client needs one yet.
 
 ```
 app/
-  main.py             FastAPI app: Entrez.email, socket timeout, CORS, router,
-                      pool lifespan, /health and /health/db
+  main.py             FastAPI app: Entrez.email, socket timeout, guard, CORS,
+                      router, pool lifespan, /health and /health/db
+  guard.py            body size and requests a minute, before every route
+  budget.py           Modal's budget for builds on demand, read by both sides
   config.py           pydantic-settings; NCBI_EMAIL required, DATABASE_URL optional
   db.py               the psycopg connection pool; sync, to match the read path
   entrez_client.py    the Entrez.efetch wrapper; fetch and parse kept separate

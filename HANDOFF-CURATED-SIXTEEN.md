@@ -63,13 +63,13 @@ print them. Residues: placed / in the span drawn.
 | 53 | gas6 | GAS6 | Q14393 | blood vessel → no cell, the tissue's own (endothelial) | tissue enriched | 5VXZ X-ray 2.30 Å, 369/388 | domain only: laminin G-like 1–2, 288–675; 2 bridges |
 
 Re-run the structure check with
-`NCBI_EMAIL=gentiannurce@gmail.com .venv/bin/python scripts/dry_fold.py --out <dir> S100P LALBA SLPI NPC2 FGF19 FABP6 SFTPD PADI6 CASR ACP3 PTGES LOXL2 CKMT2 PAEP ALOX12 GAS6`.
+`NCBI_EMAIL=<your address> .venv/bin/python scripts/dry_fold.py --out <dir> S100P LALBA SLPI NPC2 FGF19 FABP6 SFTPD PADI6 CASR ACP3 PTGES LOXL2 CKMT2 PAEP ALOX12 GAS6`.
 The 2026-10-25 run's files, while this Mac keeps them, are in
 `/private/tmp/claude-501/-Users-gentiannurce-Desktop-HelixPeek/8b7eb047-13f2-4c76-8992-68e49befd8f9/scratchpad/`:
 `folds/report.md` and `folds/report.json`, and the Atlas scan, `organ_scan.json`. Draft with:
 
 ```sh
-NCBI_EMAIL=gentiannurce@gmail.com .venv/bin/python scripts/draft_curated.py --out <dir> \
+NCBI_EMAIL=<your address> .venv/bin/python scripts/draft_curated.py --out <dir> \
     S100P=s100p@1J55 LALBA=lactalbumin@3B0O SLPI=slpi@4DOQ NPC2=npc2@5KWY \
     FGF19=fgf19@2P23 FABP6=fabp6@5L8O SFTPD=surfactantd@1PWB PADI6=padi6@25YL \
     CASR=casr@7M3G ACP3=acp3@8XJ4 PTGES=mpges1@5TL9 LOXL2=loxl2@5ZE3 \
@@ -230,7 +230,7 @@ Each goes into the verification section, with what was done about it.
      (chains, domains, proteins), "lysozyme" or "kinase".
    - `restart`ed the worker on the new tree (queue empty).
 2. **Bake.** For each:
-   `NCBI_EMAIL=gentiannurce@gmail.com .venv/bin/python pipeline/bake_curated.py --target <slug>`
+   `NCBI_EMAIL=<your address> .venv/bin/python pipeline/bake_curated.py --target <slug>`
    (`--dry-run` prints the commands, `--from <step>` resumes). Its last step checks that row
    alone. Then the gates, by hand:
    - `check_assets.py`, `folding/check_folding.py` and `locus/check_locus.py` with no
@@ -370,7 +370,7 @@ Each goes into the verification section, with what was done about it.
 ## Environment
 
 - Every bake environment and command is in `pipeline/README.md`.
-- `NCBI_EMAIL=gentiannurce@gmail.com` goes in the command's environment only.
+- `NCBI_EMAIL=<your address>` goes in the command's environment only.
 - `ALPHAGENOME_API_KEY` is in `~/.env`. AlphaGenome meters requests per minute: the impact
   bake cuts its windows to 20 kb, paces them and retries (`bake_impact.CHUNK_BP`), so bake one
   protein at a time.

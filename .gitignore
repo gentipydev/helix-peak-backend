@@ -1,4 +1,19 @@
 .env
+# Any other environment file, and any credential, is never committed; the
+# template is (security review, 2026-11-13). GitHub's push protection is on as
+# well, for the keys it knows.
+.env.*
+!.env.example
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+*.jks
+*.keystore
+secrets.json
+service-account*.json
+.modal.toml
 
 __pycache__/
 *.py[cod]

@@ -19,6 +19,9 @@
 
 name: Keep alive
 
+# It only runs curl: its token needs nothing.
+permissions: {}
+
 on:
   schedule:
     - cron: "*/10 * * * *"   # the web service

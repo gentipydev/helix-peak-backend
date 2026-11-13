@@ -54,10 +54,15 @@ differs from storage. A mismatch means the refactor changed data. Stop; never up
   `discard_request` row for the resolver, which holds the storage key, to delete its objects
   (`pipeline/resolver/forget.py`, at the top of every sweep). It names bytes and never carries
   them: a ready track resolves to a public Supabase storage URL the client fetches directly.
-- Is not: authenticated (there is no auth), rate limited (Biopython's ~0.37 s spacing between
-  Entrez calls is the only throttle; resolve requests alone are capped per day,
-  `RESOLVES_PER_DAY`) or CORS-restricted (`allow_origins=["*"]`). It holds no
-  service_role key; rows are reached through `DATABASE_URL` only. It resolves nothing itself:
+- Is not: authenticated (there is no auth) or CORS-restricted (`allow_origins=["*"]`, no
+  credentials). What it may cost is bounded instead (`SECURITY.md`, 2026-11-13): every
+  request by `guard.py` (a 16 KB body; per client and service-wide requests a minute, the
+  health checks exempt); `/gene` to one gene-sized accession, 8 MB read, 60 NCBI reads an hour
+  and a 64 MB cache; and every ask by `spend_ledger` (0015), which no discard deletes: 20 a
+  day (`RESOLVES_PER_DAY`), 5 per install, 200 proteins held, and a whole build's worst case
+  within Modal's budget (`budget.py`), which the resolver holds each paid call to as well.
+  It holds no service_role key; rows are reached through `DATABASE_URL` only, and
+  Supabase's `anon`/`authenticated` roles have no privilege in `public` (0016). It resolves nothing itself:
   a request is a row the resolver (`pipeline/resolver/`) works, on Modal, on the dev Mac, or on
   both. The service only wakes Modal's (`MODAL_WAKE_URL`, proxy auth); the Mac's asks the queue
   every minute. `/catalog/search`'s `candidates` stays empty.
@@ -68,6 +73,13 @@ differs from storage. A mismatch means the refactor changed data. Stop; never up
 
 - `main.py`: wiring. Entrez email and tool, socket timeout, CORS, lifespan (pool plus `genbank_record`), health endpoints.
 - `config.py`: pydantic-settings. `NCBI_EMAIL` has no default, so importing without it fails by design.
+  The caps and limits below have safe defaults, so they hold where Render's environment says nothing.
+- `guard.py`: ASGI middleware before every route: body size, requests a minute per client and
+  service-wide (429 with `Retry-After`), `nosniff`/`DENY`/`no-referrer` headers. Counts are this
+  process's; the suite runs with them off (the root `conftest.py`).
+- `budget.py`: what builds on demand may cost on Modal (`DAY_USD`, `MONTH_USD`, `BUILD_USD`) and
+  what they have (`spend_ledger`): read by the service and by `modal_app.py`, which reserves each
+  paid call's worst case before it claims anything and settles what it cost.
 - `db.py`: optional sync psycopg pool, opened in the lifespan. `None` when `DATABASE_URL` is unset.
 - `entrez_client.py`: the one `Entrez.efetch` call. Fetch-as-text and parse stay apart so the cache can store text.
 - `record_cache.py`: read-through cache of whole GenBank records by accession. Best-effort and self-creating.
@@ -92,7 +104,8 @@ differs from storage. A mismatch means the refactor changed data. Stop; never up
   builds since 2026-11-13 (its Build on demand tab is a search alone); this stays for installs
   older than that.
 - `resolves.py`: `/proteins/resolve`. What an ask means (ready, pending, refused, failed, unavailable,
-  buildable), the `resolve_request` row, the daily cap and the best-effort wake, and how far a
+  buildable), the `resolve_request` row, the caps (each a 429, counted in `spend_ledger` under an
+  advisory lock, resumes included) and the best-effort wake, and how far a
   build has got (`build`: step, residues scored, seconds left), read from the request and the
   constraint bake's progress (`0010`), which the worker writes as the scorer prints it, and
   from the AVI and ClinVar bakes made before it (step `evidence`); and stopping a build for

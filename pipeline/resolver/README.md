@@ -351,8 +351,15 @@ From the repository root, in order.
    `MODAL_SECRET` to the token's key and secret. Optional: without them the
    five-minute schedule still takes every request, just later.
 
-5. **The cap.** `RESOLVES_PER_DAY` (default 50) on Render bounds a day's
-   requests, which is what bounds the GPU bill.
+5. **The caps and the budget.** `RESOLVES_PER_DAY` (default 20) and
+   `RESOLVES_PER_INSTALL_PER_DAY` (default 5) on Render bound a day's asks, a
+   stopped protein's scoring asked again included, counted in `spend_ledger`
+   (0015), which no discard deletes. What bounds the bill is the budget in
+   `app/budget.py` ($2 a rolling day, $10 a calendar month): each of `score`,
+   `fold` and `evidence` reserves its worst case (its timeout at Modal's rates,
+   on the dearest GPU) before it claims anything and settles what it cost when
+   it ends, and the sweep starts none whose worst case would not fit; its bake
+   waits, queued. `SECURITY.md` at the repository's root has the numbers.
 
 ### The first build
 
