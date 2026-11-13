@@ -211,3 +211,61 @@ def test_the_limit_is_bounded(client, fake_pool):
     assert client.get("/proteins/built?limit=200").status_code == 200
     client.get("/proteins/built")
     assert _pages(pool)[-1]["limit"] == 51
+
+
+# --- one phone's stopped builds still to decide (`POST /proteins/stopped`) -----
+
+
+class StoppedPool:
+    """Answers `suggest._STOPPED_BY` alone, with the rows given for one asker."""
+
+    def __init__(self, rows=(), failing=False):
+        self.rows = list(rows)
+        self.failing = failing
+        self.statements = []
+
+    def connection(self):
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def execute(self, sql, params=None):
+        if self.failing:
+            raise OSError("connection closed")
+        flat = " ".join(sql.split())
+        self.statements.append((flat, params))
+        assert "j.state = 'stopped' and j.kept_at is null and j.asker = %(asker)s" in flat
+        return FakeCursor([row[:9] for row in self.rows])
+
+
+def test_a_phones_stopped_builds_are_ready_suggestions_that_say_stopped(client, monkeypatch):
+    pool = StoppedPool(rows=[TTR, PRL])
+    monkeypatch.setattr(db, "pool", pool)
+    response = client.post("/proteins/stopped", json={"asker": "install-a"})
+    assert response.status_code == 200
+    said = response.json()
+    assert said["next"] is None
+    assert [(p["gene"], p["status"], p["slug"], p["stopped"], p["building"])
+            for p in said["proteins"]] == [("TTR", "ready", "ttr", True, False),
+                                           ("PRL", "ready", "prl", True, False)]
+    assert pool.statements[0][1] == {"asker": "install-a", "limit": 50}
+
+
+def test_none_stopped_is_an_empty_list(client, monkeypatch):
+    monkeypatch.setattr(db, "pool", StoppedPool())
+    assert client.post("/proteins/stopped", json={"asker": "install-a"}).json() == {
+        "proteins": [], "next": None}
+
+
+def test_the_stopped_list_says_who_asks(client, monkeypatch):
+    monkeypatch.setattr(db, "pool", StoppedPool())
+    assert client.post("/proteins/stopped", json={}).status_code == 422
+
+
+def test_an_unreadable_stopped_list_is_unavailable(client, monkeypatch):
+    monkeypatch.setattr(db, "pool", StoppedPool(failing=True))
+    assert client.post("/proteins/stopped", json={"asker": "install-a"}).status_code == 503

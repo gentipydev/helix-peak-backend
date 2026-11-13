@@ -139,6 +139,30 @@ scorer (`worker.Stopped`). The protein opens without scores, suggest marks it
 asked. A record being written (seconds) cannot be stopped, and a stop that
 lands as the track is made is too late for it.
 
+Once stopped, the same reader decides (`0014`; the app's card offers Resume,
+Keep and Discard, and comes back after a restart until one is chosen):
+
+- **Resume** is asking again, as above.
+- **Keep** (`POST /proteins/resolve/{gene}/keep`) keeps the protein as it is,
+  without its ESM-2 track: `kept_at` on the stopped bake. It still opens
+  unscored, and suggest still marks it `stopped`.
+- **Discard** (`POST /proteins/resolve/{gene}/discard`) deletes everything
+  built for it: the service deletes its rows at once (the protein, with its
+  aliases, tracks, bakes and folds, and every request for its gene), refusing
+  while a part of it is still being made, and writes a `discard_request` row.
+  The service holds no storage key, so the next sweep deletes its objects
+  (`forget.purge_discarded`, first thing in `worker.sweep`, on Modal and on the
+  Mac): those named as its own (`<folder>/<slug>.<sha12>.<ext>`) that no row
+  names and that were made before the discard, so a build of the same gene
+  after it keeps every object. A build stopped before anything was built has
+  only its request, which goes.
+- `POST /proteins/stopped` (`asker` in the body, never in a URL) lists one
+  install's stopped builds with no decision yet: what its app pins again.
+
+Only the install that stopped a build may keep or discard it, and only a
+stopped build is either: a curated protein, a protein built whole, or one kept
+already answers 409 with the reason.
+
 ## The fold: an experimental entry, else AlphaFold DB's model
 
 A protein's fold page draws a model, and the twenty's are cut from entries

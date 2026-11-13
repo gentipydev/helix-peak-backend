@@ -73,7 +73,8 @@ def conn(database_url):
     with store.connect(database_url) as connection:
         connection.execute(
             "truncate resolve_request, bake_job, protein_track, protein_alias, protein, "
-            "protein_index_term, protein_index, protein_index_release restart identity cascade")
+            "protein_index_term, protein_index, protein_index_release, discard_request "
+            "restart identity cascade")
         connection.execute(
             """
             insert into protein_index (uniprot, gene, name, length, annotation_score, existence,
@@ -451,6 +452,134 @@ def test_a_build_is_stopped_by_the_phone_that_asked_and_scored_again_when_asked(
         assert worker.score_next(conn, storage, score=_constraint)["state"] == "ready"
         assert resolves.current("INS")["build"]["step"] == "done"
         assert _builds(conn) == set()
+
+
+class ListingStorage(Storage):
+    """Storage that lists and deletes as `forget.Storage` does, each object made a
+    minute before it was put (a clock between this test and the database's that
+    runs a little apart cannot make a fresh object look newer than a discard)."""
+
+    def __init__(self):
+        super().__init__()
+        self.made = {}
+        self.deleted = []
+
+    def put(self, bucket, path, payload, content_type):
+        from datetime import datetime, timedelta, timezone
+
+        super().put(bucket, path, payload, content_type)
+        self.made[(bucket, path)] = datetime.now(timezone.utc) - timedelta(minutes=1)
+
+    def folders(self, bucket):
+        return sorted({path.split("/")[0] for b, path in self.objects if b == bucket})
+
+    def stamped(self, bucket, folder, start):
+        return [(path, self.made[(b, path)]) for b, path in sorted(self.objects)
+                if b == bucket and path.startswith(folder + "/" + start)]
+
+    def delete(self, bucket, paths):
+        for path in paths:
+            del self.objects[(bucket, path)]
+            self.deleted.append((bucket, path))
+
+
+def test_a_stopped_build_is_kept_or_discarded_by_its_phone_and_comes_back_till_then(
+        conn, offline, database_url, monkeypatch):
+    from app import resolves, suggest
+
+    storage = ListingStorage()
+
+    def stopped_mid_scoring(target, record, report):
+        report(25, 110, 30.0)
+        resolves.stop("INS", "install-a")
+        report(50, 110, 20.0)
+        raise AssertionError("the scorer went on after it was stopped")
+
+    with _service(database_url, monkeypatch):
+        resolves.request("INS", asker="install-a")
+        worker.resolve_next(conn, storage, fetch_entry=lambda accession: offline(_body()))
+        assert worker.score_next(conn, storage, score=stopped_mid_scoring)["state"] == "stopped"
+
+        # Stopped and undecided: its phone's to decide, and listed for it alone.
+        assert [p["gene"] for p in suggest.stopped_by("install-a")] == ["INS"]
+        assert suggest.stopped_by("install-b") == []
+        with pytest.raises(resolves.NotYours):
+            resolves.keep("INS", "install-b")
+        with pytest.raises(resolves.NotYours):
+            resolves.discard("INS", "install-b")
+
+        # Kept: it opens unscored as it did, and is decided.
+        said = resolves.keep("INS", "install-a")
+        assert (said["state"], said["slug"], said["build"]["stopped"]) == ("ready", "ins", True)
+        assert suggest.stopped_by("install-a") == []
+        assert _builds(conn) == {("ins", "stopped")}
+        with pytest.raises(resolves.NotDecidable):
+            resolves.keep("INS", "install-a")
+
+        # Resumed and stopped again: a new decision to make.
+        assert resolves.request("INS", asker="install-a")[1] is True
+        assert suggest.stopped_by("install-a") == []
+        resolves.stop("INS", "install-a")
+        assert [p["gene"] for p in suggest.stopped_by("install-a")] == ["INS"]
+
+        # Discarded: its rows go at once, its objects at the next sweep.
+        said = resolves.discard("INS", "install-a")
+        assert (said["state"], said["slug"]) == ("buildable", "ins")
+        assert resolves.current("INS")["state"] == "buildable"
+        for table in ("protein", "protein_track", "protein_alias", "bake_job", "resolve_request"):
+            assert _one(conn, f"select count(*) from {table}") == (0,), table
+        assert _one(conn, "select gene, slug, asker, purged_at is null from discard_request") == \
+            ("INS", "ins", "install-a", True)
+        assert storage.objects
+
+        everything = sorted(storage.objects)
+        worker.sweep(conn, storage, limit=0)
+        assert storage.objects == {}
+        assert sorted(storage.deleted) == everything
+        assert _one(conn, "select purged_at is not null, objects from discard_request") == \
+            (True, len(everything))
+        # Purged once: the next sweep has nothing to do.
+        worker.sweep(conn, storage, limit=0)
+        assert len(storage.deleted) == len(everything)
+
+
+def test_a_build_stopped_before_it_was_built_is_withdrawn_by_discard(
+        conn, database_url, monkeypatch):
+    from app import resolves
+
+    with _service(database_url, monkeypatch):
+        resolves.request("INS", asker="install-a")
+        resolves.stop("INS", "install-a")
+        with pytest.raises(resolves.NotDecidable):
+            resolves.keep("INS", "install-a")
+        with pytest.raises(resolves.NotYours):
+            resolves.discard("INS", "install-b")
+        assert resolves.discard("INS", "install-a")["state"] == "buildable"
+        assert _one(conn, "select count(*) from resolve_request") == (0,)
+        assert _one(conn, "select slug, purged_at is not null, objects from discard_request") == \
+            (None, True, 0)
+
+
+def test_a_part_still_being_made_keeps_a_discard_from_deleting_anything(
+        conn, offline, database_url, monkeypatch):
+    from app import resolves
+
+    storage = Storage()
+
+    def stopped_mid_scoring(target, record, report):
+        report(25, 110, 30.0)
+        resolves.stop("INS", "install-a")
+        report(50, 110, 20.0)
+
+    with _service(database_url, monkeypatch):
+        resolves.request("INS", asker="install-a")
+        worker.resolve_next(conn, storage, fetch_entry=lambda accession: offline(_body()))
+        worker.score_next(conn, storage, score=stopped_mid_scoring)
+        conn.execute("insert into bake_job (slug, kind) values ('ins', 'structure')")
+        with pytest.raises(resolves.NotDecidable, match="Its fold is still being made"):
+            resolves.discard("INS", "install-a")
+        assert _one(conn, "select count(*) from protein") == (1,)
+        assert _one(conn, "select count(*) from discard_request") == (0,)
 
 
 def test_a_refused_protein_writes_nothing_but_the_reason(conn, offline):

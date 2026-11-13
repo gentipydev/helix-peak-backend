@@ -214,6 +214,18 @@ def built_proteins(
     return {"proteins": proteins, "next": next_cursor}
 
 
+@router.post("/proteins/stopped", response_model=BuiltResponse)
+def stopped_proteins(asked: StopRequest) -> dict:
+    """The builds the asking install (`asker`) stopped and has not resumed, kept
+    or discarded since, newest first: what its app pins again after a restart.
+
+    A POST, so the install's id is in the body and never in a URL or a log.
+    """
+    with _catalog_errors():
+        proteins = suggest.stopped_by(asked.asker)
+    return {"proteins": proteins, "next": None}
+
+
 def _not_indexed(gene: str) -> HTTPException:
     return HTTPException(
         status_code=404,
@@ -265,6 +277,49 @@ def stop_resolve(gene: str, asked: StopRequest) -> dict:
         raise HTTPException(status_code=403,
                             detail="Only the phone that asked for it can stop it.")
     except resolves.NothingToStop as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    if said is None:
+        raise _not_indexed(gene)
+    return said
+
+
+@router.post("/proteins/resolve/{gene}/keep", response_model=ResolveResponse)
+def keep_resolve(gene: str, asked: StopRequest) -> dict:
+    """Keep a stopped build as it is, without its ESM-2 track, for the install
+    that stopped it (`asker`).
+
+    200 with what it is now; 403 where another install stopped it; 409 where
+    there is no stopped build of it to keep, saying why.
+    """
+    try:
+        with _catalog_errors():
+            said = resolves.keep(gene.strip(), asked.asker)
+    except resolves.NotYours:
+        raise HTTPException(status_code=403,
+                            detail="Only the phone that stopped it can keep it.")
+    except resolves.NotDecidable as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    if said is None:
+        raise _not_indexed(gene)
+    return said
+
+
+@router.post("/proteins/resolve/{gene}/discard", response_model=ResolveResponse)
+def discard_resolve(gene: str, asked: StopRequest) -> dict:
+    """Delete everything built for a stopped build, for the install that
+    stopped it (`asker`): the gene then reads ``buildable``.
+
+    200 with what it is now; 403 where another install asked; 409 where there
+    is no stopped build of it, or a part of it is still being made, saying
+    which. Its objects in storage are deleted by the resolver soon after.
+    """
+    try:
+        with _catalog_errors():
+            said = resolves.discard(gene.strip(), asked.asker)
+    except resolves.NotYours:
+        raise HTTPException(status_code=403,
+                            detail="Only the phone that asked for it can discard it.")
+    except resolves.NotDecidable as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     if said is None:
         raise _not_indexed(gene)

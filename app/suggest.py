@@ -33,6 +33,11 @@ first. One still being built is left out until it is done, since the app
 watches that one rather than opens it; one whose scoring was stopped is kept,
 and says so.
 
+And one install's own stopped builds still to decide (`stopped_by`,
+`POST /proteins/stopped`): those whose scoring it stopped, and that it has not
+resumed, kept or discarded since (`resolves.keep`, `resolves.discard`), so the
+app can pin their cards again after it restarts.
+
 Reads only, and like the catalog it has no second source: an unreadable index is
 reported as unavailable, never as an empty one.
 """
@@ -291,3 +296,37 @@ def built(limit: int = 50, before: Optional[str] = None) -> Tuple[List[dict], Op
     ]
     next_cursor = _cursor(rows[-1][9], rows[-1][6]) if more else None
     return proteins, next_cursor
+
+
+# One install's proteins whose latest constraint bake it stopped, with nothing
+# on the track since and nothing decided (`kept_at`, 0014): newest first.
+_STOPPED_BY = """
+select {row}
+from protein p
+join protein_index i on i.uniprot = p.uniprot and i.gene = p.gene
+join lateral (
+    select b.state, b.asker, b.kept_at from bake_job b
+    where b.slug = p.slug and b.kind = 'constraint'
+    order by b.requested_at desc, b.id desc limit 1
+) j on true
+join protein_track t on t.slug = p.slug and t.kind = 'constraint' and t.state = 'absent'
+where p.catalog_order is null and p.taxon_id = 9606 and i.gene <> ''
+  and j.state = 'stopped' and j.kept_at is null and j.asker = %(asker)s
+order by p.resolved_at desc, p.slug
+limit %(limit)s
+""".format(row=_ROW)
+
+
+def stopped_by(asker: str, limit: int = 50) -> List[dict]:
+    """The builds `asker` stopped and has not decided on since, newest first,
+    each a ``ready`` suggestion with ``stopped``."""
+    pool = db.pool
+    if pool is None:
+        raise CatalogUnavailable("No database is configured for the protein index.")
+    try:
+        with pool.connection() as conn:
+            rows = conn.execute(_STOPPED_BY, {"asker": asker, "limit": limit}).fetchall()
+    except Exception as exc:
+        logger.exception("Stopped builds read failed")
+        raise CatalogUnavailable("The stopped builds could not be read.") from exc
+    return [_suggestion(row, stopped=True) for row in rows]

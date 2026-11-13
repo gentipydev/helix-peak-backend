@@ -67,7 +67,7 @@ from pathlib import Path
 from typing import Callable, NamedTuple, Optional, Tuple
 
 from pipeline import paths, uniprot, upload_tracks
-from pipeline.resolver import store
+from pipeline.resolver import forget, store
 from pipeline.structure import pdb_policy
 from pipeline.resolver.resolve import (
     RESOLVER_VERSION, VARIANT_FLOOR, VARIANT_SHARE, Refused, resolve, target_of)
@@ -864,7 +864,8 @@ def clinvar_all(conn, storage, *, limit: int = 20, clinvar: ClinVar) -> list[dic
 
 def sweep(conn, storage, *, limit: int = 10, fetch_entry=uniprot.fetch_entry,
           structures: bool = False, evidence: bool = False) -> dict:
-    """Reap what dead workers held, then resolve up to `limit` requests.
+    """Reap what dead workers held, delete the objects of proteins the service
+    discarded (`forget.purge_discarded`), then resolve up to `limit` requests.
 
     Returns what it did, and how many constraint bakes are waiting, so the
     caller knows whether to start a GPU, and how many structure bakes.
@@ -872,6 +873,7 @@ def sweep(conn, storage, *, limit: int = 10, fetch_entry=uniprot.fetch_entry,
     and ClinVar bakes (`resolve_next`).
     """
     store.reap(conn)
+    forget.purge_discarded(conn, forget.lister(storage))
     resolved = []
     for _ in range(limit):
         outcome = resolve_next(conn, storage, fetch_entry=fetch_entry, structures=structures,

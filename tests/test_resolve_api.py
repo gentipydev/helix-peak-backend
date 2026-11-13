@@ -20,8 +20,9 @@ UNBUILDABLE = ("Q13625", "TP53BP2", False,
 
 
 class FakeCursor:
-    def __init__(self, rows):
+    def __init__(self, rows, rowcount=None):
         self._rows = rows
+        self.rowcount = len(rows) if rowcount is None else rowcount
 
     def fetchone(self):
         return self._rows[0] if self._rows else None
@@ -33,7 +34,8 @@ class FakeCursor:
 class FakePool:
     def __init__(self, protein=None, index=None, latest=None, today=0, queued=True,
                  failing=False, request_build=None, bake_build=None, ask=None, bake=None,
-                 resumable=False, stoppable=True, evidence=False, fold=None):
+                 resumable=False, stoppable=True, evidence=False, fold=None,
+                 stopped_build=None, keepable=True, making=(), deleted=1):
         self.protein = protein
         self.index = index
         self.latest = latest
@@ -58,6 +60,14 @@ class FakePool:
         # under way within the hold, and the seconds since the scoring ended.
         self.fold = fold
         self.fold_read = []
+        # `_STOPPED_BUILD`'s row: (slug, catalog_order, bake id, bake state,
+        # bake asker, kept_at, track state); whether `_KEEP` still finds the
+        # stopped bake; `_MAKING`'s rows; and how many protein rows a discard
+        # deletes.
+        self.stopped_build = stopped_build
+        self.keepable = keepable
+        self.making = list(making)
+        self.deleted = deleted
         self.inserted = []
         self.built = []
         self.written = []
@@ -70,6 +80,9 @@ class FakePool:
 
     def __exit__(self, *exc):
         return False
+
+    def transaction(self):
+        return self
 
     def execute(self, sql, params=None):
         if self.failing:
@@ -117,6 +130,22 @@ class FakePool:
         if flat.startswith("update protein_track set state = 'pending'"):
             self.written.append(("track pending", params))
             return FakeCursor([])
+        if flat.startswith("select p.slug, p.catalog_order, j.id, j.state, j.asker, j.kept_at"):
+            return FakeCursor([self.stopped_build] if self.stopped_build else [])
+        if flat.startswith("update bake_job set kept_at = now()"):
+            self.written.append(("kept", params))
+            return FakeCursor([(params[0],)] if self.keepable else [])
+        if flat.startswith("select 'request' from resolve_request"):
+            return FakeCursor([(kind,) for kind in self.making])
+        if flat.startswith("insert into discard_request"):
+            self.written.append(("discarded", params))
+            return FakeCursor([])
+        if flat.startswith("delete from resolve_request"):
+            self.written.append(("requests deleted", params))
+            return FakeCursor([])
+        if flat.startswith("delete from protein"):
+            self.written.append(("protein deleted", params))
+            return FakeCursor([], rowcount=self.deleted)
         raise AssertionError(f"unexpected statement: {flat}")
 
 
@@ -566,6 +595,130 @@ def test_a_read_of_an_unknown_gene_is_not_found(client, pool):
 def test_a_read_of_an_unreadable_database_is_unavailable(client, pool):
     pool(failing=True)
     assert client.get("/proteins/resolve/BRCA1").status_code == 503
+
+
+# -------------------------------------------------------- keep and discard
+
+
+def _decide(client, what, gene="BRCA1", asker="install-a"):
+    return client.post(f"/proteins/resolve/{gene}/{what}", json={"asker": asker})
+
+
+# A protein built on demand whose scoring install-a stopped, nothing decided.
+STOPPED = ("brca1", None, 7, "stopped", "install-a", None, "absent")
+
+
+def test_keep_says_so_on_the_stopped_bake_and_the_protein_stays_built(client, pool):
+    fake = pool(protein="brca1", index=BRCA1, stopped_build=STOPPED,
+                bake_build=_bake(job="stopped", done=450, total=1863, elapsed=400.0,
+                                 track="absent"))
+    response = _decide(client, "keep")
+    assert response.status_code == 200
+    said = response.json()
+    assert (said["state"], said["slug"], said["build"]["stopped"]) == ("ready", "brca1", True)
+    assert fake.written == [("kept", (7,))]
+
+
+@pytest.mark.parametrize("what, detail", [
+    ("keep", "Only the phone that stopped it can keep it."),
+    ("discard", "Only the phone that asked for it can discard it."),
+])
+@pytest.mark.parametrize("asker", ["install-b", None])
+def test_only_the_phone_that_stopped_it_decides(client, pool, what, detail, asker):
+    fake = pool(protein="brca1", index=BRCA1,
+                stopped_build=("brca1", None, 7, "stopped", asker, None, "absent"))
+    response = _decide(client, what)
+    assert response.status_code == 403
+    assert response.json()["detail"] == detail
+    assert fake.written == []
+
+
+@pytest.mark.parametrize("what", ["keep", "discard"])
+@pytest.mark.parametrize("row, detail", [
+    (("insulin", 0, None, None, None, None, "ready"), "It is a curated protein."),
+    (("brca1", None, 7, "done", "install-a", None, "ready"), "Its build is not stopped."),
+    (("brca1", None, 8, "queued", "install-a", None, "pending"), "Its build is not stopped."),
+    (("brca1", None, 7, "stopped", "install-a", "2026-11-13T17:00:00Z", "absent"),
+     "It was kept as it is."),
+])
+def test_only_a_stopped_build_still_to_decide_is_kept_or_discarded(
+        client, pool, what, row, detail):
+    fake = pool(protein=row[0], index=BRCA1, stopped_build=row)
+    response = _decide(client, what)
+    assert response.status_code == 409
+    assert response.json()["detail"] == detail
+    assert fake.written == []
+
+
+def test_nothing_built_is_nothing_to_keep(client, pool):
+    fake = pool(index=BRCA1, ask=(41, "stopped", "install-a"))
+    response = _decide(client, "keep")
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Nothing of it was built to keep."
+    assert fake.written == []
+
+
+def test_discard_deletes_its_rows_and_leaves_its_objects_to_the_resolver(client, pool):
+    fake = pool(protein="brca1", index=BRCA1, stopped_build=STOPPED)
+    response = _decide(client, "discard")
+    assert response.status_code == 200
+    assert response.json() == {"slug": "brca1", "state": "buildable", "reason": None,
+                               "build": None}
+    assert fake.written == [("discarded", ("BRCA1", "brca1", "install-a")),
+                            ("requests deleted", ("BRCA1",)),
+                            ("protein deleted", ("brca1",))]
+
+
+@pytest.mark.parametrize("making, detail", [
+    (["structure"], "Its fold is still being made. Discard it in a moment."),
+    (["clinvar"], "Its ClinVar track is still being made. Discard it in a moment."),
+    (["request"], "Its gene record is still being made. Discard it in a moment."),
+])
+def test_a_part_still_being_made_is_not_discarded(client, pool, making, detail):
+    fake = pool(protein="brca1", index=BRCA1, stopped_build=STOPPED, making=making)
+    response = _decide(client, "discard")
+    assert response.status_code == 409
+    assert response.json()["detail"] == detail
+    assert fake.written == []
+
+
+def test_a_build_stopped_before_it_was_built_has_its_request_withdrawn(client, pool):
+    fake = pool(index=BRCA1, ask=(41, "stopped", "install-a"))
+    response = _decide(client, "discard")
+    assert response.status_code == 200
+    assert (response.json()["state"], response.json()["slug"]) == ("buildable", "brca1")
+    assert fake.written == [("requests deleted", ("BRCA1",)),
+                            ("discarded", ("BRCA1", "install-a"))]
+
+
+@pytest.mark.parametrize("ask, status", [
+    ((41, "stopped", "install-b"), 403),     # another phone's
+    ((41, "done", "install-a"), 409),        # nothing stopped
+    (None, 409),                             # never asked
+])
+def test_an_unbuilt_request_is_withdrawn_only_by_its_phone_and_only_stopped(
+        client, pool, ask, status):
+    fake = pool(index=BRCA1, ask=ask)
+    assert _decide(client, "discard").status_code == status
+    assert fake.written == []
+
+
+@pytest.mark.parametrize("what", ["keep", "discard"])
+def test_a_decision_for_a_gene_the_index_does_not_hold_is_not_found(client, pool, what):
+    pool()
+    assert _decide(client, what, gene="NOTAGENE").status_code == 404
+
+
+@pytest.mark.parametrize("what", ["keep", "discard"])
+def test_a_decision_says_who_it_is_from(client, pool, what):
+    pool(index=BRCA1)
+    assert client.post(f"/proteins/resolve/BRCA1/{what}", json={}).status_code == 422
+
+
+@pytest.mark.parametrize("what", ["keep", "discard"])
+def test_a_decision_on_an_unreadable_database_is_unavailable(client, pool, what):
+    pool(failing=True)
+    assert _decide(client, what).status_code == 503
 
 
 # ------------------------------------------------------------------ wake

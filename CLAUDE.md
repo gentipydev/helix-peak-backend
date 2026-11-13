@@ -45,9 +45,14 @@ differs from storage. A mismatch means the refactor changed data. Stop; never up
 
 - Is: `/gene/{id}/{gene}` (read-through cache of whole records), `/catalog`, `/catalog/search`,
   `/protein/{slug}`, `/protein/{slug}/tracks`, `/proteins/suggest`, `/proteins/built`, `/proteins/resolve` (POST,
-  GET `/{gene}`, and POST `/{gene}/stop`), `.../impact-explanations`, `/peptide-lm/runs/{name}`,
-  `/health`, `/health/db`.
-  It writes `genbank_record`, and one `resolve_request` row per new ask. It names bytes and never carries
+  GET `/{gene}`, and POST `/{gene}/stop`, `/{gene}/keep`, `/{gene}/discard`), `/proteins/stopped`
+  (POST: one install's stopped builds still to decide), `.../impact-explanations`,
+  `/peptide-lm/runs/{name}`, `/health`, `/health/db`.
+  It writes `genbank_record`, one `resolve_request` row per new ask, and a reader's decision on a
+  build they stopped (0014): Keep is `kept_at` on the stopped bake; Discard deletes the protein's
+  rows (never a curated one's) and every request for its gene at once, and writes a
+  `discard_request` row for the resolver, which holds the storage key, to delete its objects
+  (`pipeline/resolver/forget.py`, at the top of every sweep). It names bytes and never carries
   them: a ready track resolves to a public Supabase storage URL the client fetches directly.
 - Is not: authenticated (there is no auth), rate limited (Biopython's ~0.37 s spacing between
   Entrez calls is the only throttle; resolve requests alone are capped per day,
@@ -167,7 +172,8 @@ runs, these things follow for anyone working in this checkout:
   `structure` and `folding` tracks, and a `fold_generation` row. `scripts/queue_structures.py`
   queues it again for proteins built before (a backfill), `scripts/forget_built.py` deletes
   proteins built on demand whole (rows, requests, objects; never a curated one; all eleven on
-  2026-11-13, at the user's word), and `scripts/fold_rollback.py` puts back
+  2026-11-13, at the user's word; which objects are a protein's is `pipeline/resolver/forget.py`'s,
+  shared with the sweep's purge of discarded proteins), and `scripts/fold_rollback.py` puts back
   an earlier generation.
 - And each protein's AVI and ClinVar tracks, after the model and before the scoring, which
   waits for them (`store.WAITS_FOR`): the twenty's bakers, unchanged, AVI in

@@ -48,6 +48,15 @@ asked is the asking install's own random id, kept on the request and on the
 bake it queues (0011). Stopped while queued, nothing was built and asking
 again starts over. Stopped while ESM-2 was scoring, the protein stays built
 without its track (``absent``), and asking again queues the scoring afresh.
+
+Once stopped, the same reader decides (0014; the user's design of
+2026-11-13): asking again resumes it, `keep` keeps it as it is without its
+ESM-2 track (said on the stopped bake, `kept_at`), and `discard` deletes
+everything built for it, so the gene reads as never asked for. Discard deletes
+the rows here, at once, and leaves the objects to the resolver, which holds
+the storage key (`discard_request`, `worker.purge_discarded`). Until one of the
+three, the build is the reader's to decide, and `suggest.stopped_by` lists it
+for their phone, so its card comes back after the app restarts.
 """
 
 import logging
@@ -72,6 +81,11 @@ class NotYours(Exception):
 
 class NothingToStop(Exception):
     """No build a stop could end is under way; the message says what there is."""
+
+
+class NotDecidable(Exception):
+    """No stopped build is there to keep or discard, or a part of it is still
+    being made; the message says which."""
 
 
 # How long a build may be held from `done` while its first fold is made.
@@ -466,6 +480,173 @@ def stop(gene: str, asker: str, taxon: int = HUMAN) -> Optional[dict]:
     except Exception as exc:
         logger.exception("Stopping the build failed for %r", gene)
         raise CatalogUnavailable("The stop could not be recorded.") from exc
+
+
+# A gene's protein, where one is built on demand or listed, with its latest
+# constraint bake (who asked for it, and whether it was kept) and its track.
+_STOPPED_BUILD = """
+select p.slug, p.catalog_order, j.id, j.state, j.asker, j.kept_at, t.state
+from protein p
+left join lateral (
+    select b.id, b.state, b.asker, b.kept_at from bake_job b
+    where b.slug = p.slug and b.kind = 'constraint'
+    order by b.requested_at desc, b.id desc limit 1
+) j on true
+left join protein_track t on t.slug = p.slug and t.kind = 'constraint'
+where lower(p.gene) = lower(%s) and p.taxon_id = 9606
+"""
+
+_KEEP = """
+update bake_job set kept_at = now()
+where id = %s and state = 'stopped' and kept_at is null
+returning id
+"""
+
+# What of a protein is still being made, by worker: a request for its gene, or
+# a bake of it, queued or running.
+_MAKING = """
+select 'request' from resolve_request
+where lower(gene) = lower(%(gene)s) and state in ('queued', 'running')
+union all
+select kind from bake_job where slug = %(slug)s and state in ('queued', 'running')
+"""
+
+# What a reader is told is still being made, by what makes it.
+_MADE_AS = {
+    "request": "Its gene record",
+    "structure": "Its fold",
+    "impact": "Its AlphaGenome track",
+    "clinvar": "Its ClinVar track",
+    "constraint": "Its ESM-2 track",
+}
+
+_LOCK = """
+select slug from protein where slug = %s and catalog_order is null for update
+"""
+_DISCARDED = """
+insert into discard_request (gene, slug, asker) values (%s, %s, %s)
+"""
+_DISCARDED_UNBUILT = """
+insert into discard_request (gene, slug, asker, purged_at, objects)
+values (%s, null, %s, now(), 0)
+"""
+_FORGET_REQUESTS = """
+delete from resolve_request where lower(gene) = lower(%s)
+"""
+_FORGET_PROTEIN = """
+delete from protein where slug = %s and catalog_order is null
+"""
+
+
+def _stopped(conn, gene: str, asker: str) -> Optional[Tuple[str, int]]:
+    """The slug of `gene`'s protein and its stopped constraint bake, where
+    `asker` stopped its scoring and nothing was decided since; None where no
+    protein of it was built.
+
+    Raises NotYours where another install stopped it (or none that could be
+    named), and NotDecidable where its build is not a stopped one: curated,
+    built whole, being built, or kept already.
+    """
+    row = conn.execute(_STOPPED_BUILD, (gene,)).fetchone()
+    if row is None:
+        return None
+    slug, order, job, state, owner, kept, track = row
+    if order is not None:
+        raise NotDecidable("It is a curated protein.")
+    if state != "stopped" or track != "absent":
+        raise NotDecidable("Its build is not stopped.")
+    if owner is None or owner != asker:
+        raise NotYours()
+    if kept is not None:
+        raise NotDecidable("It was kept as it is.")
+    return slug, job
+
+
+def keep(gene: str, asker: str, taxon: int = HUMAN) -> Optional[dict]:
+    """Keep a stopped build as it is, without its ESM-2 track, for the install
+    that stopped it: its card goes, and it opens unscored, as it did.
+
+    Returns what it is now; None where the index does not hold the gene.
+    Raises NotYours where another install stopped it, and NotDecidable where
+    there is no stopped build of it to keep.
+    """
+    if taxon != HUMAN:
+        return None
+    pool = _require_pool()
+    try:
+        with pool.connection() as conn:
+            said, askable = _current(conn, gene)
+            if said is None and askable is None:
+                return None
+            stopped = _stopped(conn, gene, asker)
+            if stopped is None:
+                raise NotDecidable("Nothing of it was built to keep.")
+            slug, job = stopped
+            if conn.execute(_KEEP, (job,)).fetchone() is None:
+                raise NotDecidable("Its build is not stopped.")
+            said = _said("ready", slug)
+            said["build"] = _build(conn, gene, said)
+            return said
+    except (NotYours, NotDecidable):
+        raise
+    except Exception as exc:
+        logger.exception("Keeping the build failed for %r", gene)
+        raise CatalogUnavailable("The decision could not be recorded.") from exc
+
+
+def discard(gene: str, asker: str, taxon: int = HUMAN) -> Optional[dict]:
+    """Delete everything built for a stopped build, for the install that
+    stopped it, so the gene reads as never asked for (``buildable``).
+
+    Its rows go here, in one transaction with the protein locked: the protein
+    (its aliases, tracks, bakes and folds with it) and every request for the
+    gene. Its objects in storage are left to the resolver, which holds the
+    storage key: a `discard_request` row says which protein's. A build stopped
+    before anything was built has only its request, which goes.
+
+    Returns what it is now; None where the index does not hold the gene.
+    Raises NotYours where another install asked, and NotDecidable where there
+    is no stopped build of it, or a part of it is still being made.
+    """
+    if taxon != HUMAN:
+        return None
+    pool = _require_pool()
+    try:
+        with pool.connection() as conn:
+            said, askable = _current(conn, gene)
+            if said is None and askable is None:
+                return None
+            # One transaction, whether or not the pool's connections commit
+            # each statement: what is read is what is deleted.
+            with conn.transaction():
+                stopped = _stopped(conn, gene, asker)
+                if stopped is None:
+                    latest = conn.execute(_LATEST_ASK, (gene,)).fetchone()
+                    if latest is None or latest[1] != "stopped":
+                        raise NotDecidable("Nothing of it is stopped.")
+                    if latest[2] is None or latest[2] != asker:
+                        raise NotYours()
+                    conn.execute(_FORGET_REQUESTS, (gene,))
+                    conn.execute(_DISCARDED_UNBUILT, (gene, asker))
+                    return _said("buildable", askable[2] if askable else gene.lower())
+                slug = stopped[0]
+                if conn.execute(_LOCK, (slug,)).fetchone() is None:
+                    raise NotDecidable("It is a curated protein.")
+                making = [row[0] for row in
+                          conn.execute(_MAKING, {"gene": gene, "slug": slug}).fetchall()]
+                if making:
+                    raise NotDecidable("{} is still being made. Discard it in a moment.".format(
+                        _MADE_AS.get(making[0], "A part of it")))
+                conn.execute(_DISCARDED, (gene, slug, asker))
+                conn.execute(_FORGET_REQUESTS, (gene,))
+                if conn.execute(_FORGET_PROTEIN, (slug,)).rowcount != 1:
+                    raise NotDecidable("It is a curated protein.")
+                return _said("buildable", slug)
+    except (NotYours, NotDecidable):
+        raise
+    except Exception as exc:
+        logger.exception("Discarding the build failed for %r", gene)
+        raise CatalogUnavailable("The discard could not be recorded.") from exc
 
 
 def wake() -> None:

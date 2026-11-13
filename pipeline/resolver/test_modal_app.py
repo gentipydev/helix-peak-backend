@@ -100,7 +100,7 @@ def test_only_code_goes_up():
     sent = _uploaded(PIPELINE)
     assert {"resolver/resolve.py", "resolver/worker.py", "resolver/store.py",
             "resolver/scoring.py", "resolver/local_worker.py", "resolver/model_local.py",
-            "resolver/impact_local.py",
+            "resolver/impact_local.py", "resolver/forget.py",
             "mock/build_gene_record.py", "constraint/score_protein.py",
             "upload_tracks.py", "seed_catalog.py", "targets.py"} <= sent
     assert all(path.endswith(".py") for path in sent)

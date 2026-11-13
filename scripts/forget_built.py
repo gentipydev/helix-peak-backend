@@ -22,21 +22,33 @@ Refused while a request for one of them, or a bake of one, is queued or running:
 or stop it, first. The rows go in one transaction, and only then the objects, so nothing is
 deleted while a row still points at it. A protein deleted can be asked for again; whether it is
 offered to be built is the index's to say (`app/protein_index.py`).
+
+Which objects are a protein's, and the storage listing, are `pipeline/resolver/forget.py`'s,
+shared with the resolver's sweep, which deletes the objects of a protein the service discarded.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import os
-import re
 import sys
-import urllib.request
-from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
+from typing import Callable, Dict, List, Set, Tuple
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-BUCKETS = ("tracks", "models")
+from pipeline.resolver.forget import (  # noqa: E402  (re-exported: the tests read them here)
+    BUCKETS,
+    Object,
+    Refused,
+    Storage,
+    named,
+    objects_of,
+    owned,
+    stored,
+)
+
+__all__ = ["BUCKETS", "Object", "Refused", "Storage", "named", "objects_of", "owned", "stored",
+           "chosen", "counts", "forget", "main"]
 
 # What each protein holds in each table the delete reaches, in the order it is said.
 _TABLES = (
@@ -46,100 +58,6 @@ _TABLES = (
     ("fold_selection", "fold selections"),
     ("fold_generation", "fold generations"),
 )
-
-Object = Tuple[str, str]  # (bucket, path)
-
-
-class Refused(Exception):
-    """Nothing was written: the sentence says why."""
-
-
-def owned(slug: str, path: str) -> bool:
-    """Whether `path` is an object of `slug`'s: `<folder>/<slug>.<sha12>.<ext>`, exactly.
-
-    The name is the protein's own, never a longer one that starts with it
-    (`b2m` is not `b2mx`), and sits one folder deep, as every bake writes it."""
-    return re.fullmatch(r"[a-z0-9_-]+/" + re.escape(slug) + r"\.[0-9a-f]{12}\.[a-z]+", path) is not None
-
-
-def _named(holder: Optional[dict], key: str = "object_path") -> List[Object]:
-    """The objects one row of a track, as stored or as a generation keeps it, names: its
-    own and, for a structure, the `.glb` it was compiled from, in the same bucket."""
-    if not holder or not holder.get("bucket"):
-        return []
-    found = []
-    if holder.get(key):
-        found.append((holder["bucket"], holder[key]))
-    glb = ((holder.get("provenance") or {}).get("glb") or {}).get("path")
-    if glb:
-        found.append((holder["bucket"], glb))
-    return found
-
-
-def objects_of(slug: str, tracks: Iterable[dict], generations: Iterable[dict]) -> Set[Object]:
-    """Every object `slug`'s rows name. Raises Refused on one that is not its own, which
-    would be another protein's object."""
-    found = set()  # type: Set[Object]
-    for track in tracks:
-        found.update(_named(track))
-    for generation in generations:
-        found.update(_named(generation.get("structure_track")))
-        found.update(_named(generation.get("folding_track")))
-        found.update(_named(generation.get("audit"), key="path"))
-    strangers = sorted("{}/{}".format(*o) for o in found if not owned(slug, o[1]))
-    if strangers:
-        raise Refused("{}'s rows name objects that are not its own: {}".format(
-            slug, ", ".join(strangers)))
-    return found
-
-
-class Storage:
-    """Lists and deletes objects in Supabase storage, with the service key."""
-
-    def __init__(self, url: str, key: str):
-        from pipeline import upload_tracks
-
-        self._uploads = upload_tracks.Storage(url, key)
-        self._folders = {}  # type: Dict[str, List[str]]
-
-    def _list(self, bucket: str, prefix: str, search: str = "") -> List[dict]:
-        found, offset = [], 0  # type: List[dict], int
-        while True:
-            body = json.dumps({"prefix": prefix, "search": search, "limit": 100, "offset": offset,
-                               "sortBy": {"column": "name", "order": "asc"}}).encode()
-            request = urllib.request.Request(
-                "{}/object/list/{}".format(self._uploads.base, bucket), data=body, method="POST",
-                headers={**self._uploads.headers, "Content-Type": "application/json"})
-            with urllib.request.urlopen(request, timeout=120) as response:
-                page = json.loads(response.read())
-            found.extend(page)
-            if len(page) < 100:
-                return found
-            offset += 100
-
-    def folders(self, bucket: str) -> List[str]:
-        if bucket not in self._folders:
-            self._folders[bucket] = [o["name"] for o in self._list(bucket, "") if o.get("id") is None]
-        return self._folders[bucket]
-
-    def objects(self, bucket: str, folder: str, start: str) -> List[str]:
-        """The names in `folder` of `bucket` that start with `start`, as paths."""
-        return ["{}/{}".format(folder, o["name"])
-                for o in self._list(bucket, folder + "/", start) if o.get("id") is not None]
-
-    def delete(self, bucket: str, paths: List[str]) -> None:
-        self._uploads.delete(bucket, paths)
-
-
-def stored(storage, slug: str) -> Set[Object]:
-    """Every object in storage named as `slug`'s, whatever row names it or none."""
-    found = set()  # type: Set[Object]
-    for bucket in BUCKETS:
-        for folder in storage.folders(bucket):
-            found.update((bucket, path) for path in storage.objects(bucket, folder, slug + ".")
-                         if owned(slug, path))
-    return found
-
 
 def chosen(conn, genes: List[str], every: bool) -> List[Tuple[str, str]]:
     """(slug, gene) of each protein to delete. Raises Refused on a gene named that has no
@@ -167,19 +85,6 @@ def counts(conn, slug: str, gene: str) -> Dict[str, int]:
     said["requests"] = conn.execute(
         "select count(*) from resolve_request where lower(gene) = lower(%s)", (gene,)).fetchone()[0]
     return said
-
-
-def named(conn, slug: str) -> Set[Object]:
-    """Every object `slug`'s rows name now."""
-    tracks = [{"bucket": bucket, "object_path": path, "provenance": provenance}
-              for bucket, path, provenance in conn.execute(
-                  "select bucket, object_path, provenance from protein_track where slug = %s",
-                  (slug,))]
-    generations = [{"structure_track": s, "folding_track": f, "audit": a}
-                   for s, f, a in conn.execute(
-                       "select structure_track, folding_track, audit from fold_generation "
-                       "where slug = %s", (slug,))]
-    return objects_of(slug, tracks, generations)
 
 
 _BUSY = """
