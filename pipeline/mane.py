@@ -1,10 +1,10 @@
 """MANE, as the tools read it: the current release's summary, from NCBI.
 
-Two tools read it: `scripts/load_protein_index.py`, which joins every reviewed
-human UniProt entry to its MANE Select transcripts, and `locus/bake_locus.py`,
-which places each of the twenty on its chromosome by the same join. Both fetch
-through `current_summary`, so there is one place that knows where the release
-is listed and what its summary file is called.
+`scripts/load_protein_index.py` reads it through `current_summary`, to join
+every reviewed human UniProt entry to its MANE Select transcripts, so there is
+one place that knows where the release is listed and what its summary file is
+called. `locus/bake_locus.py` makes the same join with MANE v1.5 as its pinned
+snapshot holds it (`locus/inputs.py`), never the current release.
 """
 
 import gzip

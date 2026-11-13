@@ -39,8 +39,14 @@ and entry version; and the Protein Atlas version, its release date and the
 Ensembl version it is built on, with its licence, CC BY 4.0. UCSC's download server does not answer from every network,
 so the tables are read through its REST API, which serves the same tables.
 
-Which proteins get the track: all twenty (`LOCUS_TARGETS`), recorded here,
-never in targets.py.
+Everything but UniProt is read from one pinned snapshot (`inputs.py`, built by
+`snapshot.py`): the Atlas 25.1, the UCSC tables and MANE v1.5, as they were
+read once, and nothing fetched gene by gene. The Atlas's site serves its
+newest release, and a bake that read it would move a curated zoom to another
+release without anyone deciding to. `retrieved` is the snapshot's date.
+
+Which proteins get the track: every curated one (`LOCUS_TARGETS`), recorded
+here, never in targets.py.
 """
 
 from __future__ import annotations
@@ -52,7 +58,6 @@ import re
 import sys
 import urllib.request
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -61,9 +66,9 @@ if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
 from app.protein_index import rows_for_entry, versionless  # noqa: E402
+from pipeline.locus import inputs as locus_inputs  # noqa: E402
 from pipeline.locus.cell_types import anucleate, cell_class, homes, single  # noqa: E402
 from pipeline.locus.tissues import pair_tissue, tissue_name  # noqa: E402
-from pipeline.mane import current_summary  # noqa: E402
 from pipeline.paths import DATA  # noqa: E402
 from pipeline.targets import BY_SLUG, TARGETS, Target  # noqa: E402
 from pipeline.uniprot import Entry, fetch_entry  # noqa: E402
@@ -82,10 +87,9 @@ UCSC_API = "https://api.genome.ucsc.edu/getData/track?genome={};track={}"
 
 _AGENT = "helixpeek-locus-bake"
 
-# The Human Protein Atlas: one gene's summary, by Ensembl gene, and the page
-# that names the release it is from.
-HPA_GENE = "https://www.proteinatlas.org/{}.json"
-HPA_RELEASES = "https://www.proteinatlas.org/about/releases"
+# The Human Protein Atlas's site, where a gene's summary is `<site>/<ENSG>.json`.
+# The snapshot names the site of its own release (`v25.proteinatlas.org`).
+HPA_SITE = "https://www.proteinatlas.org"
 HPA_LICENCE = "CC BY 4.0"
 
 # How specific a gene's RNA is, in the Atlas's categories: to a tissue, and to
@@ -139,6 +143,7 @@ class Atlas:
     version: str
     release_date: str
     ensembl: str
+    site: str = HPA_SITE
 
     def provenance(self, gene: str) -> dict:
         return {
@@ -146,7 +151,7 @@ class Atlas:
             "release_date": self.release_date,
             "ensembl": self.ensembl,
             "licence": HPA_LICENCE,
-            "url": HPA_GENE.format(gene),
+            "url": f"{self.site}/{gene}.json",
         }
 
 
@@ -310,6 +315,20 @@ def fetch_table(track: str) -> Table:
     return table_of(json.loads(body), url)
 
 
+def table_from(snapshot: locus_inputs.Inputs, track: str) -> Table:
+    """One UCSC table as the snapshot keeps it: the rows its API served, so
+    its digest is the one a live read of the same table gives."""
+    found = snapshot.table(track)
+    return Table(track=track, genome=found["genome"], updated=found["updated"],
+                 rows=tuple(found["rows"]), url=found["url"])
+
+
+def atlas_from(snapshot: locus_inputs.Inputs) -> Atlas:
+    """The Atlas release the snapshot was read from, at that release's site."""
+    hpa = snapshot.atlas
+    return Atlas(hpa["version"], hpa["release_date"], hpa["ensembl"], site=hpa["site"])
+
+
 def chromosome_of(accession: str, aliases: Table) -> str:
     """UCSC's name for a RefSeq sequence ("NC_000011.10" -> "chr11"), as its
     own chromAlias table gives it."""
@@ -423,12 +442,14 @@ def main() -> int:
         parser.error(f"no such target: {unknown}")
     chosen = LOCUS_TARGETS if args.all else tuple(BY_SLUG[s] for s in args.target)
 
-    cytoband = fetch_table("cytoBand")
-    aliases = fetch_table("chromAlias")
-    mane, mane_release = current_summary(_get)
-    atlas = atlas_of(_get(HPA_RELEASES)[0].decode("utf-8", "replace"))
-    retrieved = datetime.now(timezone.utc).date().isoformat()
-    print(f"cytoBand {cytoband.genome}, updated {cytoband.updated}, {len(cytoband.rows)} rows; "
+    snapshot = locus_inputs.load()
+    cytoband = table_from(snapshot, "cytoBand")
+    aliases = table_from(snapshot, "chromAlias")
+    mane, mane_release = snapshot.mane, snapshot.mane_release
+    atlas = atlas_from(snapshot)
+    retrieved = snapshot.created
+    print(f"locus inputs {snapshot.sha256[:12]} ({snapshot.created}): "
+          f"cytoBand {cytoband.genome}, updated {cytoband.updated}, {len(cytoband.rows)} rows; "
           f"chromAlias updated {aliases.updated}; MANE {mane_release}; "
           f"Protein Atlas {atlas.version} ({atlas.release_date}, Ensembl {atlas.ensembl})")
 
@@ -437,7 +458,9 @@ def main() -> int:
         try:
             entry = fetch_entry(target.uniprot)
             ensembl = ensembl_gene_of(mane_row(target, entry, mane, mane_release), mane)
-            atlas_gene = json.loads(_get(HPA_GENE.format(ensembl))[0])
+            atlas_gene = snapshot.atlas_gene(ensembl)
+            if atlas_gene is None:
+                raise LookupError(f"the Protein Atlas {atlas.version} has no entry for {ensembl}")
             track = payload(target, entry, mane, mane_release, cytoband, aliases,
                             atlas, atlas_gene, retrieved)
         except (LookupError, ValueError) as exc:

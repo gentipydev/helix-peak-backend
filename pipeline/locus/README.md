@@ -14,6 +14,7 @@ This is a separate track kind, `locus`. Nothing is added to `targets.py`,
 and no other track is touched.
 
 ```sh
+.venv/bin/python -I pipeline/locus/snapshot.py               # the pinned inputs, once per machine
 .venv/Scripts/python pipeline/locus/bake_locus.py --all      # writes pipeline/data/assets/locus/
 .venv/Scripts/python pipeline/locus/check_locus.py           # every check below; exits 1 on any failure
 .venv/Scripts/python pipeline/locus/verify_locus.py          # each place held to HGNC's (network)
@@ -28,6 +29,19 @@ without `--dry-run`. Objects go to the `tracks` bucket as
 Which proteins get the track: all twenty (`LOCUS_TARGETS` in `bake_locus.py`).
 
 ## Where it comes from
+
+Every source but UniProt is read from one pinned snapshot, never fetched at
+bake time: `snapshot.py` downloads the Atlas 25.1 (from its own archive site,
+`v25.proteinatlas.org`), UCSC's tables, MANE v1.5's summary, HGNC's monthly
+archive of 2026-10-06 and NCBI's GRCh38.p14 scaffold placements, and writes
+`pipeline/data/locus_inputs/locus-inputs.<sha12>.jsonl.gz` (git ignores it).
+`inputs.py` pins the sha256 of its text, `INPUTS_SHA256`, and refuses any
+other file; the same sources on the same date (`INPUTS_CREATED`) give the
+same text, so a machine without it builds it again. The Atlas's site serves
+its newest release, and a bake that read it gene by gene would have moved a
+curated zoom to 26.0 unasked. Built 2026-11-13: `bb475d41dcf9`, 20,162 Atlas
+genes, 42 MB of text, 9.4 MB on disk. It reproduces every curated protein's
+stored `expression` and `path`.
 
 1. **The gene's span**, from MANE, found the way the protein index finds it.
    The protein's UniProt entry (`pipeline/uniprot.py`) is joined to MANE's
