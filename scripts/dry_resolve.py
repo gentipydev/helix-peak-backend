@@ -2,6 +2,7 @@
 
     .venv/bin/python scripts/dry_resolve.py RBP4 SEC61G
     .venv/bin/python scripts/dry_resolve.py --sample      # a fixed sample of 20
+    .venv/bin/python scripts/dry_resolve.py --out DIR B2M # and keep what it made
 
 For each gene it reads the buildable `protein_index` row (a read-only
 transaction), runs `resolve.resolve` exactly as the worker does, and puts the
@@ -9,6 +10,11 @@ record through the uploader's gate. No request, row or object is created: the
 only thing written is the builder's GenBank cache, in a temporary directory
 removed when the run ends. ESM-2 is not run, so it cannot say whether a
 protein's scores will clear the alignment gate.
+
+`--out DIR` keeps, for each protein that resolves, the record's bytes exactly
+as the worker would store them (`<slug>_record.json`) and its row as the
+service would serve it from `/protein/{slug}` (`<slug>_row.json`, its track
+states left empty): what the app's tests need of a protein built on demand.
 """
 
 from __future__ import annotations
@@ -38,6 +44,7 @@ os.environ["HELIXPEEK_DATA"] = str(_scratch / "data")
 
 import psycopg  # noqa: E402
 
+from app import catalog  # noqa: E402
 from pipeline import uniprot, upload_tracks  # noqa: E402
 from pipeline.resolver import store  # noqa: E402
 from pipeline.resolver.resolve import Refused, resolve  # noqa: E402
@@ -68,7 +75,26 @@ def sample(conn) -> list[str]:
     return pick("refseqgene is null", SAMPLE_SLICE) + pick("refseqgene is not null", SAMPLE_REFSEQGENE)
 
 
+def served_row(protein: dict) -> dict:
+    """The resolver's row as `/protein/{slug}` serves it (`catalog.detail`),
+    its track states left empty."""
+    summary = [protein[column] for column in
+               ("slug", "display", "gene", "uniprot", "accession", "summary", "residues",
+                "exons", "chains", "bridges", "catalog_order", "chain_name", "structure")]
+    found = catalog._summary(summary)
+    found.update({key: protein[key] for key in
+                  ("mature_peptides", "transcript_id", "protein_id", "regions",
+                   "disulfides", "provenance", "resolver_version")})
+    return found
+
+
 def main(genes: list[str]) -> int:
+    out = None
+    if "--out" in genes:
+        at = genes.index("--out")
+        out = Path(genes[at + 1])
+        genes = genes[:at] + genes[at + 2:]
+        out.mkdir(parents=True, exist_ok=True)
     with psycopg.connect(_env["DATABASE_URL"], prepare_threshold=None) as conn:
         with conn.transaction():
             conn.execute("set transaction read only")
@@ -99,6 +125,10 @@ def main(genes: list[str]) -> int:
             continue
         tally["ok"] += 1
         target, protein = resolution.target, resolution.protein
+        if out is not None:
+            (out / f"{target.slug}_record.json").write_bytes(resolution.record)
+            (out / f"{target.slug}_row.json").write_text(
+                json.dumps(served_row(protein), indent=1, default=str) + "\n")
         record = json.loads(resolution.record)
         source = target.source
         cut = f"{source.accession}" + (f":{source.seq_start}-{source.seq_stop}" if source.seq_start else "")
