@@ -58,6 +58,7 @@ import re
 import sys
 import urllib.request
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -79,7 +80,13 @@ LOCUS_TARGETS = TARGETS
 # 2 adds keys only: the Atlas's tissue cell type pairs, subcellular location
 # and secretome location under `expression`, and the zoom's `path`. A schema 1
 # reader ignores them.
-SCHEMA_VERSION = 2
+# 3 adds keys only, for every protein the search offers: how the Atlas entry
+# was found and the Atlas's own name for the gene (`expression.atlas_match`,
+# `atlas_gene`), where a gene MANE puts on a patch scaffold was carried from
+# (`placed_from`), and the snapshot it was made from (`sources.locus_inputs`).
+# A schema 2 reader ignores them. The curated keep their stored schema 2.
+SCHEMA_VERSION = 3
+SCHEMAS = (2, 3)
 
 ASSEMBLY = "GRCh38"
 GENOME = "hg38"
@@ -118,7 +125,7 @@ class Table:
     rows: tuple[dict, ...]
     url: str
 
-    @property
+    @cached_property
     def sha256(self) -> str:
         """A digest of the rows, in a canonical order: the same table gives the
         same digest however the API happens to order its answer."""
@@ -368,62 +375,239 @@ def locus_of(chromosome: str, names: list[str]) -> str:
     return chromosome + names[0] + ("" if len(names) == 1 else "-" + names[-1])
 
 
-def payload(target: Target, entry: Entry, mane: dict, mane_release: str,
-            cytoband: Table, aliases: Table, atlas: Atlas, atlas_gene: dict,
-            retrieved: str) -> dict:
-    """The track for one protein, from the sources as they were read."""
-    body = entry.body
-    if body.get("primaryAccession") != target.uniprot:
-        raise ValueError(f"{target.slug}: asked for {target.uniprot}, "
-                         f"UniProt answered {body.get('primaryAccession')}")
-    row = mane_row(target, entry, mane, mane_release)
-    ensembl = ensembl_gene_of(row, mane)
-    if atlas_gene.get("Ensembl") != ensembl or atlas_gene.get("Gene") != target.gene:
-        raise ValueError(f"{target.slug}: asked the Atlas for {ensembl}, it answered "
+class LocusRefused(Exception):
+    """No zoom can be drawn for this gene. The message is the reader's
+    sentence, in the app's data-first voice; the track is `refused` with it."""
+
+
+# What a gene the Atlas has no entry for is refused with. GSTT1, KIR2DS2,
+# HLA-DRB3 and LILRA3 live only on alternate haplotypes, which the Atlas's
+# Ensembl does not annotate.
+NO_ATLAS_ENTRY = "The Human Protein Atlas has no reading for this gene."
+
+# The accessions MANE puts a transcript on: the primary chromosomes 1 to 22,
+# X (23) and Y (24), and otherwise a GRCh38 patch or alternate locus scaffold
+# (an `NW_` or `NT_` accession), which `placed` carries to its chromosome.
+_PRIMARY = re.compile(r"^NC_0000(\d\d)\.\d+$")
+
+# How a scaffold's span is carried to its chromosome: each position of the
+# part of the scaffold NCBI aligns, at the same share of the way along the
+# region of the chromosome it is aligned to, the other way along where the
+# scaffold lies reversed. Exact at the ends of the alignment, and in between
+# off by at most the difference of the two lengths (none for a fix patch,
+# 1.5% for the longest alternate locus): far finer than a band.
+PLACEMENT_METHOD = "proportional"
+PLACEMENT_ASSEMBLY = "GRCh38.p14"
+
+# How the Atlas entry that reads a gene was found (`atlas_match`).
+MATCHES = ("mane", "hgnc", "uniprot")
+
+
+def on_primary(accession: str | None) -> bool:
+    found = _PRIMARY.match(accession or "")
+    return found is not None and 1 <= int(found.group(1)) <= 24
+
+
+def carried(position: int, scaffold: tuple[int, int], chromosome: tuple[int, int],
+            orientation: str) -> int:
+    """A scaffold position on its chromosome (`PLACEMENT_METHOD`)."""
+    (a0, a1), (c0, c1) = scaffold, chromosome
+    share = (position - a0) / (a1 - a0) if a1 > a0 else 0.0
+    if orientation == "-":
+        share = 1 - share
+    return c0 + round(share * (c1 - c0))
+
+
+def placed(row: dict, placements: list, aliases: Table) -> tuple[dict, dict]:
+    """[row]'s span carried from the GRCh38 patch or alternate locus scaffold
+    MANE puts its transcript on to the chromosome NCBI places that scaffold on
+    (GRCh38.p14's `alt_scaffold_placement`): where the gene lies, and the
+    `placed_from` block that says where it was read and how it was carried.
+    The strand turns where the scaffold lies reversed."""
+    accession = row["chrom_acc"]
+    if len(placements) != 1:
+        raise LookupError(f"{row['gene']}: NCBI places scaffold {accession} "
+                          f"{len(placements)} times, not once")
+    found = placements[0]
+    parent = found["parent_acc"]
+    if found["parent_type"] != "CHROMOSOME" or not on_primary(parent):
+        raise LookupError(f"{row['gene']}: scaffold {accession} is placed on "
+                          f"{found['parent_type']} {parent}, not a chromosome")
+    orientation = found["ori"]
+    if orientation not in ("+", "-"):
+        raise LookupError(f"{row['gene']}: scaffold {accession} has orientation {orientation!r}")
+    scaffold = (int(found["alt_scaf_start"]), int(found["alt_scaf_stop"]))
+    chromosome = (int(found["parent_start"]), int(found["parent_stop"]))
+    start, end, strand = row["chrom_start"], row["chrom_end"], row["chrom_strand"]
+    if not scaffold[0] <= start <= end <= scaffold[1]:
+        raise LookupError(f"{row['gene']}: {accession}:{start}-{end} is outside the part "
+                          f"of the scaffold NCBI aligns ({scaffold[0]}-{scaffold[1]})")
+    ends = sorted(carried(p, scaffold, chromosome, orientation) for p in (start, end))
+    place = {"sequence": parent, "start": ends[0], "end": ends[1],
+             "strand": strand if orientation == "+" else -strand}
+    placed_from = {
+        "sequence": accession,
+        "ucsc": chromosome_of(accession, aliases),
+        "scaffold": found["alt_scaf_name"],
+        "span": {"start": start, "end": end, "strand": strand},
+        "placement": {
+            "assembly": PLACEMENT_ASSEMBLY,
+            "orientation": orientation,
+            "scaffold": {"start": scaffold[0], "end": scaffold[1]},
+            "chromosome": {"start": chromosome[0], "end": chromosome[1]},
+        },
+        "method": PLACEMENT_METHOD,
+    }
+    return place, placed_from
+
+
+def atlas_match(row: dict, snapshot: locus_inputs.Inputs) -> tuple[str, str] | None:
+    """The Atlas entry that reads an index row's gene, and how it was found:
+    the Ensembl gene MANE puts its transcript on; else the one HGNC gives its
+    HGNC id (a gene MANE annotates on a patch scaffold has a gene id of the
+    patch's own, which the Atlas, built on the primary assembly, never saw);
+    else the one entry whose UniProt accessions name its protein, if exactly
+    one does. None where none does."""
+    mane = snapshot.mane.get(versionless(row.get("ensembl_nuc") or ""))
+    if mane is not None:
+        gene = versionless(mane["Ensembl_Gene"])
+        if snapshot.atlas_gene(gene) is not None:
+            return gene, "mane"
+    gene = snapshot.hgnc_ensembl(row.get("hgnc_id"))
+    if gene and snapshot.atlas_gene(gene) is not None:
+        return gene, "hgnc"
+    found = snapshot.by_uniprot(row.get("uniprot") or "")
+    if len(found) == 1:
+        return found[0], "uniprot"
+    return None
+
+
+def track_of(*, slug: str, gene: str, uniprot: str, row: dict, atlas_gene: dict,
+             match: tuple[str, str], cytoband: Table, aliases: Table, atlas: Atlas,
+             mane_release: str, uniprot_source: dict, retrieved: str,
+             placements: list = (), inputs_source: dict | None = None) -> dict:
+    """The track for one protein: its index row's span, on its chromosome
+    (carried there from a patch scaffold where MANE puts it on one), and the
+    reading of the Atlas entry [match] chose. Refuses an Atlas answer for
+    another entry than the one chosen."""
+    ensembl, how = match
+    if how not in MATCHES:
+        raise ValueError(f"{slug}: no such way to match the Atlas: {how!r}")
+    if atlas_gene.get("Ensembl") != ensembl:
+        raise ValueError(f"{slug}: asked the Atlas for {ensembl}, it answered "
                          f"{atlas_gene.get('Ensembl')} ({atlas_gene.get('Gene')})")
-    chrom = chromosome_of(row["chrom_acc"], aliases)
+    if on_primary(row["chrom_acc"]):
+        place = {"sequence": row["chrom_acc"], "start": row["chrom_start"],
+                 "end": row["chrom_end"], "strand": row["chrom_strand"]}
+        placed_from = None
+    else:
+        place, placed_from = placed(row, list(placements), aliases)
+    chrom = chromosome_of(place["sequence"], aliases)
     bands = bands_of(chrom, cytoband)
     if not bands:
-        raise LookupError(f"{target.slug}: cytoBand has no bands for {chrom}")
-    start, end = row["chrom_start"], row["chrom_end"]
+        raise LookupError(f"{slug}: cytoBand has no bands for {chrom}")
+    start, end = place["start"], place["end"]
     inside = [b for b in bands if b["start"] <= end and b["end"] >= start]
     if not inside:
-        raise LookupError(f"{target.slug}: {chrom}:{start}-{end} falls in no band")
+        raise LookupError(f"{slug}: {chrom}:{start}-{end} falls in no band")
     chromosome = chrom[3:] if chrom.startswith("chr") else chrom
     names = [b["name"] for b in inside]
-    audit = body.get("entryAudit", {})
-    expression = {"ensembl_gene": ensembl, **expression_of(atlas_gene)}
-    return {
-        "slug": target.slug,
-        "gene": target.gene,
-        "uniprot": target.uniprot,
+    expression = {"ensembl_gene": ensembl, **expression_of(atlas_gene),
+                  "atlas_match": how, "atlas_gene": atlas_gene.get("Gene")}
+    track = {
+        "slug": slug,
+        "gene": gene,
+        "uniprot": uniprot,
         "assembly": ASSEMBLY,
         "genome": cytoband.genome,
         "chromosome": chromosome,
-        "sequence": row["chrom_acc"],
+        "sequence": place["sequence"],
         "length": bands[-1]["end"],
-        "span": {"start": start, "end": end, "strand": row["chrom_strand"]},
+        "span": {"start": start, "end": end, "strand": place["strand"]},
         "transcript": {"refseq": row["refseq_nuc"], "ensembl": row["ensembl_nuc"]},
+    }
+    if placed_from is not None:
+        track["placed_from"] = placed_from
+    sources = {
+        "cytoband": cytoband.provenance(),
+        "chrom_alias": aliases.provenance(),
+        "mane": {"release": mane_release},
+        "uniprot": uniprot_source,
+        "hpa": atlas.provenance(ensembl),
+    }
+    if inputs_source is not None:
+        sources["locus_inputs"] = inputs_source
+    track.update({
         "band": {"names": names, "start": inside[0]["start"], "end": inside[-1]["end"]},
         "locus": locus_of(chromosome, names),
         "bands": bands,
         "expression": expression,
         "path": path_of(expression),
-        "sources": {
-            "cytoband": cytoband.provenance(),
-            "chrom_alias": aliases.provenance(),
-            "mane": {"release": mane_release},
-            "uniprot": {
-                "release": entry.release,
-                "release_date": entry.release_date,
-                "entry_version": audit.get("entryVersion"),
-            },
-            "hpa": atlas.provenance(ensembl),
-        },
+        "sources": sources,
         "retrieved": retrieved,
         "schema_version": SCHEMA_VERSION,
         "built_by": "pipeline/locus/bake_locus.py",
-    }
+    })
+    return track
+
+
+def payload(target: Target, entry: Entry, mane: dict, mane_release: str,
+            cytoband: Table, aliases: Table, atlas: Atlas, atlas_gene: dict,
+            retrieved: str, *, match: tuple[str, str] | None = None,
+            inputs_source: dict | None = None) -> dict:
+    """A curated protein's track, from its UniProt entry joined to MANE, the
+    way the protein index joins them, and the Atlas entry [match] chose
+    (MANE's Ensembl gene, unless said)."""
+    body = entry.body
+    if body.get("primaryAccession") != target.uniprot:
+        raise ValueError(f"{target.slug}: asked for {target.uniprot}, "
+                         f"UniProt answered {body.get('primaryAccession')}")
+    row = mane_row(target, entry, mane, mane_release)
+    audit = body.get("entryAudit", {})
+    return track_of(
+        slug=target.slug, gene=target.gene, uniprot=target.uniprot, row=row,
+        atlas_gene=atlas_gene, match=match or (ensembl_gene_of(row, mane), "mane"),
+        cytoband=cytoband, aliases=aliases, atlas=atlas, mane_release=mane_release,
+        uniprot_source={"release": entry.release, "release_date": entry.release_date,
+                        "entry_version": audit.get("entryVersion")},
+        retrieved=retrieved, inputs_source=inputs_source)
+
+
+def inputs_source(snapshot: locus_inputs.Inputs) -> dict:
+    """What a track names of the snapshot it was made from."""
+    return {"sha256": snapshot.sha256, "created": snapshot.created}
+
+
+_READ: dict = {}
+
+
+def _read(snapshot: locus_inputs.Inputs) -> tuple[Table, Table, Atlas]:
+    """The snapshot's cytoBand and chromAlias tables and its Atlas, made once."""
+    if snapshot.sha256 not in _READ:
+        _READ[snapshot.sha256] = (table_from(snapshot, "cytoBand"),
+                                  table_from(snapshot, "chromAlias"), atlas_from(snapshot))
+    return _READ[snapshot.sha256]
+
+
+def bake(row: dict, snapshot: locus_inputs.Inputs, *, slug: str, uniprot_source: dict,
+         mane_release: str | None = None) -> dict:
+    """The track for one protein the index offers, from its index row and the
+    pinned snapshot alone, nothing fetched: the same bytes wherever and
+    whenever it is made from the same row. [uniprot_source] names the UniProt
+    release the index row was read from, and [mane_release] its MANE release
+    (the snapshot's unless said). Raises `LocusRefused` for a gene no zoom can
+    be drawn for, with the reader's sentence."""
+    match = atlas_match(row, snapshot)
+    if match is None:
+        raise LocusRefused(NO_ATLAS_ENTRY)
+    cytoband, aliases, atlas = _read(snapshot)
+    return track_of(
+        slug=slug, gene=row["gene"], uniprot=row["uniprot"], row=row,
+        atlas_gene=snapshot.atlas_gene(match[0]), match=match, cytoband=cytoband,
+        aliases=aliases, atlas=atlas, mane_release=mane_release or snapshot.mane_release,
+        uniprot_source=uniprot_source, retrieved=snapshot.created,
+        placements=snapshot.placements(row["chrom_acc"]),
+        inputs_source=inputs_source(snapshot))
 
 
 def encode(track: dict) -> bytes:
@@ -457,12 +641,13 @@ def main() -> int:
     for target in chosen:
         try:
             entry = fetch_entry(target.uniprot)
-            ensembl = ensembl_gene_of(mane_row(target, entry, mane, mane_release), mane)
-            atlas_gene = snapshot.atlas_gene(ensembl)
-            if atlas_gene is None:
-                raise LookupError(f"the Protein Atlas {atlas.version} has no entry for {ensembl}")
+            match = atlas_match(mane_row(target, entry, mane, mane_release), snapshot)
+            if match is None:
+                raise LookupError(f"the Protein Atlas {atlas.version} has no entry for "
+                                  f"{target.gene}")
             track = payload(target, entry, mane, mane_release, cytoband, aliases,
-                            atlas, atlas_gene, retrieved)
+                            atlas, snapshot.atlas_gene(match[0]), retrieved, match=match,
+                            inputs_source=inputs_source(snapshot))
         except (LookupError, ValueError) as exc:
             failed.append(f"{target.slug}: {exc}")
             print(f"{target.slug:<16} FAILED: {exc}")

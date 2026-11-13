@@ -17,7 +17,8 @@ and no other track is touched.
 .venv/bin/python -I pipeline/locus/snapshot.py               # the pinned inputs, once per machine
 .venv/Scripts/python pipeline/locus/bake_locus.py --all      # writes pipeline/data/assets/locus/
 .venv/Scripts/python pipeline/locus/check_locus.py           # every check below; exits 1 on any failure
-.venv/Scripts/python pipeline/locus/verify_locus.py          # each place held to HGNC's (network)
+.venv/bin/python -I pipeline/locus/verify_locus.py           # each place held to NCBI Gene's (network)
+.venv/bin/python -I pipeline/locus/survey.py --live --out OUT  # every protein the search offers
 .venv/Scripts/python pipeline/upload_tracks.py --kind locus --dry-run
 ```
 

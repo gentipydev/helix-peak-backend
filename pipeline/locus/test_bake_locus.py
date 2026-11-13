@@ -67,6 +67,11 @@ def _entry(accession: str) -> Entry:
     return Entry(accession, body, "2026_03", "2026-09-02", "2026-09-27")
 
 
+# What every track names of the pinned snapshot it is made from: a digest, and
+# its date, which is the track's `retrieved`.
+SNAPSHOT = {"sha256": "a" * 64, "created": "2026-09-27"}
+
+
 def _track(slug: str, sources) -> dict:
     mane, cytoband, aliases = sources
     target = BY_SLUG[slug]
@@ -74,7 +79,8 @@ def _track(slug: str, sources) -> dict:
     ensembl = bake_locus.ensembl_gene_of(
         bake_locus.mane_row(target, entry, mane, "v1.5"), mane)
     return bake_locus.payload(target, entry, mane, "v1.5", cytoband, aliases,
-                              ATLAS, _atlas_gene(ensembl), "2026-09-27")
+                              ATLAS, _atlas_gene(ensembl), "2026-09-27",
+                              inputs_source=SNAPSHOT)
 
 
 # -- the places -----------------------------------------------------------------
@@ -219,11 +225,16 @@ def test_reads_the_atlas_release_from_its_releases_page():
 # -- schema 2: the readings it adds, and the zoom's path --------------------------------
 
 
-def test_schema_two_adds_the_atlas_pairs_locations_and_secretome(sources):
-    assert bake_locus.SCHEMA_VERSION == 2
+def test_schema_three_keeps_schema_two_and_names_the_atlas_entry(sources):
+    assert bake_locus.SCHEMA_VERSION == 3
     insulin = _track("insulin", sources)
-    assert insulin["schema_version"] == 2
+    assert insulin["schema_version"] == 3
     expression = insulin["expression"]
+    # Which Atlas entry reads the gene, how it was found, its name there, and
+    # the snapshot it was read from.
+    assert (expression["atlas_match"], expression["atlas_gene"]) == ("mane", "INS")
+    assert insulin["sources"]["locus_inputs"] == SNAPSHOT
+    assert "placed_from" not in insulin
     assert expression["tissue_cell_type"] == [
         {"tissue": "Adrenal gland", "cell_type": "Adrenal medulla cells"},
         {"tissue": "Pancreas", "cell_type": "Beta cells"},

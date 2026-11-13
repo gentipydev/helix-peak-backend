@@ -48,10 +48,14 @@ from pipeline.locus.bake_locus import (  # noqa: E402
     GENOME,
     HPA_LICENCE,
     LOCUS_TARGETS,
-    SCHEMA_VERSION,
+    MATCHES,
+    PLACEMENT_ASSEMBLY,
+    PLACEMENT_METHOD,
+    SCHEMAS,
     STAINS,
     TISSUE_SPECIFICITY,
     UNSPECIFIC,
+    carried,
     locus_asset,
     locus_of,
     path_of,
@@ -72,6 +76,53 @@ _RELEASE = re.compile(r"^\d{4}_\d{2}$")
 _DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _ENSEMBL = re.compile(r"^ENSG\d{11}$")
 _VERSION = re.compile(r"^\d+\.\d+$")
+_SCAFFOLD = re.compile(r"^N[TW]_\d+\.\d+$")
+
+
+def placed_problems(where: str, track: dict) -> list[str]:
+    """What is wrong with a track's `placed_from`: a gene MANE puts on a
+    patch or alternate locus scaffold, carried to its chromosome. The place
+    is worked out again from the block's own numbers and must be the track's."""
+    placed_from = track["placed_from"]
+    out: list[str] = []
+    if not isinstance(placed_from, dict):
+        return [f"{where}: placed_from is not a block"]
+    if track.get("schema_version") != 3:
+        out.append(f"{where}: placed_from in schema {track.get('schema_version')}")
+    if not _SCAFFOLD.match(str(placed_from.get("sequence"))):
+        out.append(f"{where}: placed from {placed_from.get('sequence')!r}, not a scaffold")
+    ucsc = str(placed_from.get("ucsc"))
+    if not (ucsc.startswith(f"chr{track.get('chromosome')}_") and ucsc.endswith(("_fix", "_alt"))):
+        out.append(f"{where}: placed from UCSC's {ucsc!r}, not a scaffold of "
+                   f"chromosome {track.get('chromosome')}")
+    if placed_from.get("method") != PLACEMENT_METHOD:
+        out.append(f"{where}: placed by {placed_from.get('method')!r}")
+    placement = placed_from.get("placement") or {}
+    if placement.get("assembly") != PLACEMENT_ASSEMBLY:
+        out.append(f"{where}: placed by {placement.get('assembly')!r}'s placement")
+    orientation = placement.get("orientation")
+    try:
+        scaffold = (int(placement["scaffold"]["start"]), int(placement["scaffold"]["end"]))
+        chromosome = (int(placement["chromosome"]["start"]), int(placement["chromosome"]["end"]))
+        original = placed_from["span"]
+        start, end, strand = original["start"], original["end"], original["strand"]
+    except (KeyError, TypeError, ValueError):
+        return out + [f"{where}: placed_from does not say where the scaffold lies"]
+    if orientation not in ("+", "-") or strand not in (1, -1):
+        return out + [f"{where}: placed with orientation {orientation!r}, strand {strand!r}"]
+    if not scaffold[0] <= start <= end <= scaffold[1]:
+        out.append(f"{where}: {start}-{end} is outside the scaffold's aligned "
+                   f"{scaffold[0]}-{scaffold[1]}")
+    if not 1 <= chromosome[0] <= chromosome[1] <= (track.get("length") or 0):
+        out.append(f"{where}: the scaffold's region {chromosome} is not on the chromosome")
+    want = sorted(carried(p, scaffold, chromosome, orientation) for p in (start, end))
+    span = track.get("span") or {}
+    if [span.get("start"), span.get("end")] != want:
+        out.append(f"{where}: span {span.get('start')}-{span.get('end')}, the placement "
+                   f"carries {start}-{end} to {want[0]}-{want[1]}")
+    if span.get("strand") != (strand if orientation == "+" else -strand):
+        out.append(f"{where}: strand {span.get('strand')}, placed {orientation} from {strand}")
+    return out
 
 
 def problems_of(target: Target, track: dict | None = None) -> list[str]:
@@ -85,10 +136,13 @@ def problems_of(target: Target, track: dict | None = None) -> list[str]:
 
     out: list[str] = []
     for key, want in (("slug", target.slug), ("gene", target.gene),
-                      ("uniprot", target.uniprot), ("schema_version", SCHEMA_VERSION),
+                      ("uniprot", target.uniprot),
                       ("assembly", ASSEMBLY), ("genome", GENOME)):
         if track.get(key) != want:
             out.append(f"{where}: {key} is {track.get(key)!r}, expected {want!r}")
+    schema = track.get("schema_version")
+    if schema not in SCHEMAS:
+        out.append(f"{where}: schema_version is {schema!r}, expected one of {SCHEMAS}")
     chromosome = track.get("chromosome")
     if chromosome not in CHROMOSOMES:
         out.append(f"{where}: chromosome {chromosome!r} is not 1 to 22, X or Y")
@@ -144,16 +198,33 @@ def problems_of(target: Target, track: dict | None = None) -> list[str]:
         out.append(f"{where}: locus {track.get('locus')!r}, "
                    f"expected {locus_of(str(chromosome), want_names)!r}")
 
-    # The record, where it says where it is.
+    # Carried from a patch scaffold, where MANE puts the gene on one.
+    if "placed_from" in track:
+        out += placed_problems(where, track)
+
+    # The record, where it says where it is: cut from this chromosome, or from
+    # the scaffold the gene was carried from, around the span read there.
     source = target.source
+    cut = None
     if source.accession.startswith("NC_"):
+        cut = (start, end)
         if track.get("sequence") != source.accession:
             out.append(f"{where}: on {track.get('sequence')}, the record is cut from "
                        f"{source.accession}")
-        if source.seq_start is not None and source.seq_stop is not None and not (
-                source.seq_start <= start and end <= source.seq_stop):
-            out.append(f"{where}: span {start}-{end} is outside the record's slice "
-                       f"{source.seq_start}-{source.seq_stop}")
+    elif _SCAFFOLD.match(source.accession):
+        placed_from = track.get("placed_from")
+        placed_from = placed_from if isinstance(placed_from, dict) else {}
+        original = placed_from.get("span")
+        original = original if isinstance(original, dict) else {}
+        cut = (original.get("start"), original.get("end"))
+        if placed_from.get("sequence") != source.accession:
+            out.append(f"{where}: the record is cut from {source.accession}, and the track "
+                       f"is not placed from it")
+    if cut is not None and source.seq_start is not None and source.seq_stop is not None and not (
+            isinstance(cut[0], int) and isinstance(cut[1], int)
+            and source.seq_start <= cut[0] and cut[1] <= source.seq_stop):
+        out.append(f"{where}: span {cut[0]}-{cut[1]} is outside the record's slice "
+                   f"{source.seq_start}-{source.seq_stop}")
     transcript = (track.get("transcript") or {}).get("refseq")
     if source.transcript_id and transcript != source.transcript_id:
         out.append(f"{where}: transcript {transcript}, the table names {source.transcript_id}")
@@ -216,6 +287,16 @@ def problems_of(target: Target, track: dict | None = None) -> list[str]:
     secretome = expression.get("secretome", "absent")
     if secretome is not None and secretome not in SECRETOME:
         out.append(f"{where}: secretome {secretome!r} is not the Atlas's word")
+    if schema == 3:
+        # Which Atlas entry reads the gene, how it was found, and its name there.
+        if expression.get("atlas_match") not in MATCHES:
+            out.append(f"{where}: atlas_match {expression.get('atlas_match')!r}")
+        if not isinstance(expression.get("atlas_gene"), str) or not expression["atlas_gene"]:
+            out.append(f"{where}: atlas_gene {expression.get('atlas_gene')!r}")
+        url = str(((track.get("sources") or {}).get("hpa") or {}).get("url"))
+        if not url.endswith(f"/{expression.get('ensembl_gene')}.json"):
+            out.append(f"{where}: the Atlas's URL {url} is not the entry "
+                       f"{expression.get('ensembl_gene')}")
 
     # The zoom's path, as the rule takes it from those readings.
     path = track.get("path")
@@ -258,6 +339,13 @@ def problems_of(target: Target, track: dict | None = None) -> list[str]:
         out.append(f"{where}: Protein Atlas licence {hpa.get('licence')!r}")
     if not _DAY.match(str(track.get("retrieved"))):
         out.append(f"{where}: retrieved {track.get('retrieved')!r}")
+    made_from = sources.get("locus_inputs")
+    if schema == 3 and made_from is None:
+        out.append(f"{where}: names no locus inputs snapshot")
+    if made_from is not None and not (
+            _DIGEST.match(str(made_from.get("sha256"))) and _DAY.match(str(made_from.get("created")))
+            and made_from.get("created") == track.get("retrieved")):
+        out.append(f"{where}: locus inputs {made_from!r}")
     return out
 
 
