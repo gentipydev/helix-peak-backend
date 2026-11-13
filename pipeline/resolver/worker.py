@@ -448,13 +448,47 @@ def _checked_structure(target: Target, built: Modelled, tints) -> Tuple[dict, di
     return {**row, "_uploads": uploads}, {"chrome": chrome, "chains": chains}
 
 
+def make_locus(conn, storage, row, target: Target) -> Tuple[Optional[dict], Optional[str], str]:
+    """A resolved protein's `locus` track, the zoom's way into it: made from
+    its index row and the pinned snapshot of the locus bake's inputs
+    (`pipeline/locus/inputs.py`), nothing fetched, exactly as the census makes
+    it (`pipeline/locus/survey.py`), and stored as the uploader stores it.
+
+    Returns the track's row to write, or the reader's sentence for a gene no
+    zoom can be drawn for (refused), and what was done, as one line for the
+    worker's log. Never raises: a snapshot missing or not the pinned one, or
+    anything else, leaves the protein with no locus track, so no Zoom, and
+    says why; it never fails or holds back the protein.
+    """
+    import dataclasses
+
+    try:
+        from pipeline.locus import bake_locus
+        from pipeline.locus import inputs as locus_inputs
+
+        snapshot = locus_inputs.load()
+        release = store.index_release(conn) or {}
+        try:
+            track = bake_locus.bake(
+                dataclasses.asdict(row), snapshot, slug=target.slug,
+                uniprot_source={"release": release.get("uniprot")},
+                mane_release=release.get("mane"))
+        except bake_locus.LocusRefused as exc:
+            return None, str(exc), f"refused: {exc}"
+        staged = stage(storage, "locus", target, bake_locus.encode(track))
+        return staged, None, f"ready: {track['locus']}, {track['path']['tissue']}"
+    except Exception as exc:  # noqa: BLE001 -- the protein is built whatever the locus
+        return None, None, f"absent: {_said(exc)}"
+
+
 def resolve_next(conn, storage, *, fetch_entry=uniprot.fetch_entry,
                  structures: bool = False, evidence: bool = False) -> Optional[dict]:
     """Resolve the oldest queued request. None when there is none.
 
     `structures` also queues the protein's structure bake, and `evidence` its
     AVI and ClinVar bakes (`store.write_resolution`): for a worker that goes
-    on to make them."""
+    on to make them. Its `locus` track is made here, beside its record
+    (`make_locus`), and written with it."""
     request = store.claim_request(conn)
     if request is None:
         return None
@@ -476,9 +510,12 @@ def resolve_next(conn, storage, *, fetch_entry=uniprot.fetch_entry,
             # This resolver builds the same record for this gene every time,
             # so the gate's verdict on it is a refusal, not a failure to retry.
             raise Refused(str(exc)) from exc
+        locus, locus_refused, locus_said = make_locus(conn, storage, row, resolution.target)
         store.write_resolution(conn, request["id"], resolution, record, RESOLVER_VERSION,
-                               structures=structures, evidence=evidence)
-        return {**outcome, "state": "done", "slug": resolution.target.slug}
+                               structures=structures, evidence=evidence,
+                               locus=locus, locus_refused=locus_refused)
+        return {**outcome, "state": "done", "slug": resolution.target.slug,
+                "locus": locus_said}
     except Refused as exc:
         store.finish_request(conn, request["id"], "refused", reason=_said(exc),
                              resolver_version=RESOLVER_VERSION)

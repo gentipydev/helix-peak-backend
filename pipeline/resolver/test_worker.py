@@ -825,3 +825,92 @@ def test_clinvar_is_fetched_beside_the_worker_and_its_raw_responses_go_with_the_
     with pytest.raises(worker.Unfetched, match="did not answer in full: Search changed"):
         worker.clinvar_in_process(target, cache)
     assert not isinstance(worker.Unfetched("x"), ValueError)
+
+
+# -- the locus: the zoom's way into a resolved protein ----------------------------
+
+# INS as the index rows it, with what the locus bake reads besides.
+INS_LOCUS = replace(INS, ensembl_nuc="ENST00000381330.5", chrom_strand=-1, hgnc_id="HGNC:6081")
+
+
+@pytest.fixture
+def locus_inputs(monkeypatch, tmp_path):
+    """A small snapshot of the locus bake's inputs (`pipeline/locus/testing.py`),
+    loaded as the pinned one would be, and the index's releases."""
+    from pipeline.locus import inputs
+    from pipeline.locus.testing import built
+
+    _, _, read = built(tmp_path)
+    monkeypatch.setattr(inputs, "load", lambda *args, **kwargs: read)
+    monkeypatch.setattr(store, "index_release",
+                        lambda conn: {"uniprot": "2026_04", "mane": "v1.5"})
+    return read
+
+
+def test_a_resolved_proteins_locus_is_made_from_the_snapshot_and_stored(offline, locus_inputs):
+    from pipeline.locus import bake_locus
+
+    target = resolve(INS, offline(_body())).target
+    storage = Storage()
+    track, refused, said = worker.make_locus(None, storage, INS_LOCUS, target)
+
+    assert (refused, said) == (None, "ready: 11p15.5, pancreas")
+    # The same bytes the census makes for the same row (`survey.py`).
+    payload = bake_locus.encode(bake_locus.bake(
+        {field: getattr(INS_LOCUS, field) for field in INS_LOCUS.__dataclass_fields__},
+        locus_inputs, slug="ins", uniprot_source={"release": "2026_04"}, mane_release="v1.5"))
+    digest = hashlib.sha256(payload).hexdigest()
+    assert track["object_path"] == f"locus/ins.{digest[:12]}.json"
+    assert (track["kind"], track["bucket"], track["sha256"]) == ("locus", "tracks", digest)
+    assert storage.objects == {("tracks", track["object_path"], "application/json"): payload}
+    assert track["provenance"]["locus"] == "11p15.5"
+    assert track["provenance"]["sources"]["locus_inputs"]["sha256"] == locus_inputs.sha256
+
+
+def test_a_gene_the_atlas_has_no_entry_for_has_its_locus_refused(offline, locus_inputs):
+    target = resolve(INS, offline(_body())).target
+    unknown = replace(INS_LOCUS, uniprot="P00000", ensembl_nuc="ENST00000000000.1",
+                      hgnc_id="HGNC:0")
+    storage = Storage()
+    track, refused, said = worker.make_locus(None, storage, unknown, target)
+    assert track is None
+    assert refused == "The Human Protein Atlas has no reading for this gene."
+    assert said == f"refused: {refused}"
+    assert storage.objects == {}
+
+
+def test_with_no_snapshot_a_protein_is_built_with_no_locus(offline, monkeypatch):
+    # The resolver's tests look for the snapshot where there is none (conftest).
+    monkeypatch.setattr(store, "index_release",
+                        lambda conn: {"uniprot": "2026_04", "mane": "v1.5"})
+    target = resolve(INS, offline(_body())).target
+    track, refused, said = worker.make_locus(None, Storage(), INS_LOCUS, target)
+    assert (track, refused) == (None, None)
+    assert said.startswith("absent: no locus inputs snapshot at ")
+    assert "snapshot.py" in said
+
+
+def test_a_locus_the_check_declines_is_never_stored(offline, locus_inputs, monkeypatch):
+    from pipeline.locus import check_locus
+
+    monkeypatch.setattr(check_locus, "problems_of", lambda target, track: ["ins: wrong"])
+    target = resolve(INS, offline(_body())).target
+    storage = Storage()
+    track, refused, said = worker.make_locus(None, storage, INS_LOCUS, target)
+    assert (track, refused) == (None, None)
+    assert said == "absent: ins: wrong"
+    assert storage.objects == {}
+
+
+def test_resolving_writes_the_locus_with_the_protein(offline, locus_inputs, monkeypatch):
+    finished, requeued = _one_request(monkeypatch)
+    monkeypatch.setattr(store, "index_row", lambda conn, uniprot, gene: INS_LOCUS)
+    written = []
+    monkeypatch.setattr(store, "write_resolution", lambda conn, request_id, resolution, record,
+                        version, **said: written.append(said))
+    outcome = worker.resolve_next(None, Storage(), fetch_entry=lambda accession: offline(_body()))
+
+    assert outcome["state"] == "done" and outcome["locus"] == "ready: 11p15.5, pancreas"
+    (said,) = written
+    assert said["locus"]["kind"] == "locus" and said["locus_refused"] is None
+    assert requeued == []

@@ -1,8 +1,13 @@
-"""What the resolver's tests share: a builder that cannot reach the network.
+"""What the resolver's tests share: a builder that cannot reach the network,
+and no locus inputs snapshot unless a test makes one.
 
 The record is the real NG_007114 under `tests/fixtures/`, put where the
 builder's own flat-file cache looks; UniProt is whichever entry body a test
-serves; Entrez raises if anything calls it.
+serves; Entrez raises if anything calls it. The pinned snapshot the locus is
+made from (`pipeline/locus/inputs.py`) is looked for where there is none, so a
+protein resolved here has no locus track, whether or not the machine has
+built the real one; a test of the locus step builds a small one
+(`pipeline/locus/testing.py`).
 """
 
 from __future__ import annotations
@@ -21,6 +26,15 @@ from pipeline.mock import build_gene_record as builder  # noqa: E402
 from pipeline.uniprot import Entry  # noqa: E402
 
 RECORD = BACKEND / "tests" / "fixtures" / "ng_007114.gb"
+
+
+@pytest.fixture(autouse=True)
+def no_locus_inputs(monkeypatch, tmp_path):
+    """The locus inputs snapshot looked for where there is none."""
+    from pipeline.locus import inputs
+
+    monkeypatch.setenv(inputs.ENV, str(tmp_path / "no-locus-inputs.jsonl.gz"))
+    monkeypatch.setattr(inputs, "_LOADED", {})
 
 
 @pytest.fixture

@@ -29,6 +29,12 @@ So are its AVI and ClinVar tracks: ready, each to its digest and then to
 `check_assets.py`'s own checks against the record (ClinVar's against AVI's
 map); refused, with the sentence why, ClinVar's naming AVI's where AVI was
 refused; or never asked for, as a protein built before them is.
+
+And its locus track, the zoom's way into it: ready, its bytes to its digest,
+held to `check_locus` and to the bytes the pinned snapshot of the locus
+bake's inputs makes from its index row today (`bake_locus.bake`); or refused,
+with the sentence the snapshot gives today. Absent is wrong: a protein built
+before the resolver made its locus is given one by `scripts/queue_locus.py`.
 """
 
 from __future__ import annotations
@@ -185,6 +191,43 @@ def experimental(row: dict, said: dict, glb: bytes, folding: dict, translation: 
          "every residue it lists is the record's own")
 
 
+def locus(tracks: dict, index, release: dict | None, target) -> None:
+    """Its locus track, as the docstring says."""
+    import dataclasses
+
+    from pipeline.locus import bake_locus, check_locus
+    from pipeline.locus import inputs as locus_inputs
+
+    track = tracks.get("locus") or {"state": "absent"}
+    state = track["state"]
+    hold(index is not None and release is not None, "its index row and release are there")
+    if index is None or release is None:
+        return
+    snapshot = locus_inputs.load()
+    try:
+        made = bake_locus.encode(bake_locus.bake(
+            dataclasses.asdict(index), snapshot, slug=target.slug,
+            uniprot_source={"release": release["uniprot"]}, mane_release=release["mane"]))
+        refused = None
+    except bake_locus.LocusRefused as exc:
+        made, refused = None, str(exc)
+    if state == "ready":
+        payload = fetch(track["url"])
+        hold(hashlib.sha256(payload).hexdigest() == track["sha256"]
+             and len(payload) == track["bytes"], "locus bytes match their sha256 and size")
+        found = check_locus.problems_of(target, json.loads(payload))
+        hold(not found, "check_locus holds it" + (f": {found}" if found else ""))
+        hold(payload == made, f"the snapshot {snapshot.sha256[:12]} makes these bytes today")
+        said = json.loads(payload)
+        print(f"  locus: {said['locus']} on {said['sequence']}, {said['path']['tissue']} / "
+              f"{said['path']['cell_type']} ({said['path']['tissue_from']}, "
+              f"{said['path']['cell_from']}), schema {said['schema_version']}")
+    else:
+        print(f"  locus: {state}" + (f": {track['reason']}" if track.get("reason") else ""))
+        hold(state == "refused" and track.get("reason") == refused,
+             f"a locus is made, or refused as the snapshot refuses it today ({refused})")
+
+
 def evidence(tracks: dict, record: dict, target) -> None:
     """Its AVI and ClinVar tracks, as far as they have got (the docstring)."""
     payloads = {}
@@ -264,7 +307,8 @@ def main(gene: str, device: str | None) -> int:
     hold(states.get("record") == "ready" and states.get("constraint") == "ready",
          f"record and constraint ready: {states}")
     hold(all(state == "absent" for kind, state in states.items()
-             if kind not in ("record", "constraint", "structure", "impact", "clinvar", "folding")),
+             if kind not in ("record", "constraint", "structure", "impact", "clinvar", "folding",
+                             "locus")),
          "every other track absent")
     hold(row["tracks"] == states, "the row's bare states agree with its track rows")
 
@@ -356,6 +400,8 @@ def main(gene: str, device: str | None) -> int:
                     "where slug = %s order by decided_at desc, id desc limit 1", (slug,)).fetchone()
             aliases = conn.execute(
                 "select alias, kind from protein_alias where slug = %s order by kind, alias", (slug,)).fetchall()
+            index = store.index_row(conn, row["uniprot"], row["gene"])
+            release = store.index_release(conn)
     print(f"  protein row source: {where}")
     print(f"  request: {request}")
     print(f"  bake: {bake}")
@@ -369,6 +415,7 @@ def main(gene: str, device: str | None) -> int:
              "an experimental fold, and only one, is animated")
     print(f"  evidence bakes: {evidence_bakes}")
     evidence(tracks, record, target_of(protein_row))
+    locus(tracks, index, release, target_of(protein_row))
     print(f"  aliases: {aliases}")
     hold(request is not None and request[0] == "done" and request[2] == 1, "request done by resolver version 1")
     hold(bake is not None and bake[0] == "done", "constraint bake done")

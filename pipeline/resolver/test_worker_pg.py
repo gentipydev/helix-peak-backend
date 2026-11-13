@@ -16,6 +16,7 @@ statement `store.py` runs, and the service reading the rows they write.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 import os
 import re
@@ -125,7 +126,10 @@ def test_a_request_becomes_a_protein_with_its_record_ready(conn, offline):
     _ask(conn)
     outcome = worker.resolve_next(conn, storage, fetch_entry=lambda accession: offline(_body()))
 
-    assert outcome == {"id": 1, "gene": "INS", "state": "done", "slug": "ins"}
+    assert outcome == {"id": 1, "gene": "INS", "state": "done", "slug": "ins",
+                       "locus": outcome["locus"]}
+    # No snapshot here: the protein is built, with no locus track.
+    assert outcome["locus"].startswith("absent: no locus inputs snapshot")
     assert _one(conn, "select state, slug, attempts, resolver_version, reason "
                       "from resolve_request") == ("done", "ins", 1, 1, None)
     assert _one(conn, "select catalog_order, resolver_version, display, residues "
@@ -1626,3 +1630,53 @@ def test_a_reader_sees_the_evidence_step_and_then_the_scoring(
                      "records.' where kind = 'clinvar'")
         assert store.queue_evidence(conn, "ins") == ["clinvar"]
         assert resolves.current("INS")["build"]["step"] == "evidence"
+
+
+# -- the locus, written with the protein -------------------------------------------
+
+
+def test_a_resolved_proteins_locus_is_written_with_it(conn, offline, monkeypatch, tmp_path):
+    from pipeline.locus import inputs
+    from pipeline.locus.testing import built
+
+    _, _, read = built(tmp_path)
+    monkeypatch.setattr(inputs, "load", lambda *args, **kwargs: read)
+    conn.execute("update protein_index set ensembl_nuc = 'ENST00000381330.5', "
+                 "hgnc_id = 'HGNC:6081'")
+    storage = Storage()
+    _ask(conn)
+    outcome = worker.resolve_next(conn, storage, fetch_entry=lambda accession: offline(_body()))
+
+    assert outcome["locus"] == "ready: 11p15.5, pancreas"
+    state, path, digest, provenance = _one(
+        conn, "select state, object_path, sha256, provenance from protein_track "
+              "where slug = 'ins' and kind = 'locus'")
+    assert state == "ready" and path.startswith("locus/ins.")
+    payload = storage.objects[("tracks", path)]
+    assert hashlib.sha256(payload).hexdigest() == digest
+    assert provenance["sources"]["uniprot"] == {"release": "2026_03"}
+    assert json.loads(payload)["schema_version"] == 3
+
+
+def test_a_refused_locus_is_said_and_never_written_over_a_ready_one(conn):
+    conn.execute(
+        """
+        insert into protein (slug, gene, uniprot, accession, display, summary, residues, exons,
+            chains, bridges, regions, disulfides, provenance, resolver_version)
+        values ('gstt1', 'GSTT1', 'P30711', 'NT_187633.1', 'GSTT1', 'Built.', 240, 5, 1, 0,
+                '[]', '[]', '{}', 1)
+        """)
+    said = "The Human Protein Atlas has no reading for this gene."
+    with conn.transaction():
+        store.write_locus(conn, "gstt1", refused=said)
+    assert _one(conn, "select state, reason from protein_track where slug = 'gstt1' "
+                      "and kind = 'locus'") == ("refused", said)
+    ready = {"slug": "gstt1", "kind": "locus", "bucket": "tracks",
+             "object_path": "locus/gstt1.0123456789ab.json", "bytes": 1, "sha256": "a" * 64,
+             "format": "json", "provenance": {}}
+    with conn.transaction():
+        store.write_locus(conn, "gstt1", track=ready)
+    with conn.transaction():
+        store.write_locus(conn, "gstt1", refused=said)
+    assert _one(conn, "select state, object_path from protein_track where slug = 'gstt1' "
+                      "and kind = 'locus'") == ("ready", "locus/gstt1.0123456789ab.json")

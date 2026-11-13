@@ -93,6 +93,11 @@ class IndexRow:
     refseqgene: str | None
     buildable: bool
     unavailable_reason: str | None = None
+    # What the locus bake reads besides (`pipeline/locus/bake_locus.bake`):
+    # MANE's Ensembl transcript, the strand and the HGNC id.
+    ensembl_nuc: str | None = None
+    chrom_strand: int | None = None
+    hgnc_id: str | None = None
 
 
 @dataclass(frozen=True)

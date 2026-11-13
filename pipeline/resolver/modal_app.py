@@ -14,10 +14,12 @@ bake is handed. `pipeline/resolver/README.md` has the rest of the runbook.
 
 Five functions, and what starts each:
 
-- `sweep` resolves queued requests (`worker.sweep`) and starts each of the
-  three bakers below where a bake of its kind waits that it can take
-  (`store.claimable_bakes`). A schedule runs it every five minutes, so a
-  request is never left longer than that, even when nobody wakes it.
+- `sweep` resolves queued requests (`worker.sweep`), with each protein's
+  locus, the zoom's way in, made from the pinned snapshot its image carries
+  (`LOCUS_INPUTS`), and starts each of the three bakers below where a bake
+  of its kind waits that it can take (`store.claimable_bakes`). A schedule
+  runs it every five minutes, so a request is never left longer than that,
+  even when nobody wakes it.
 - `wake` is the URL the service calls once it queues a request (its
   MODAL_WAKE_URL), so a reader does not wait for the schedule. It starts
   `sweep` and does nothing else. Proxy auth guards it: a caller needs one of
@@ -56,7 +58,9 @@ and read as the Mac's `.env` says them (on, unless 0, false, no or off):
 
 The fold's image holds a copy of the app's checkout as it was at the deploy:
 deploy again after a change to `lib/shared/folding/`,
-`test/fold_bundle_check.dart` or the flutter_scene the app pins.
+`test/fold_bundle_check.dart` or the flutter_scene the app pins. The sweep's
+holds the locus inputs' snapshot, which a deploy needs built first
+(`.venv/bin/python -I pipeline/locus/snapshot.py`).
 """
 
 from __future__ import annotations
@@ -81,6 +85,7 @@ if len(_HERE.parents) > 2 and (_HERE.parents[2] / "pipeline").is_dir():
 
 from pipeline import paths  # noqa: E402
 from pipeline.constraint.score_protein import MODEL, REVISION  # noqa: E402
+from pipeline.locus import inputs as locus_inputs  # noqa: E402
 
 APP_NAME = "helix-peak-resolver"
 SECRET_NAME = "helix-peak-resolver"
@@ -129,6 +134,11 @@ SWEEP_LIMIT = 10
 # 318 MB table, at up to about 4.4 GB, for each gene it looks up.
 FOLD_CPU, FOLD_MEMORY = 2.0, 4096
 EVIDENCE_CPU, EVIDENCE_MEMORY = 1.0, 6144
+# The sweep makes each protein's locus from the snapshot below, which takes
+# the worker's process from 39 MB to 164 MB at its peak (on the Mac,
+# 2026-11-13): over Modal's default request of 128 MiB, which a container
+# may pass only where its host has room.
+SWEEP_MEMORY = 512
 
 PIPELINE = _HERE.parents[1]
 LOCK = PIPELINE / "constraint" / "requirements-lock.txt"
@@ -143,6 +153,16 @@ IMPACT_LOCK = PIPELINE / "impact" / "requirements-lock.txt"
 # module never does.
 CLIENT = paths.CLIENT
 SKILL = paths.SKILLS / "alphagenome-variant-impact-score"
+# The pinned snapshot of the locus bake's inputs (`pipeline/locus/inputs.py`),
+# which the sweep makes each protein's locus from (`worker.make_locus`): the
+# file this checkout's loader reads, where `snapshot.py` writes it. It is
+# data, which the code's upload leaves behind (`not_code`), so it goes up on
+# its own, under its pinned name, and the sweep's containers are pointed at
+# it. Modal looks for it only as a deploy uploads it, and names it if it is
+# not there: build it first. Its digest is checked as it is loaded.
+LOCUS_INPUTS = locus_inputs.default_path()
+LOCUS_INPUTS_REMOTE = ("/opt/locus-inputs/"
+                       + locus_inputs.file_name(locus_inputs.INPUTS_SHA256))
 # What a fold needs of the app's checkout, and nothing more. The importer runs
 # from its `pubspec.lock` (`alphafold.compile_scene`), and its check of a fold
 # (`experimental.app_check`) compiles `test/fold_bundle_check.dart` against
@@ -225,6 +245,7 @@ _ENV = {
 }
 _SWITCHES = {"RESOLVER_STRUCTURES": "1" if STRUCTURES else "0",
              "RESOLVER_EVIDENCE": "1" if EVIDENCE else "0"}
+_LOCUS = {locus_inputs.ENV: LOCUS_INPUTS_REMOTE}
 _WORKER_PACKAGES = ("biopython==1.85", "psycopg[binary]==3.2.13")
 # The worker's numpy, as `.worker-venv` has it through Biopython: a fold's job
 # is written with `structure/experimental.py`, which imports it.
@@ -234,8 +255,9 @@ _NOT_COPIED = ["**/.DS_Store"]
 resolver_image = (
     modal.Image.debian_slim(python_version="3.12")
     .pip_install(*_WORKER_PACKAGES, "fastapi[standard]==0.128.8")
-    .env({**_ENV, **_SWITCHES})
+    .env({**_ENV, **_SWITCHES, **_LOCUS})
     .add_local_python_source("app", "pipeline", ignore=not_code)
+    .add_local_file(LOCUS_INPUTS, LOCUS_INPUTS_REMOTE)
 )
 
 scorer_image = (
@@ -472,7 +494,8 @@ def starts(claimable: Mapping[str, int], structures: bool, evidence: bool) -> li
 
 
 @app.function(image=resolver_image, secrets=[secret], schedule=modal.Period(minutes=5),
-              timeout=SWEEP_TIMEOUT, max_containers=1, scaledown_window=IDLE)
+              memory=SWEEP_MEMORY, timeout=SWEEP_TIMEOUT, max_containers=1,
+              scaledown_window=IDLE)
 def sweep() -> dict:
     """Resolve what is queued, and start each baker for which a bake waits that
     it can take."""

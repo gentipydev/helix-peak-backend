@@ -134,3 +134,17 @@ def test_storage_times_are_read_whatever_their_fraction_and_zone():
     assert forget._made("2026-11-13T17:15:29.1234567+01:00") == datetime(
         2026, 11, 13, 16, 15, 29, 123456, tzinfo=timezone.utc)
     assert forget._made(None) is None and forget._made("yesterday") is None
+
+
+def test_a_proteins_locus_is_forgotten_with_it():
+    # The locus a built protein is given (`worker.make_locus`) is stored as the
+    # uploader names every track, so its row and its name both make it the
+    # protein's, and `forget_built.py` deletes it with the rest.
+    locus = {"slug": "b2m", "kind": "locus", "bucket": "tracks",
+             "object_path": "locus/b2m.0123456789ab.json"}
+    assert forget.owned("b2m", "locus/b2m.0123456789ab.json")
+    assert not forget.owned("b2m", "locus/b2mx.0123456789ab.json")
+    assert forget.objects_of("b2m", [locus], []) == {("tracks", "locus/b2m.0123456789ab.json")}
+    # A refused locus has no object to forget.
+    refused = {"slug": "b2m", "kind": "locus", "bucket": None, "object_path": None}
+    assert forget.objects_of("b2m", [refused], []) == set()

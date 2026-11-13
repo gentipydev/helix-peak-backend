@@ -174,7 +174,8 @@ def index_row(conn, uniprot: str, gene: str) -> Optional[IndexRow]:
     row = conn.execute(
         """
         select uniprot, gene, name, length, refseq_nuc, refseq_prot,
-               chrom_acc, chrom_start, chrom_end, refseqgene, buildable, unavailable_reason
+               chrom_acc, chrom_start, chrom_end, refseqgene, buildable, unavailable_reason,
+               ensembl_nuc, chrom_strand, hgnc_id
         from protein_index where uniprot = %s and gene = %s
         """,
         (uniprot, gene),
@@ -187,12 +188,44 @@ def mane_release(conn) -> Optional[str]:
     return row[0] if row else None
 
 
+def index_release(conn) -> Optional[dict]:
+    """The UniProt and MANE releases the index was loaded from: what a locus
+    made from an index row names as its sources (`bake_locus.bake`)."""
+    row = conn.execute("select uniprot, mane from protein_index_release").fetchone()
+    return {"uniprot": row[0], "mane": row[1]} if row else None
+
+
+def write_locus(conn, slug: str, track: Optional[dict] = None,
+                refused: Optional[str] = None) -> None:
+    """A protein's `locus` track: ready, its object stored already, or
+    refused with the reader's sentence. A refusal never writes over a ready
+    track. Run inside the caller's transaction (`write_resolution`), or in
+    one of its own for a protein built before its locus was made
+    (`scripts/queue_locus.py`)."""
+    if track is not None:
+        conn.execute(upload_tracks._UPSERT, {**track, "provenance": jsonb(track["provenance"])})
+    elif refused is not None:
+        conn.execute(
+            """
+            insert into protein_track (slug, kind, state, reason, format, provenance)
+            values (%s, 'locus', 'refused', %s, 'json', '{}'::jsonb)
+            on conflict (slug, kind) do update
+            set state = 'refused', reason = excluded.reason, updated_at = now()
+            where protein_track.state <> 'ready'
+            """,
+            (slug, refused),
+        )
+
+
 def write_resolution(conn, request_id: int, resolution: Resolution, record: dict,
                      resolver_version: int, structures: bool = False,
-                     evidence: bool = False) -> None:
+                     evidence: bool = False, locus: Optional[dict] = None,
+                     locus_refused: Optional[str] = None) -> None:
     """Everything a resolved protein is, in one transaction: its row and aliases,
-    its record track ready, its constraint track pending behind a queued bake,
-    and the request done.
+    its record track ready, its `locus` track ready or refused where the
+    worker made it (`worker.make_locus`), its constraint track pending behind
+    a queued bake, and the request done; so a protein is never opened without
+    the zoom its locus gives it.
 
     With `structures`, its structure track is pending behind a bake of its own
     as well, and with `evidence` its AVI and ClinVar tracks are
@@ -209,6 +242,7 @@ def write_resolution(conn, request_id: int, resolution: Resolution, record: dict
         for alias, kind in resolution.aliases:
             conn.execute(seed_catalog._UPSERT_ALIAS, (slug, alias, kind))
         conn.execute(upload_tracks._UPSERT, {**record, "provenance": jsonb(record["provenance"])})
+        write_locus(conn, slug, locus, locus_refused)
         conn.execute(
             """
             insert into protein_track (slug, kind, state, reason, format, provenance)

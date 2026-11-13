@@ -291,3 +291,29 @@ def test_a_build_under_way_is_refused_and_nothing_is_written(conn):
     assert _count(conn, "protein", "true") == 3
     assert _count(conn, "resolve_request", "true") == 2
     assert storage.deleted == []
+
+
+@needs_postgres
+def test_a_built_proteins_locus_is_found_by_its_row_and_goes_with_it(conn):
+    from pipeline.resolver import store
+
+    # B2M's locus written as the resolver writes one (`worker.make_locus`,
+    # `store.write_locus`), its object named as the uploader names every track;
+    # TTR's refused, a row with no object.
+    locus = ("tracks", "locus/b2m.034340fa97c2.json")
+    store.write_locus(conn, "b2m", {
+        "slug": "b2m", "kind": "locus", "bucket": locus[0], "object_path": locus[1],
+        "bytes": 7743, "sha256": "034340fa97c2" + "0" * 52, "format": "json",
+        "provenance": {"schema_version": 3}})
+    store.write_locus(conn, "ttr", refused="The Human Protein Atlas has no reading for this gene.")
+    assert locus in forget_built.named(conn, "b2m")
+    storage = _storage()
+    storage.held.add(locus)
+    said = []
+    assert forget_built.forget(conn, storage, [], True, True, said.append) == 0
+    assert "    tracks/locus/b2m.034340fa97c2.json" in said
+    assert said[-1] == "Dry run: nothing deleted (2 proteins, 10 objects)."
+    assert forget_built.forget(conn, storage, [], True, False, said.append) == 2
+    assert locus in storage.deleted
+    assert _count(conn, "protein_track", "kind = 'locus'") == 0
+    assert said[-1] == "Deleted 10 objects."

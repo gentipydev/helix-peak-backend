@@ -180,6 +180,38 @@ def test_the_sweeps_containers_carry_the_switches_as_deployed():
         "RESOLVER_EVIDENCE": "1" if modal_app.EVIDENCE else "0"}
 
 
+def test_the_sweeps_containers_read_the_pinned_locus_inputs_where_the_image_puts_them(
+        monkeypatch):
+    from pipeline.locus import inputs
+
+    remote = modal_app.LOCUS_INPUTS_REMOTE
+    # Data, which the code's upload leaves behind: it goes up on its own,
+    assert modal_app.not_code(
+        (inputs.FOLDER / inputs.file_name(inputs.INPUTS_SHA256)).relative_to(PIPELINE))
+    # under its pinned name, out of every directory a call writes in,
+    assert remote == f"/opt/locus-inputs/{inputs.file_name(inputs.INPUTS_SHA256)}"
+    assert not remote.startswith(modal_app.STATE)
+    # and a container's loader looks for it there.
+    assert modal_app._LOCUS == {inputs.ENV: remote}
+    monkeypatch.setenv(inputs.ENV, remote)
+    assert inputs.default_path() == Path(remote)
+
+
+def test_the_app_imports_without_the_locus_inputs_and_sends_the_ones_its_loader_reads(
+        tmp_path):
+    from pipeline.locus import inputs
+
+    missing = tmp_path / "no-snapshot.jsonl.gz"
+    done = subprocess.run(
+        [sys.executable, "-c", "from pipeline.resolver import modal_app; "
+                               "print(modal_app.LOCUS_INPUTS); "
+                               "print(modal_app.LOCUS_INPUTS_REMOTE)"],
+        cwd=str(BACKEND), env={**os.environ, inputs.ENV: str(missing)},
+        capture_output=True, text=True, timeout=300)
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.split() == [str(missing), modal_app.LOCUS_INPUTS_REMOTE]
+
+
 # ------------------------------------------------- what starts what
 
 
