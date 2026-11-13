@@ -34,6 +34,7 @@ if str(BACKEND) not in sys.path:
 
 from pipeline.locus import bake_locus, check_locus, verify_locus  # noqa: E402
 from pipeline.locus import inputs as locus_inputs  # noqa: E402
+from pipeline.locus.tissues import pair_tissue as tissue_of_pair  # noqa: E402
 from pipeline.resolver.resolve import IndexRow, Refused, slug_for, source_for  # noqa: E402
 from pipeline.targets import Target  # noqa: E402
 
@@ -118,13 +119,51 @@ def survey(rows: list, release: dict, proteins: list, snapshot: locus_inputs.Inp
             "refused": refused, "failed": failed, "problems": problems}
 
 
+def _tied(levels: dict) -> bool:
+    """Whether the two highest of [levels] are level, and above zero."""
+    top = sorted(levels.values(), reverse=True)[:2]
+    return len(top) == 2 and top[0] == top[1] and top[0] > 0
+
+
+def ties_of(track: dict) -> list[str]:
+    """Where rule v3's choice for [track] was settled by its tie-break."""
+    expression, path = track["expression"], track["path"]
+    found = []
+    if path["tissue_from"] == "tissue_level" and _tied(expression["tissue_levels"]):
+        found.append("tissue")
+    if path["cell_from"] == "single_cell_level" and _tied(expression.get("cell_levels") or {}):
+        found.append("cell")
+    if path["tissue_from"] == "tissue_cell_type" and expression["tissue_cell_type"]:
+        levels = expression["tissue_levels"]
+        by_tissue = {}
+        for pair in expression["tissue_cell_type"]:
+            tissue = tissue_of_pair(pair["tissue"])
+            by_tissue[tissue] = levels.get(tissue, 0)
+        if len(by_tissue) > 1 and _tied(by_tissue):
+            found.append("pair")
+    return found
+
+
 def summary_of(found: dict) -> dict:
     """The census's numbers, in the shape of the handoff's findings."""
     tracks = found["tracks"]
     count = collections.Counter
     paths = [t["path"] for t in tracks.values()]
     pairs = {(p["tissue"], p["cell_type"]) for p in paths if p["tissue"]}
+    v2 = {slug: bake_locus.path_of_v2(t["expression"]) for slug, t in tracks.items()}
+    changed = sorted(slug for slug, t in tracks.items() if t["path"] != v2[slug])
+    curated = set(found["curated"])
+    ties = {slug: ties_of(t) for slug, t in tracks.items()}
     return {
+        "v3_changed": len(changed),
+        "v3_changed_from": dict(count(str(v2[slug]["tissue_from"]) for slug in changed)),
+        "v3_changed_matched_by_mane": sum(
+            tracks[slug]["expression"]["atlas_match"] == "mane" for slug in changed),
+        "v3_changed_organ": sum(tracks[slug]["path"]["tissue"] != v2[slug]["tissue"]
+                                for slug in changed),
+        "v3_changed_curated": sorted(slug for slug in changed if slug in curated),
+        "v3_ties": dict(count(kind for found_ties in ties.values() for kind in found_ties)),
+        "v3_tied_genes": sorted(tracks[slug]["gene"] for slug, t in ties.items() if t),
         "offered": found["offered"],
         "tracks": len(tracks),
         "refused": [(r["gene"], r["reason"]) for r in found["refused"]],
@@ -176,7 +215,8 @@ def main(arguments: list[str] | None = None) -> int:
         summary["ncbi_differences"] = verdicts["rows"]
     (args.out / "summary.json").write_text(json.dumps(summary, indent=1, default=str))
     for key, value in summary.items():
-        if key in ("ncbi_differences", "atlas_named_otherwise", "placed", "check_problems"):
+        if key in ("ncbi_differences", "atlas_named_otherwise", "placed", "check_problems",
+                   "v3_tied_genes", "no_tissue"):
             print(f"{key}: {len(value)}")
             for item in value[:40]:
                 print(f"    {item}")

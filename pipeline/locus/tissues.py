@@ -58,6 +58,22 @@ PAIR_TISSUES = {
     "Thyroid gland": "thyroid gland",
 }
 
+# The tissues the consensus level table names (`rna_tissue_consensus.tsv`) that
+# its gene readings group under one of `TISSUES`: the regions of the brain
+# and of the spinal cord as the brain, the parts of the gut as the intestine,
+# and the lymphoid organs as lymphoid tissue, as the Atlas groups them. The
+# table's other 34 names are `TISSUES` as they are. A group's level is the
+# highest of its members'.
+CONSENSUS_GROUPS = {
+    "amygdala": "brain", "basal ganglia": "brain", "cerebellum": "brain",
+    "cerebral cortex": "brain", "hippocampal formation": "brain",
+    "hypothalamus": "brain", "midbrain": "brain", "spinal cord": "brain",
+    "colon": "intestine", "duodenum": "intestine", "rectum": "intestine",
+    "small intestine": "intestine",
+    "appendix": "lymphoid tissue", "lymph node": "lymphoid tissue",
+    "spleen": "lymphoid tissue", "thymus": "lymphoid tissue", "tonsil": "lymphoid tissue",
+}
+
 _SAMPLE = re.compile(r"\s+\d+$")
 
 
@@ -66,6 +82,12 @@ def tissue_name(raw: str) -> str | None:
     or None for a name the Atlas's list does not have."""
     name = _SAMPLE.sub("", raw.strip()).lower()
     return name if name in TISSUES else None
+
+
+def consensus_group(raw: str) -> str | None:
+    """The tissue of `TISSUES` a consensus level's tissue counts toward: itself,
+    or the group the Atlas puts it in; None for a name neither list has."""
+    return tissue_name(raw) or CONSENSUS_GROUPS.get(raw.strip().lower())
 
 
 def pair_tissue(raw: str) -> str | None:

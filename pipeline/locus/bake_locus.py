@@ -68,8 +68,8 @@ if str(BACKEND) not in sys.path:
 
 from app.protein_index import rows_for_entry, versionless  # noqa: E402
 from pipeline.locus import inputs as locus_inputs  # noqa: E402
-from pipeline.locus.cell_types import anucleate, cell_class, homes, single  # noqa: E402
-from pipeline.locus.tissues import pair_tissue, tissue_name  # noqa: E402
+from pipeline.locus.cell_types import CELL_TYPES, anucleate, cell_class, homes, single  # noqa: E402
+from pipeline.locus.tissues import TISSUES, consensus_group, pair_tissue, tissue_name  # noqa: E402
 from pipeline.paths import DATA  # noqa: E402
 from pipeline.targets import BY_SLUG, TARGETS, Target  # noqa: E402
 from pipeline.uniprot import Entry, fetch_entry  # noqa: E402
@@ -82,9 +82,12 @@ LOCUS_TARGETS = TARGETS
 # reader ignores them.
 # 3 adds keys only, for every protein the search offers: how the Atlas entry
 # was found and the Atlas's own name for the gene (`expression.atlas_match`,
-# `atlas_gene`), where a gene MANE puts on a patch scaffold was carried from
-# (`placed_from`), and the snapshot it was made from (`sources.locus_inputs`).
-# A schema 2 reader ignores them. The curated keep their stored schema 2.
+# `atlas_gene`), the levels rule v3 reads (`expression.tissue_levels`, and
+# `cell_levels` where it goes by level), where a gene MANE puts on a patch
+# scaffold was carried from (`placed_from`), and the snapshot it was made
+# from (`sources.locus_inputs`). Its `path` is rule v3's (`path_of_v3`). A
+# schema 2 reader ignores the new keys. The curated keep their stored schema
+# 2, and rule v3 gives every one of them the path it has.
 SCHEMA_VERSION = 3
 SCHEMAS = (2, 3)
 
@@ -224,8 +227,10 @@ def expression_of(gene: dict) -> dict:
     }
 
 
-def path_of(expression: dict) -> dict:
-    """The one way down the zoom takes, from the Atlas's readings alone.
+def path_of_v2(expression: dict) -> dict:
+    """Rule v2 (schema 2): the one way down the zoom takes, from the Atlas's
+    readings alone. Rule v3 (`path_of_v3`) keeps its first two ways as they
+    are, and every curated protein's stored path is this rule's.
 
     The organ is the tissue the gene's RNA is highest in. The cell is one
     that lives there: the first cell type the Atlas finds the gene enriched
@@ -288,6 +293,120 @@ def path_of(expression: dict) -> dict:
         "cell_from": cell_from,
         "lands_in": None if lands is None else {**lands, "why": "no nucleus"},
     }
+
+
+def tissue_levels(raw: dict) -> dict:
+    """A gene's consensus RNA level (nTPM) in each tissue of `TISSUES`, in its
+    order: the level the Atlas measured there, or for the brain, the
+    intestine and lymphoid tissue the highest of their members'
+    (`tissues.CONSENSUS_GROUPS`); zero where it measured none. Refuses a
+    tissue the Atlas's lists do not have."""
+    levels = {tissue: 0 for tissue in TISSUES}
+    for name, level in raw.items():
+        tissue = consensus_group(name)
+        if tissue is None:
+            raise LookupError(f"the Atlas's consensus tissue {name!r} is not one it lists")
+        levels[tissue] = max(levels[tissue], level)
+    return levels
+
+
+def top_tissue(levels: dict) -> str | None:
+    """The tissue the gene's RNA is highest in, if above zero anywhere; of two
+    with one level, the later in the alphabet (`max` by level, then name)."""
+    if not levels:
+        return None
+    best = max(levels, key=lambda tissue: (levels[tissue], tissue))
+    return best if levels[best] > 0 else None
+
+
+def cell_candidates(tissue: str) -> list[str]:
+    """The single cell types that live in [tissue] (`homes`), in the
+    vocabulary's order."""
+    return [cell for cell, (_, places) in CELL_TYPES.items() if tissue in places]
+
+
+def cell_levels(raw: dict, tissue: str) -> dict:
+    """A gene's level (nCPM) in each single cell type that lives in [tissue],
+    by the vocabulary's names; zero where the Atlas measured none. Refuses a
+    cell type the vocabulary does not have."""
+    found = {}
+    for name, level in raw.items():
+        cell = single(name)
+        if cell is None:
+            raise LookupError(f"the Atlas's single cell type {name!r} is not one it lists")
+        found[cell] = level
+    return {cell: found.get(cell, 0) for cell in cell_candidates(tissue)}
+
+
+def readings_v3(expression: dict, raw: tuple[dict, dict]) -> dict:
+    """The levels rule v3 reads besides the Atlas's reading, as schema 3 keeps
+    them in `expression`: every tissue's level (`tissue_levels`), and where no
+    tissue, cell type or pair stands out, so that the rule goes by level,
+    each cell type's level in the tissue it goes to (`cell_levels`)."""
+    tissues_raw, cells_raw = raw
+    levels = tissue_levels(tissues_raw)
+    out = {"tissue_levels": levels}
+    if path_of_v2(expression)["tissue_from"] is None:
+        top = top_tissue(levels)
+        if top is not None:
+            out["cell_levels"] = cell_levels(cells_raw, top)
+    return out
+
+
+def path_of_v3(expression: dict) -> dict:
+    """Rule v3 (schema 3, the user's decision of 2026-11-13): rule v2's first
+    two ways as they are, and its last two read by level, not by the Atlas's
+    alphabet or not at all.
+
+    A gene specific to no tissue and to no cell type with a home, with tissue
+    cell type pairs only, goes to the pair in the tissue its RNA is highest
+    in (`tissue_levels`), the earlier pair in the Atlas's order where two
+    tissues are level: v2 took the first pair, and the Atlas lists them by
+    tissue, alphabetically. A gene with none of these goes to the tissue its
+    RNA is highest in, if above zero anywhere (`tissue_from`
+    `tissue_level`), into the cell type that lives there it is highest in,
+    if above zero (`cell_from` `single_cell_level`; `cell_levels`), else the
+    tissue's own cells. A gene read in no tissue has no path: it is refused
+    (`NOT_DETECTED`)."""
+    old = path_of_v2(expression)
+    if old["tissue_from"] not in ("tissue_cell_type", None):
+        return old
+    levels = expression["tissue_levels"]
+    pairs = [(pair_tissue(pair["tissue"]), pair["cell_type"])
+             for pair in expression["tissue_cell_type"]]
+    if pairs:
+        best = max(range(len(pairs)), key=lambda i: (levels.get(pairs[i][0], 0), -i))
+        tissue, cell = pairs[best]
+        tissue_from = cell_from = "tissue_cell_type"
+    else:
+        tissue = top_tissue(levels)
+        if tissue is None:
+            return old
+        live = [(level, name) for name, level in (expression.get("cell_levels") or {}).items()
+                if level > 0]
+        cell = max(live)[1] if live else None
+        tissue_from = "tissue_level"
+        cell_from = "single_cell_level" if cell is not None else None
+    kind = None
+    if cell is not None:
+        kind = cell_class(cell)
+        if kind is None:
+            raise LookupError(f"the path's cell type {cell!r} has no class the Atlas gives")
+    lands = anucleate(cell) if cell is not None else None
+    return {
+        "tissue": tissue,
+        "tissue_from": tissue_from,
+        "cell_type": cell,
+        "cell_class": kind,
+        "cell_from": cell_from,
+        "lands_in": None if lands is None else {**lands, "why": "no nucleus"},
+    }
+
+
+def path_of(expression: dict) -> dict:
+    """The path a reading takes: rule v3 where it carries the levels v3 reads
+    (schema 3), rule v2 where it does not (schema 2, the curated)."""
+    return path_of_v3(expression) if "tissue_levels" in expression else path_of_v2(expression)
 
 
 def locus_asset(target: Target) -> str:
@@ -384,6 +503,10 @@ class LocusRefused(Exception):
 # HLA-DRB3 and LILRA3 live only on alternate haplotypes, which the Atlas's
 # Ensembl does not annotate.
 NO_ATLAS_ENTRY = "The Human Protein Atlas has no reading for this gene."
+
+# What a gene read in no tissue the Atlas measured is refused with: BECN2,
+# MRGPRX4 and TAS2R16 are "Not detected" in every one, so no organ can be lit.
+NOT_DETECTED = "The Human Protein Atlas detects this gene's RNA in no tissue."
 
 # The accessions MANE puts a transcript on: the primary chromosomes 1 to 22,
 # X (23) and Y (24), and otherwise a GRCh38 patch or alternate locus scaffold
@@ -485,11 +608,14 @@ def atlas_match(row: dict, snapshot: locus_inputs.Inputs) -> tuple[str, str] | N
 def track_of(*, slug: str, gene: str, uniprot: str, row: dict, atlas_gene: dict,
              match: tuple[str, str], cytoband: Table, aliases: Table, atlas: Atlas,
              mane_release: str, uniprot_source: dict, retrieved: str,
-             placements: list = (), inputs_source: dict | None = None) -> dict:
+             levels: tuple[dict, dict], placements: list = (),
+             inputs_source: dict | None = None) -> dict:
     """The track for one protein: its index row's span, on its chromosome
     (carried there from a patch scaffold where MANE puts it on one), and the
-    reading of the Atlas entry [match] chose. Refuses an Atlas answer for
-    another entry than the one chosen."""
+    reading of the Atlas entry [match] chose, with the entry's consensus and
+    single cell type [levels] (by the tables' names) that rule v3 reads.
+    Refuses an Atlas answer for another entry than the one chosen; raises
+    `LocusRefused` for a gene read in no tissue."""
     ensembl, how = match
     if how not in MATCHES:
         raise ValueError(f"{slug}: no such way to match the Atlas: {how!r}")
@@ -514,6 +640,12 @@ def track_of(*, slug: str, gene: str, uniprot: str, row: dict, atlas_gene: dict,
     names = [b["name"] for b in inside]
     expression = {"ensembl_gene": ensembl, **expression_of(atlas_gene),
                   "atlas_match": how, "atlas_gene": atlas_gene.get("Gene")}
+    expression.update(readings_v3(expression, levels))
+    path = path_of(expression)
+    if path["tissue"] is None:
+        if max(expression["tissue_levels"].values()) > 0:
+            raise LookupError(f"{slug}: read in a tissue, yet the rule takes none")
+        raise LocusRefused(NOT_DETECTED)
     track = {
         "slug": slug,
         "gene": gene,
@@ -542,7 +674,7 @@ def track_of(*, slug: str, gene: str, uniprot: str, row: dict, atlas_gene: dict,
         "locus": locus_of(chromosome, names),
         "bands": bands,
         "expression": expression,
-        "path": path_of(expression),
+        "path": path,
         "sources": sources,
         "retrieved": retrieved,
         "schema_version": SCHEMA_VERSION,
@@ -553,11 +685,12 @@ def track_of(*, slug: str, gene: str, uniprot: str, row: dict, atlas_gene: dict,
 
 def payload(target: Target, entry: Entry, mane: dict, mane_release: str,
             cytoband: Table, aliases: Table, atlas: Atlas, atlas_gene: dict,
-            retrieved: str, *, match: tuple[str, str] | None = None,
+            retrieved: str, *, levels: tuple[dict, dict] = ({}, {}),
+            match: tuple[str, str] | None = None,
             inputs_source: dict | None = None) -> dict:
     """A curated protein's track, from its UniProt entry joined to MANE, the
-    way the protein index joins them, and the Atlas entry [match] chose
-    (MANE's Ensembl gene, unless said)."""
+    way the protein index joins them, the Atlas entry [match] chose (MANE's
+    Ensembl gene, unless said) and that entry's [levels]."""
     body = entry.body
     if body.get("primaryAccession") != target.uniprot:
         raise ValueError(f"{target.slug}: asked for {target.uniprot}, "
@@ -570,7 +703,7 @@ def payload(target: Target, entry: Entry, mane: dict, mane_release: str,
         cytoband=cytoband, aliases=aliases, atlas=atlas, mane_release=mane_release,
         uniprot_source={"release": entry.release, "release_date": entry.release_date,
                         "entry_version": audit.get("entryVersion")},
-        retrieved=retrieved, inputs_source=inputs_source)
+        retrieved=retrieved, levels=levels, inputs_source=inputs_source)
 
 
 def inputs_source(snapshot: locus_inputs.Inputs) -> dict:
@@ -606,7 +739,7 @@ def bake(row: dict, snapshot: locus_inputs.Inputs, *, slug: str, uniprot_source:
         atlas_gene=snapshot.atlas_gene(match[0]), match=match, cytoband=cytoband,
         aliases=aliases, atlas=atlas, mane_release=mane_release or snapshot.mane_release,
         uniprot_source=uniprot_source, retrieved=snapshot.created,
-        placements=snapshot.placements(row["chrom_acc"]),
+        levels=snapshot.levels(match[0]), placements=snapshot.placements(row["chrom_acc"]),
         inputs_source=inputs_source(snapshot))
 
 
@@ -647,8 +780,9 @@ def main() -> int:
                                   f"{target.gene}")
             track = payload(target, entry, mane, mane_release, cytoband, aliases,
                             atlas, snapshot.atlas_gene(match[0]), retrieved, match=match,
+                            levels=snapshot.levels(match[0]),
                             inputs_source=inputs_source(snapshot))
-        except (LookupError, ValueError) as exc:
+        except (LocusRefused, LookupError, ValueError) as exc:
             failed.append(f"{target.slug}: {exc}")
             print(f"{target.slug:<16} FAILED: {exc}")
             continue

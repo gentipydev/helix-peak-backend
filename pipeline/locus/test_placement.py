@@ -224,7 +224,7 @@ def test_an_entry_the_chain_did_not_choose_is_refused(snapshot):
             slug="polr2a", gene="POLR2A", uniprot="P24928", row=POLR2A, atlas_gene=other,
             match=("ENSG00000181222", "hgnc"), cytoband=cytoband, aliases=aliases, atlas=atlas,
             mane_release="v1.5", uniprot_source=RELEASE, retrieved="2026-11-13",
-            placements=snapshot.placements("NW_016107299.1"))
+            levels=({}, {}), placements=snapshot.placements("NW_016107299.1"))
 
 
 def test_the_bake_is_the_same_bytes_every_time(snapshot):

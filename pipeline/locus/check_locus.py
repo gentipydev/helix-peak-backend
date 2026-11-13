@@ -21,8 +21,9 @@ For each target, the payload under `pipeline/data/assets/locus/`:
   where the gene is specific to something, each by a name the Atlas lists;
   its tissue cell type pairs, each a tissue it lists and a cell type; where
   in a cell and where it is secreted to, in the Atlas's own words;
-- takes the zoom's path the rule takes (`path_of`), recomputed from the
-  readings, with a class for its cell;
+- takes the zoom's path its schema's rule takes (`path_of_v2`, or
+  `path_of_v3` with the levels it reads), recomputed from the readings, with
+  a class for its cell;
 - says where it came from: each UCSC table's genome, update time and
   digest, the MANE release, the UniProt release, and the Protein Atlas
   version, release date, Ensembl version and licence.
@@ -56,12 +57,15 @@ from pipeline.locus.bake_locus import (  # noqa: E402
     TISSUE_SPECIFICITY,
     UNSPECIFIC,
     carried,
+    cell_candidates,
     locus_asset,
     locus_of,
-    path_of,
+    path_of_v2,
+    path_of_v3,
+    top_tissue,
 )
 from pipeline.locus.cell_types import CLASSES, SECRETOME, SUBCELLULAR, single  # noqa: E402
-from pipeline.locus.tissues import pair_tissue, tissue_name  # noqa: E402
+from pipeline.locus.tissues import TISSUES, pair_tissue, tissue_name  # noqa: E402
 from pipeline.paths import DATA  # noqa: E402
 from pipeline.targets import Target  # noqa: E402
 
@@ -77,6 +81,35 @@ _DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _ENSEMBL = re.compile(r"^ENSG\d{11}$")
 _VERSION = re.compile(r"^\d+\.\d+$")
 _SCAFFOLD = re.compile(r"^N[TW]_\d+\.\d+$")
+
+
+def _level(value) -> bool:
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and value >= 0
+
+
+def levels_problems(where: str, expression: dict) -> list[str]:
+    """What is wrong with the levels rule v3 reads (schema 3): a level for
+    every tissue, in `TISSUES` order; and exactly where the rule goes by level
+    (no tissue, cell type or pair stands out, and the gene is read somewhere),
+    a level for every cell type that lives in the tissue it goes to."""
+    levels = expression.get("tissue_levels")
+    if not isinstance(levels, dict) or list(levels) != list(TISSUES):
+        return [f"{where}: tissue_levels does not name every tissue, in order"]
+    if not all(_level(value) for value in levels.values()):
+        return [f"{where}: a tissue level that is not a level"]
+    try:
+        by_level = path_of_v2(expression)["tissue_from"] is None
+    except (KeyError, LookupError, TypeError, ValueError):
+        return []
+    top = top_tissue(levels) if by_level else None
+    cells = expression.get("cell_levels")
+    if top is None:
+        return [] if cells is None else [f"{where}: cell_levels where the rule does not go by level"]
+    if not isinstance(cells, dict) or list(cells) != cell_candidates(top):
+        return [f"{where}: cell_levels does not name the cell types that live in {top}"]
+    if not all(_level(value) for value in cells.values()):
+        return [f"{where}: a cell type level that is not a level"]
+    return []
 
 
 def placed_problems(where: str, track: dict) -> list[str]:
@@ -298,13 +331,16 @@ def problems_of(target: Target, track: dict | None = None) -> list[str]:
             out.append(f"{where}: the Atlas's URL {url} is not the entry "
                        f"{expression.get('ensembl_gene')}")
 
-    # The zoom's path, as the rule takes it from those readings.
+    # The zoom's path, as its schema's rule takes it from those readings: v2
+    # for schema 2, v3 for schema 3, whose levels are held to what it reads.
+    if schema == 3:
+        out += levels_problems(where, expression)
     path = track.get("path")
     if not isinstance(path, dict):
         out.append(f"{where}: no path")
     else:
         try:
-            want = path_of(expression)
+            want = path_of_v3(expression) if schema == 3 else path_of_v2(expression)
         except (KeyError, LookupError, TypeError, ValueError) as exc:
             out.append(f"{where}: the path's readings do not resolve: {exc}")
         else:
@@ -312,6 +348,8 @@ def problems_of(target: Target, track: dict | None = None) -> list[str]:
                 out.append(f"{where}: path is {path!r}, the rule takes {want!r}")
             if path.get("cell_type") is not None and path.get("cell_class") not in CLASSES:
                 out.append(f"{where}: path cell class {path.get('cell_class')!r}")
+            if schema == 3 and path.get("tissue") is None:
+                out.append(f"{where}: read in no tissue, so refused, never made")
 
     # Where it came from.
     sources = track.get("sources") or {}
