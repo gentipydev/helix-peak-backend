@@ -14,7 +14,7 @@ entry chosen by rule, with the fold animation the twenty play
 search finds none (`structure/alphafold.py`). The two tracks and the row's
 words are published together or not at all (`store.publish_fold`). That wants
 PyMOL, the app's scene importer and the app's own check, which the Mac's
-worker has and Modal's image does not, so only the Mac asks.
+worker has and Modal's fold image holds too.
 
 And the variant evidence, where a worker asks for it (`evidence`), with the
 bakers that made the twenty's, unchanged: `impact_next` takes one queued AVI
@@ -22,8 +22,9 @@ bake (`impact/bake_impact.py`, AlphaGenome's scores and the map from the
 record's bases to GRCh38), and `clinvar_next` one ClinVar bake
 (`clinvar/bake_clinvar.py`), whose records are placed by that map, so it waits
 for it (`store.WAITS_FOR`). The first wants the AlphaGenome client and its
-skill's GENCODE lookup, which only the Mac has. ESM-2 waits for both, so a
-build that opens once its scores are in has its evidence too.
+skill's GENCODE lookup, which the Mac has and Modal's evidence image holds
+too. ESM-2 waits for both, so a build that opens once its scores are in has
+its evidence too.
 
 What ends a request or a bake, and how the reader hears of it:
 

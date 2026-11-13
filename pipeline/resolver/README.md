@@ -11,7 +11,14 @@ app (search field) ──POST /proteins/resolve──▶ service ──row──
                                                   └──wake──▶ Modal: sweep (CPU, every 5 min anyway)
                                                                │  UniProt entry + GenBank record
                                                                │  → protein row, aliases, record track (ready)
-                                                               │  → constraint track (pending) + bake_job
+                                                               │  → structure, impact, clinvar, constraint
+                                                               │    tracks (pending), a bake_job each
+                                                               ├──spawn──▶ Modal: fold (CPU)
+                                                               │             PDB entry, else AlphaFold DB
+                                                               │             → structure (+ folding) track (ready)
+                                                               ├──spawn──▶ Modal: evidence (CPU)
+                                                               │             AlphaGenome → impact, NCBI → clinvar
+                                                               │             └──spawn──▶ score, once both are over
                                                                └──spawn──▶ Modal: score (one L4)
                                                                              ESM-2 650M → constraint track (ready)
 app ──GET /proteins/resolve/{gene}──▶ state + build ──▶ /gene/<slug>, the walk, as for the twenty
@@ -19,15 +26,18 @@ app ──GET /proteins/resolve/{gene}──▶ state + build ──▶ /gene/<s
 
 The service never imports this directory and holds no storage key: it writes
 one `resolve_request` row and calls a URL. Everything else is the worker's,
-with the uploader's credentials: on Modal, as drawn, or until it is deployed
-there on a Mac, which makes the same two calls from a launchd agent
-([below](#running-the-worker-on-a-mac-temporary)).
+with the uploader's credentials: on Modal, as drawn, or on a Mac, which makes
+the same calls from a launchd agent
+([below](#running-the-worker-on-a-mac-temporary)). The two may run side by side.
 
-The Mac's worker makes one thing more, between the two: the protein's fold,
-from an experimental entry chosen by rule, with the fold animation the twenty
-play, and from AlphaFold DB's model only where a whole search finds none
-([below](#the-fold-an-experimental-entry-else-alphafold-dbs-model)). Modal's
-image cannot yet, so only the Mac's asks for it.
+Each makes a protein's fold as well as its scores, from an experimental entry
+chosen by rule, with the fold animation the twenty play, and from AlphaFold
+DB's model only where a whole search finds none
+([below](#the-fold-an-experimental-entry-else-alphafold-dbs-model)), and its
+variant evidence, AlphaGenome's AVI and ClinVar's records
+([below](#the-variant-evidence-avi-and-clinvar)). Until 2026-11-13 only the
+Mac's could; Modal's images now hold the same tools
+([Moving to Modal](#moving-to-modal)).
 
 ## What a protein resolved on demand is (resolver version 1)
 
@@ -58,8 +68,8 @@ rule; in short:
   where the worker makes models `structure` pending until its model is made
   (seconds), and where it makes the variant evidence `impact` and `clinvar`
   pending until AlphaGenome's scores and ClinVar's records are in (minutes).
-  Nothing else; on a worker that makes none of the three (Modal's), they read
-  `absent`.
+  Nothing else; where a worker is set to make none of the three
+  (`RESOLVER_STRUCTURES=0`, `RESOLVER_EVIDENCE=0`), they read `absent`.
 - **ESM-2** is the twenty's model and revision, `facebook/esm2_t33_650M_UR50D`,
   run through the same scorer and its alignment gate. The app accepts only that
   model's tracks, so no app change is needed for them. A protein that fails the
@@ -143,10 +153,12 @@ read as none.
   puts the `structure` track `pending` behind a `bake_job` of its own, in the
   transaction that queues the `constraint` one, for the same `asker`. Only a
   worker that can make a model asks (`worker.sweep(structures=True)`): the
-  Mac's does, and Modal's does not, so a track is never left pending where
-  nothing will bake it.
-- **Made before the scoring.** `worker.structure_next` claims it, and the Mac's
-  cycle runs it between resolving and scoring. `model_local.py` (in the
+  Mac's and Modal's both do unless switched off, so a track is never left
+  pending where nothing will bake it.
+- **Made before the scoring.** `worker.structure_next` claims it: the Mac's
+  cycle runs it between resolving and scoring, and on Modal the `fold`
+  function runs it, beside the evidence, as soon as the sweep has resolved
+  the protein. `model_local.py` (in the
   structure bake's environment) searches the PDB, ranks every way of drawing
   the protein, holds the best to its own file, and bakes it into the model and
   its `folding` track from one working copy, by the twenty's own bakers; then
@@ -216,19 +228,22 @@ by the bakers that made the twenty's, unchanged (`impact/bake_impact.py`,
 
 - **Queued with the scoring.** `store.write_resolution(..., evidence=True)`
   puts both tracks `pending` behind a bake each (`store.queue_evidence`), for
-  the same `asker`. Only a worker that can make them asks: the Mac's.
+  the same `asker`. Only a worker that can make them asks: the Mac's, and
+  Modal's (its `evidence` function), each unless switched off.
 - **In a build's order, held by the claim.** ClinVar's records are placed on
   the record's bases by the map AVI's track carries (`runs`, `chromosome`,
   `complemented`), so a `clinvar` bake is claimed only once its protein's
   `impact` bake is over, and a `constraint` bake only once both are
   (`store.WAITS_FOR`). The long step stays last, and a build that opens once
   its scores are in has its evidence too.
-- **AVI**, on the Mac: `local_worker.Evidencer` runs `impact_local.py` in the
-  AVI bake's own environment (`pipeline/impact/venv`), with
-  `ALPHAGENOME_API_KEY` from `.env` (handed to that bake alone) and `uv` on its
-  PATH for the AlphaGenome skill's GENCODE lookup. GENCODE's answers and the
-  pull's checkpoints are kept in the worker's state between tries, never in
-  `pipeline/impact/`. One of the bake's own gates saying no (the exons do not
+- **AVI**: `local_worker.Evidencer` runs `impact_local.py` in the AVI bake's
+  own environment (`pipeline/impact/venv` on the Mac; on Modal the same
+  packages, `pipeline/impact/requirements-lock.txt`), with
+  `ALPHAGENOME_API_KEY` (from `.env`, or the Modal secret: handed to that bake
+  alone) and `uv` on its PATH for the AlphaGenome skill's GENCODE lookup.
+  GENCODE's answers and the pull's checkpoints are kept in the worker's state
+  between tries, never in `pipeline/impact/` (on Modal, for as long as the
+  container lives). One of the bake's own gates saying no (the exons do not
   pair with GENCODE's MANE Select ones, the record's bases are not GRCh38's
   where GENCODE puts the gene, too few were scored) refuses the track with the
   gate's words (`worker.Unplaced`); the Atlas or the lookup not answering is
@@ -271,9 +286,18 @@ From the repository root, in order.
    .venv/bin/python scripts/apply_migration.py migrations/0011_build_stop.sql
    ```
 
-2. **The secret.** In the Modal workspace (modal.com → Secrets → Custom), create
-   `helix-peak-resolver` with four keys: `DATABASE_URL`, `SUPABASE_URL`,
-   `SUPABASE_SERVICE_KEY` (the uploader's three) and `NCBI_EMAIL`.
+2. **The secret.** In the Modal workspace, `helix-peak-resolver` with five
+   keys: `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` (the
+   uploader's three), `NCBI_EMAIL` and `ALPHAGENOME_API_KEY` (the Atlas's,
+   which only the AVI bake is handed). From `.env`, those five lines alone,
+   never the whole file and never printed:
+
+   ```sh
+   five=$(mktemp)    # readable by you alone
+   grep -E '^(DATABASE_URL|SUPABASE_URL|SUPABASE_SERVICE_KEY|NCBI_EMAIL|ALPHAGENOME_API_KEY)=' .env > "$five"
+   .modal-venv/bin/modal secret create helix-peak-resolver --from-dotenv "$five" --force
+   rm "$five"
+   ```
 
 3. **The app.**
 
@@ -283,9 +307,12 @@ From the repository root, in order.
    .modal-venv/bin/modal deploy pipeline/resolver/modal_app.py
    ```
 
-   The first deploy builds the scorer's image, which downloads the 650M weights
-   into it (a few minutes). The output prints the `wake` URL,
-   `https://<workspace>--helix-peak-resolver-wake.modal.run`.
+   The first deploy builds the four images: the scorer's downloads the 650M
+   weights into it, and the fold's Flutter (1.6 GB) and PyMOL (a few minutes
+   each). Run it from a checkout with the app's beside it (`../helix-peek`,
+   clean) and the AlphaGenome skill (`../.claude/skills`), which the fold's and
+   the evidence's images copy. The output prints the `wake` URL,
+   `https://<workspace>--helix-peak-resolver-wake.<region>.modal.run`.
 
 4. **The wake.** In the Modal workspace (Settings → Proxy Auth Tokens), create a
    token. On Render, set `MODAL_WAKE_URL` to the wake URL and `MODAL_KEY` /
@@ -322,11 +349,11 @@ and compare with the `constraint` row's `sha256` on `/protein/insulin/tracks`
 
 ## Running the worker on a Mac (temporary)
 
-Modal creates no GPU function for a workspace without a payment method: on
-2026-10-07 step 3 above was refused at its last line, with the table and the
-secret already in place. Until it is deployed, a Mac is the worker.
-`local_worker.py` makes the two calls `modal_app.py` makes, `worker.sweep` and
-`worker.score_all`, from a launchd agent. It asks the queue every 60 seconds
+A Mac can be the worker too, beside Modal or instead of it. It was the only
+one from 2026-10-08 to 2026-11-13, while the Modal workspace had no payment
+method. `local_worker.py` makes the calls `modal_app.py` makes,
+`worker.sweep`, the fold's, the evidence's and `worker.score_all`, from a
+launchd agent. It asks the queue every 60 seconds
 and scores on the Mac's GPU (`mps`) in `pipeline/.esm-venv`, the environment
 that baked the twenty.
 
@@ -452,52 +479,67 @@ times: ESM-2 was still scoring after 60 minutes and was stopped."
 
 ## Moving to Modal
 
-Nothing in the code changes: Modal's `sweep` and `score` call what the Mac's
-worker calls.
+Nothing in the code changes: Modal's functions call what the Mac's worker
+calls, through the same drivers (`local_worker.Modeller`, `Evidencer`,
+`ClinVarBaker`) and the same bakers. Since 2026-11-13 Modal makes everything
+the Mac's worker makes, so a protein is built with the Mac off.
 
-**Except the fold and the evidence.** Modal's images hold no AlphaGenome client,
-skill or `uv` either, so `modal_app.py` asks for no AVI or ClinVar (`evidence`
-stays off) and a protein Modal resolves has neither; `scripts/queue_evidence.py`
-queues them for a Mac's worker afterwards.
+- **`fold`** runs in an image that holds the structure bake's environment
+  (`pipeline/structure/requirements.txt`), PyMOL 3.1.0 from conda-forge in a
+  conda environment of its own (on the path as `pymol`, so its numpy never
+  meets the bake's), Flutter 3.47.3 (held to its framework and engine
+  revisions as the image is built) and the part of the app's checkout the
+  scene importer and the app's check read (`modal_app.APP_FILES`,
+  `APP_DIRS`). Never the app's `.env`: an empty file stands in for the asset
+  `pubspec.yaml` declares. The image's build fetches the app's packages as
+  its lockfile pins them, compiles the check, and runs the build hooks and
+  the importer once, so a failure shows there and not on a protein.
+- **`evidence`** runs in an image that holds the AVI bake's environment,
+  pinned whole from the one that baked the twenty's
+  (`pipeline/impact/requirements-lock.txt`), `uv`, the AlphaGenome skill
+  synced from its lock with its own Python 3.14, and GENCODE v46's table,
+  fetched once (`ALPHAGENOME_GTF_PATH`) rather than for each protein. It
+  makes one AVI track and then one ClinVar track a call, and starts `score`
+  once a scoring no longer waits for them.
+- Each claims nothing while its check says no bake could be made in its
+  image (`model_local --check`, `impact_local --check`: one Atlas request),
+  exactly as the Mac's worker. A broken image then costs one check a sweep
+  while a bake waits, and the function's log says why.
+- The sweep queues a fold and the evidence for each protein it resolves, and
+  starts each function only where a bake of its kind waits that it can take
+  (`store.claimable_bakes`): `fold` and `evidence` side by side, then `score`
+  from `evidence`. `RESOLVER_STRUCTURES=0` or `RESOLVER_EVIDENCE=0` in the
+  shell that runs `modal deploy` turns either off, read as the Mac's `.env`
+  reads them; a plain deploy makes both.
+- The fold image is the app's checkout as it was at the deploy, so deploy
+  again after a change to `lib/shared/folding/`, `test/fold_bundle_check.dart`
+  or the flutter_scene the app pins, from a clean app tree.
+- A model made there is x86-64 PyMOL's, whose bytes are not this Mac's
+  (`pipeline/structure/README.md`, "Re-baking on Windows"). That matters for
+  nothing stored: no model made on demand is ever re-baked against a digest,
+  and the app's check holds each model to its own scene.
 
-Modal's two images hold neither PyMOL nor a Dart SDK, so
-`modal_app.py` asks for no model (`structures` stays off) and a protein Modal
-resolves has no `structure` track: its fold page says there is no model. To
-keep the models after the switch, one of:
-
-- give Modal a third function and image: `pymol-open-source` 3.1.0 from
-  conda-forge with the structure bake's pins, the Dart SDK, and a package that
-  pins flutter_scene to `alphafold.FLUTTER_SCENE` for `dart run
-  flutter_scene:import` to resolve; then `sweep(structures=True)` and a
-  `structure` function that calls `worker.structure_all` with a baker that
-  wraps `model_local.make` (which also wants Flutter and the app's checkout,
-  for the app's check of a fold). An x86-64 PyMOL does not give this Mac's bytes
-  (`pipeline/structure/README.md`, "Re-baking on Windows"), which matters for
-  nothing stored: no model made on demand is ever re-baked against a digest.
-- or leave the Mac's worker running beside Modal's. Whichever resolves a
-  request decides whether its model is queued, so that is a model for some
-  proteins and none for others: queue the rest by hand ("Operating it").
-
-1. In the Modal workspace (Usage & Billing), add the payment method and set a
-   spend limit, a monthly cap past which Modal stops workloads. An L4 is $0.80
-   an hour.
-2. If `.env` has changed since the secret was made (2026-10-07):
-   `.modal-venv/bin/modal secret create helix-peak-resolver --from-dotenv .env --force`
+1. In the Modal workspace (Usage & Billing), a payment method and a spend
+   limit, a monthly cap past which Modal stops workloads. An L4 is $0.80 an
+   hour; the fold and the evidence run on CPUs, cents a month.
+2. The secret's five keys, step 2 of "Deploying, once".
 3. `.modal-venv/bin/modal deploy pipeline/resolver/modal_app.py`
-4. `scripts/resolver_worker.sh uninstall`
-5. Optionally the wake, step 4 of "Deploying, once".
+4. Optionally the wake, step 4 of "Deploying, once", and `RESOLVES_PER_DAY`.
+5. The Mac's worker may stay beside it, or go: `scripts/resolver_worker.sh uninstall`.
 
 The two may run at once: every claim is `FOR UPDATE SKIP LOCKED`, so they never
-take the same request or the same bake. Modal starts its GPU only for a
-constraint bake it can take (`store.claimable_bakes`), never for one still
-waiting on the Mac's AVI and ClinVar or for one of the twenty's, and works one
-protein a call, as the Mac does: a request or bake put back on the queue waits
-for the next sweep rather than spending its three tries at once.
+take the same request or the same bake, and either may make any part of a
+protein the other resolved. Modal starts its GPU only for a constraint bake it
+can take (`store.claimable_bakes`), never for one still waiting on its AVI and
+ClinVar or for one of the twenty's, and works one protein a call, as the Mac
+does: a request or bake put back on the queue waits for the next sweep rather
+than spending its three tries at once. Two workers baking AVI at once share one
+Atlas quota; the bake paces itself.
 
 A track scored after the switch names `cuda` as its `generation.device` where
 the Mac's name `mps`. The app does not read it, and nothing is scored again.
-`.venv/bin/python scripts/check_built.py <GENE> cuda` checks the first protein
-Modal builds.
+`.venv/bin/python scripts/check_built.py <GENE> cuda` checks a protein Modal
+builds.
 
 Back again: `.modal-venv/bin/modal app stop helix-peak-resolver`, then
 `scripts/resolver_worker.sh install`.
@@ -600,7 +642,13 @@ The second runs every statement `store.py` and `app/resolves.py` make against a
 scratch database with all migrations applied, from request to ready track, and
 the service reading what was written. It needs a Postgres it may create a
 database on, and skips without one. `test_modal_app.py` skips where the Modal
-client is not installed.
+client is not installed (`.modal-venv/bin/python -m pytest pipeline/resolver`
+runs it). It runs each Modal function's body on fakes: what the sweep starts
+for each kind of bake it can take, and only where switched on; the fold and
+the evidence claiming nothing while their check says no; each one's own
+restart, and the GPU started once a scoring no longer waits; every call ending
+before the reaper's patience with its claim; and what goes up of the app's
+checkout, never its `.env`.
 
 `test_local_worker.py` is the Mac's worker with no torch and no database: a
 script stands in for the scorer's environment and two lists for the queue.

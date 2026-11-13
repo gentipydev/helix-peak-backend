@@ -1253,6 +1253,30 @@ def test_a_scoring_is_claimable_only_once_its_evidence_is_over(conn, offline):
     assert claimable() == [0, 0, 0]
 
 
+def test_a_fold_and_an_avi_bake_are_claimable_at_once_and_the_scoring_waits_for_the_evidence(
+        conn, offline):
+    """What Modal's sweep starts `fold` and `evidence` on together, for a protein
+    it resolves with both, and what `evidence` starts `score` on: the scoring
+    waits for the AVI and ClinVar bakes, never for the fold."""
+    conn.execute("insert into resolve_request (gene, uniprot, slug) values ('INS', 'P01308', 'ins')")
+    worker.resolve_next(conn, Storage(), fetch_entry=lambda accession: offline(_body()),
+                        structures=True, evidence=True)
+
+    def claimable():
+        return [store.claimable_bakes(conn, kind)
+                for kind in ("structure", "impact", "clinvar", "constraint")]
+
+    assert claimable() == [1, 1, 0, 0]
+    fold = store.claim_bake(conn, "structure")
+    assert claimable() == [0, 1, 0, 0]
+    for kind in ("impact", "clinvar"):
+        job = store.claim_bake(conn, kind)
+        conn.execute("update bake_job set state = 'done' where id = %s", (job["id"],))
+    # The fold still being made, the scoring can be taken.
+    assert _one(conn, "select state from bake_job where id = %s", fold["id"]) == ("running",)
+    assert claimable() == [0, 0, 0, 1]
+
+
 def test_the_evidence_lands_ready_and_the_scoring_after_it(conn, offline, data):
     storage = Storage()
     _resolved_with_evidence_queued(conn, offline, storage)

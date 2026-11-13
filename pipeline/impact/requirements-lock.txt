@@ -1,0 +1,53 @@
+# The AVI bake's environment, pinned whole from `pipeline/impact/venv` (Python 3.12.13, made
+# by uv 0.12.16), the environment the twenty's AVI tracks were baked in. `requirements.txt`
+# beside this says what is asked for; this says what was installed. Modal's evidence image
+# installs exactly this (`pipeline/resolver/modal_app.py`), so a protein built there is baked
+# by the same packages as one built on the dev Mac.
+absl-py==2.5.0
+alphagenome==0.9.0
+anndata==0.13.4
+annotated-types==0.8.0
+array-api-compat==1.15.0
+contourpy==1.4.0
+cycler==0.12.1
+donfig==0.8.1.post1
+fonttools==4.65.0
+fsspec==2026.7.0
+google-crc32c==1.8.0
+grpcio==1.84.0
+h5py==3.16.0
+immutabledict==4.3.1
+jaxtyping==0.3.11
+kiwisolver==1.5.1
+legacy-api-wrap==1.5
+matplotlib==3.11.2
+ml_dtypes==0.6.0
+msgspec==0.21.1
+natsort==8.4.0
+numcodecs==0.17.0
+numpy==2.5.3
+packaging==26.3
+pandas==3.0.6
+pillow==12.3.0
+protobuf==7.36.2
+pyarrow==25.0.1
+pydantic==2.13.5
+pydantic-settings==2.15.0
+pydantic_core==2.46.5
+pyfaidx==0.9.0.4
+pyparsing==3.3.2
+python-dateutil==2.9.0.post0
+python-dotenv==1.2.3
+PyYAML==6.0.3
+scipy==1.18.1
+scverse-misc==0.1.6
+seaborn==0.13.2
+session-info2==0.4.2
+six==1.17.0
+tqdm==4.70.1
+typeguard==4.6.0
+typing-inspection==0.4.4
+typing_extensions==4.16.0
+wadler_lindig==0.1.7
+zarr==3.4.0
+zstandard==0.25.0

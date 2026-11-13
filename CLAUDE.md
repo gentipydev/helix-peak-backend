@@ -53,9 +53,9 @@ differs from storage. A mismatch means the refactor changed data. Stop; never up
   Entrez calls is the only throttle; resolve requests alone are capped per day,
   `RESOLVES_PER_DAY`) or CORS-restricted (`allow_origins=["*"]`). It holds no
   service_role key; rows are reached through `DATABASE_URL` only. It resolves nothing itself:
-  a request is a row the resolver (`pipeline/resolver/`) works, on Modal or, until it is deployed
-  there, on the dev Mac. The service only wakes Modal's (`MODAL_WAKE_URL`, proxy auth); the Mac's
-  asks the queue every minute. `/catalog/search`'s `candidates` stays empty.
+  a request is a row the resolver (`pipeline/resolver/`) works, on Modal, on the dev Mac, or on
+  both. The service only wakes Modal's (`MODAL_WAKE_URL`, proxy auth); the Mac's asks the queue
+  every minute. `/catalog/search`'s `candidates` stays empty.
 - Only `NCBI_EMAIL` is required; with no `DATABASE_URL`, `/gene` still works and the catalog is 503.
 - `app/` stays Python 3.9-compatible (`Optional`/`List`, never `X | Y`); the image runs 3.12.
 
@@ -112,8 +112,8 @@ AlphaGenome, PyMOL) and write credentials. `config.impact_explanations_dir` defa
 path under `pipeline/data/`; that is the only link, and it is a path, not an import.
 
 `pipeline/resolver/` (Phase 6) is the one part of `pipeline/` that runs unattended: on Modal,
-with the uploader's credentials in a Modal secret, calling the record builder and the ESM-2
-scorer unchanged. A protein it resolves is a `protein` row with a null `catalog_order` and
+with the uploader's credentials and the Atlas's key in a Modal secret, calling the record
+builder, the fold's, AVI's and ClinVar's bakers and the ESM-2 scorer unchanged. A protein it resolves is a `protein` row with a null `catalog_order` and
 `resolver_version` 1, so it never joins `/catalog`. It may never write over a curated row
 (the upsert is guarded), and a change to a baker it calls needs the same sha256 proof:
 `structure/bake.py` is one of them now (its `export` and `assemble` make every model), and so
@@ -121,10 +121,20 @@ are `folding/bake_folding.py` and `folding/check_folding.py` (every experimental
 demand), and `impact/bake_impact.py` and `clinvar/bake_clinvar.py` (every protein's variant
 evidence).
 
-Until Modal has a payment method, the worker is a launchd agent on the dev Mac:
+Modal's app (`modal_app.py`) makes everything the bullets below say of the Mac's worker, so a
+protein is built with the Mac off: its `fold` and `evidence` functions run the Mac's own drivers
+(`local_worker.Modeller`, `Evidencer`, `ClinVarBaker`) in images that hold the same tools
+(PyMOL 3.1.0, Flutter 3.47.3 and the part of the app's checkout a fold reads; the AVI bake's
+environment, pinned whole in `pipeline/impact/requirements-lock.txt`, `uv` and the AlphaGenome
+skill). The fold's image is the app's checkout as it was at the deploy: deploy again after a
+change to `lib/shared/folding/`, `test/fold_bundle_check.dart` or the flutter_scene pin.
+`RESOLVER_STRUCTURES=0` / `RESOLVER_EVIDENCE=0` in the shell that runs `modal deploy` turn
+either off there.
+
+The dev Mac may run the same worker beside it, or instead of it, as a launchd agent:
 `local_worker.py`, the same `worker.sweep` and `worker.score_all`, with `.env` for the secret
-(`scripts/resolver_worker.sh status|stop|start|restart`; the runbook is its README). Three
-things follow for anyone working in this checkout:
+(`scripts/resolver_worker.sh status|stop|start|restart`; the runbook is its README). Where it
+runs, these things follow for anyone working in this checkout:
 
 - It runs this working tree against production. `restart` it after a change under `pipeline/`,
   and `stop` it before leaving the tree somewhere it cannot run from (a long rebase, an old

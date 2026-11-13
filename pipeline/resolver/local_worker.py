@@ -1,4 +1,4 @@
-"""The resolver's worker on a Mac, until Modal runs it.
+"""The resolver's worker on a Mac, beside Modal's or instead of it.
 
     cd helix-peek-backend
     .worker-venv/bin/python -u -m pipeline.resolver.local_worker           # the loop
@@ -8,13 +8,14 @@
 `scripts/resolver_worker.sh` runs the first as a launchd agent, and the README
 beside this file is the runbook.
 
-It is `worker.sweep` and `worker.score_all` as `modal_app.py` runs them, on the
-same database and storage, with the same four credentials, read from the
-repository's `.env` where Modal reads its secret. A protein built here cannot
-be told from one built there, except by the device its track names, and by
-its fold: between the two it also makes each protein's model
-(`worker.structure_all`), which Modal's image cannot. What differs is how the
-work is started and where ESM-2 runs:
+It is what `modal_app.py` runs, `worker.sweep`, the fold, the evidence and
+`worker.score_all`, on the same database and storage, with the same
+credentials, read from the repository's `.env` where Modal reads its secret.
+A protein built here cannot be told from one built there, except by the
+device its ESM-2 track names and the bytes of its model (arm64 PyMOL's here,
+x86-64's there): Modal's `fold` and `evidence` run this module's own drivers
+(`Modeller`, `Evidencer`, `ClinVarBaker`) in images that hold the same tools.
+What differs is how the work is started and where ESM-2 runs:
 
 - Nothing wakes it. It asks the queue every `RESOLVER_POLL_SECONDS` (60).
 - `worker.score_all` scores with whatever it is handed (`worker.Score`). On
@@ -98,8 +99,9 @@ if str(BACKEND) not in sys.path:
 
 log = logging.getLogger("resolver-worker")
 
-# The uploader's three credentials and NCBI's contact address: the four keys of
-# Modal's `helix-peak-resolver` secret (`modal_app.py`).
+# The uploader's three credentials and NCBI's contact address: four of the five
+# keys of Modal's `helix-peak-resolver` secret (`modal_app.KEYS`). The fifth,
+# the Atlas's, is read only where the evidence is made (`ALPHAGENOME_API_KEY`).
 KEYS = ("DATABASE_URL", "SUPABASE_URL", "SUPABASE_SERVICE_KEY", "NCBI_EMAIL")
 
 # What the scorer is started without. It reads a record and writes a track,
