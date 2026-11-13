@@ -382,6 +382,24 @@ def body(monkeypatch):
     monkeypatch.setattr(worker, "impact_all", called("impact_all", "placed"))
     monkeypatch.setattr(worker, "clinvar_all", called("clinvar_all", "fetched"))
     state["spawned"] = spawned
+
+    # The budget (`app/budget.py`): what is spent, the last day's and this
+    # month's; a reason a reservation is refused, where the test gives one; and
+    # every reservation and settlement made.
+    from app import budget
+
+    state.update(spent=(0.0, 0.0), over=None, reserved=[], settled=[])
+
+    def reserve(conn, kind, usd):
+        state["reserved"].append((kind, usd))
+        if state["over"]:
+            return None, state["over"]
+        return len(state["reserved"]), None
+
+    monkeypatch.setattr(budget, "reserve", reserve)
+    monkeypatch.setattr(budget, "settle",
+                        lambda conn, run, usd, seconds: state["settled"].append((run, usd)))
+    monkeypatch.setattr(budget, "spent", lambda conn, settled=False: state["spent"])
     return state
 
 
@@ -502,3 +520,130 @@ def test_evidence_starts_itself_again_while_some_waits_and_the_gpu_once_a_scorin
     assert _work(body) == [("impact_all", 1, ["avi"]), ("clinvar_all", 1, ["clinvar"])]
     assert _spawns(body) == {"score": spawns["score"], "fold": 0, "evidence": spawns["evidence"]}
     assert body["calls"][-1] == "cleared"
+
+
+# ------------------------------------------------------------- the budget
+
+
+def test_a_whole_builds_worst_case_is_what_the_service_holds_an_ask_to():
+    from app import budget
+
+    worst = sum(modal_app.WORST_USD.values())
+    assert worst <= budget.BUILD_USD < budget.DAY_USD <= budget.MONTH_USD
+    # Close to it, so that the service does not turn asks away for nothing.
+    assert budget.BUILD_USD - worst < 0.10
+
+
+def test_each_calls_worst_case_is_its_timeout_on_the_dearest_gpu_it_may_get():
+    hours = (modal_app.SCORE_TIMEOUT + modal_app.BOOT) / 3600
+    assert modal_app.WORST_USD["score"] == pytest.approx(
+        (1.10 + 2 * 0.0473 + 8 * 0.008) * hours)
+    assert modal_app.hourly("score", "T4") < modal_app.hourly("score", "L4") \
+        < modal_app.hourly("score")
+    assert modal_app.WORST_USD["fold"] == pytest.approx(
+        (2 * 0.0473 + 4 * 0.008) * (modal_app.FOLD_TIMEOUT + modal_app.BOOT) / 3600)
+    assert modal_app.WORST_USD["evidence"] == pytest.approx(
+        (0.0473 + 6 * 0.008) * (modal_app.EVIDENCE_TIMEOUT + modal_app.BOOT) / 3600)
+
+
+def test_every_gpu_the_scorer_may_get_has_a_rate():
+    assert set(modal_app.SCORER_GPU) <= set(modal_app.GPU_HOUR)
+
+
+@pytest.mark.parametrize("call, outcome", [
+    (lambda: SCORE.local(), []),
+    (lambda: FOLD.local(), {"unready": None, "modelled": [], "held": "No room."}),
+    (lambda: EVIDENCE.local(), {"unready": None, "impact": [], "clinvar": [], "scoring": False,
+                                "held": "No room."}),
+])
+def test_a_call_whose_worst_case_does_not_fit_claims_nothing(body, call, outcome):
+    body["over"] = "No room."
+    body["claimable"] = {"constraint": 1, "structure": 1, "impact": 1, "clinvar": 1}
+    assert call() == outcome
+    assert _work(body) == []
+    assert _spawns(body) == {"score": 0, "fold": 0, "evidence": 0}
+    assert body["settled"] == []
+
+
+@pytest.mark.parametrize("call, kind", [
+    (lambda: SCORE.local(), "score"),
+    (lambda: FOLD.local(), "fold"),
+    (lambda: EVIDENCE.local(), "evidence"),
+])
+def test_a_call_reserves_its_worst_case_and_is_settled_at_what_it_cost(body, call, kind):
+    call()
+    assert body["reserved"] == [(kind, modal_app.WORST_USD[kind])]
+    [(run, usd)] = body["settled"]
+    assert run == 1 and 0 < usd < modal_app.WORST_USD[kind]
+
+
+def test_a_call_that_fails_is_settled_all_the_same(body, monkeypatch):
+    from pipeline.resolver import worker
+
+    def broken(conn, storage, *, limit, **given):
+        raise RuntimeError("the scorer died")
+
+    monkeypatch.setattr(worker, "score_all", broken)
+    with pytest.raises(RuntimeError):
+        SCORE.local()
+    assert len(body["settled"]) == 1
+
+
+def test_a_sweep_starts_no_baker_whose_worst_case_would_not_fit(body):
+    # $1.90 of the day's $2.00 spent: a scoring's worst case does not fit; a
+    # fold's and the evidence's still do.
+    body["spent"] = (1.90, 1.90)
+    body["claimable"] = {"constraint": 1, "structure": 1, "impact": 1}
+    summary = SWEEP.local()
+    assert summary["started"] == ["fold", "evidence"]
+    assert list(summary["held"]) == ["score"]
+    assert "$1.90 of their $2.00 for the last day" in summary["held"]["score"]
+    assert _spawns(body) == {"score": 0, "fold": 1, "evidence": 1}
+
+
+def test_a_month_without_room_holds_every_baker(body):
+    body["spent"] = (0.0, 9.99)
+    body["claimable"] = {"constraint": 1, "structure": 1, "impact": 1}
+    summary = SWEEP.local()
+    assert summary["started"] == []
+    assert sorted(summary["held"]) == ["evidence", "fold", "score"]
+    assert _spawns(body) == {"score": 0, "fold": 0, "evidence": 0}
+
+
+def test_score_does_not_start_itself_again_past_the_budget(body):
+    body["scored"] = [{"slug": "b2m", "state": "ready"}]
+    body["claimable"] = {"constraint": 1}
+    body["spent"] = (1.50, 1.50)
+    SCORE.local()
+    assert body["spawned"]["score"].count == 0
+
+
+def test_evidence_does_not_start_the_gpu_past_the_budget(body):
+    body["fetched"] = [{"slug": "ttr", "state": "ready"}]
+    body["claimable"] = {"constraint": 1}
+    body["spent"] = (1.50, 1.50)
+    assert EVIDENCE.local()["scoring"] is False
+    assert _spawns(body) == {"score": 0, "fold": 0, "evidence": 0}
+
+
+@pytest.mark.parametrize("name, said", [
+    ("Tesla T4", "T4"), ("NVIDIA L4", "L4"), ("NVIDIA A10G", "A10"), ("NVIDIA H100", None),
+])
+def test_a_scoring_is_settled_at_its_own_gpus_rate(monkeypatch, name, said):
+    class Cuda:
+        @staticmethod
+        def get_device_name(index):
+            return name
+
+    class Torch:
+        cuda = Cuda
+
+    monkeypatch.setitem(sys.modules, "torch", Torch)
+    assert modal_app._gpu() == said
+
+
+def test_no_torch_is_settled_at_the_dearest_gpu(monkeypatch):
+    monkeypatch.delitem(sys.modules, "torch", raising=False)
+    assert modal_app._gpu() is None
+    assert modal_app.cost("score", 0) == pytest.approx(
+        modal_app.hourly("score", "A10") * modal_app.BOOT / 3600)

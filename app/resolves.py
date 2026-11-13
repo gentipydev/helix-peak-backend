@@ -24,8 +24,15 @@ A gene the index does not hold at all is not a state but a 404, and an
 unreadable database is a 503, never an answer: the catalog's rule.
 
 The one thing that costs money is a request, so a day's are capped
-(``RESOLVES_PER_DAY``). Two readers asking for one gene make one request, which
-the database holds to (`resolve_request_inflight_idx`).
+(``RESOLVES_PER_DAY``), and one install's (``RESOLVES_PER_INSTALL_PER_DAY``).
+Asking again for a stopped protein queues its scoring, which costs as much, so
+it counts too. Each is a row in `spend_ledger` (0015), which no discard
+deletes: counting `resolve_request` rows let ask, stop and discard go round
+without end. A new protein also needs room among those the project holds
+(``MAX_BUILT_PROTEINS``), and any ask needs a whole build's worst case to fit
+in what is left of Modal's budget (`budget.py`). Two readers asking for one
+gene make one request, which the database holds to
+(`resolve_request_inflight_idx`).
 
 Beside the state, ``build`` says how far a build has got (`BuildReport`), so a
 reader waiting minutes on ESM-2 sees which step it is at, the residues scored
@@ -63,6 +70,7 @@ import logging
 import urllib.request
 from typing import Optional, Tuple
 
+from . import budget
 from .catalog import CatalogUnavailable, _require_pool
 from .config import settings
 
@@ -73,6 +81,19 @@ HUMAN = 9606
 
 class DailyCapReached(Exception):
     """Today's requests are used up."""
+
+
+class InstallCapReached(Exception):
+    """This install's requests for today are used up."""
+
+
+class BuildsFull(Exception):
+    """The project holds as many proteins built on demand as it has room for."""
+
+
+class BudgetSpent(Exception):
+    """What is left of Modal's budget would not cover a build; the message says
+    which budget."""
 
 
 class NotYours(Exception):
@@ -126,8 +147,26 @@ order by requested_at desc, id desc
 limit 1
 """
 
+# One ask at a time, from its caps to its row: two asks at once must not both
+# take the day's last build. Released when the ask's transaction ends.
+_ONE_ASK_AT_A_TIME = "select pg_advisory_xact_lock(4848504541)"
+
+# The last day's asks and resumes, and those of one install (or of every ask
+# that named none). From the ledger, which no discard can take a row from.
 _TODAY = """
-select count(*) from resolve_request where requested_at > now() - interval '1 day'
+select count(*), count(*) filter (where asker is not distinct from %s)
+from spend_ledger
+where kind in ('ask', 'resume') and at > now() - interval '1 day'
+"""
+
+_COUNTED = """
+insert into spend_ledger (kind, gene, asker) values (%s, %s, %s)
+"""
+
+# Proteins built on demand, and those queued to be.
+_HELD = """
+select (select count(*) from protein where catalog_order is null)
+     + (select count(*) from resolve_request where state in ('queued', 'running'))
 """
 
 _QUEUE = """
@@ -379,17 +418,45 @@ def current(gene: str, taxon: int = HUMAN) -> Optional[dict]:
     return said
 
 
-def _resume(conn, slug: str, asker: Optional[str]) -> bool:
+def _counted(conn, asker: Optional[str], *, new_protein: bool) -> None:
+    """Hold this ask to the caps, before it queues anything that costs money.
+
+    Raises DailyCapReached, InstallCapReached, BuildsFull (a new protein only)
+    or BudgetSpent. Holds the lock that keeps a second ask out until this
+    one's transaction ends, so the counts it read are the counts it adds to.
+    """
+    conn.execute(_ONE_ASK_AT_A_TIME)
+    every, mine = conn.execute(_TODAY, (asker,)).fetchone()
+    if every >= settings.resolves_per_day:
+        raise DailyCapReached()
+    if mine >= settings.resolves_per_install_per_day:
+        raise InstallCapReached()
+    if new_protein and conn.execute(_HELD).fetchone()[0] >= settings.max_built_proteins:
+        raise BuildsFull()
+    day, month = budget.spent(conn, settled=True)
+    short = budget.short_of(day, month, budget.BUILD_USD)
+    if short is not None:
+        raise BudgetSpent(short)
+
+
+def _resume(conn, slug: str, gene: str, asker: Optional[str]) -> bool:
     """Queue afresh the scoring of a protein whose scoring was stopped.
 
     Whether it did: only a protein resolved on demand, whose latest bake was
-    stopped and whose track still has nothing, is scored again. It is no new
-    request, so it does not count towards the day's.
+    stopped and whose track still has nothing, is scored again. Its scoring
+    costs what a new request's does, so it counts as one: a cap that stops it
+    ends the ask's transaction, and the bake queued here with it.
     """
     if conn.execute(_RESUME, {"slug": slug, "asker": asker}).fetchone() is None:
         return False
+    _counted(conn, asker, new_protein=False)
     conn.execute(_RESUMED_TRACK, (slug,))
+    conn.execute(_COUNTED, ("resume", gene, asker))
     return True
+
+
+# What stops an ask before it costs anything: each a 429 (`router.py`).
+CAPPED = (DailyCapReached, InstallCapReached, BuildsFull, BudgetSpent)
 
 
 def request(gene: str, taxon: int = HUMAN,
@@ -399,31 +466,37 @@ def request(gene: str, taxon: int = HUMAN,
     wake the resolver). `asker` is the asking install's id: only it may stop
     what this ask queues.
 
-    Raises DailyCapReached where a new request would be one too many today.
+    Raises one of `CAPPED` where the new work would pass a cap. An answer that
+    queues nothing (ready, pending, refused) is never capped.
     """
     if taxon != HUMAN:
         return None, False
     pool = _require_pool()
     try:
         with pool.connection() as conn:
-            said, askable = _current(conn, gene)
-            if askable is None:
-                resumed = False
-                if said is not None:
-                    if said["state"] == "ready":
-                        resumed = _resume(conn, said["slug"], asker)
-                    said["build"] = _build(conn, gene, said)
-                return said, resumed
-            if conn.execute(_TODAY).fetchone()[0] >= settings.resolves_per_day:
-                raise DailyCapReached()
-            uniprot, symbol, slug = askable
-            queued = conn.execute(_QUEUE, (symbol, uniprot, slug, asker)).fetchone()
-            # Not queued means another reader's request got there in the same
-            # moment: it is pending either way, and only the one that queued
-            # it wakes anyone.
-            said = _said("pending", slug)
-            said["build"] = _build(conn, gene, said)
-    except DailyCapReached:
+            # One transaction, whether or not the pool's connections commit
+            # each statement: the lock that orders asks holds to its end, and a
+            # cap that refuses a resume takes back the bake the resume queued.
+            with conn.transaction():
+                said, askable = _current(conn, gene)
+                if askable is None:
+                    resumed = False
+                    if said is not None:
+                        if said["state"] == "ready":
+                            resumed = _resume(conn, said["slug"], gene, asker)
+                        said["build"] = _build(conn, gene, said)
+                    return said, resumed
+                _counted(conn, asker, new_protein=True)
+                uniprot, symbol, slug = askable
+                queued = conn.execute(_QUEUE, (symbol, uniprot, slug, asker)).fetchone()
+                # Not queued means another reader's request got there in the
+                # same moment: it is pending either way, and only the one that
+                # queued it wakes anyone, or is counted.
+                if queued is not None:
+                    conn.execute(_COUNTED, ("ask", symbol, asker))
+                said = _said("pending", slug)
+                said["build"] = _build(conn, gene, said)
+    except CAPPED:
         raise
     except Exception as exc:
         logger.exception("Resolve request failed for %r", gene)

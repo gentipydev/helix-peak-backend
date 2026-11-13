@@ -35,11 +35,22 @@ class FakePool:
     def __init__(self, protein=None, index=None, latest=None, today=0, queued=True,
                  failing=False, request_build=None, bake_build=None, ask=None, bake=None,
                  resumable=False, stoppable=True, evidence=False, fold=None,
-                 stopped_build=None, keepable=True, making=(), deleted=1):
+                 stopped_build=None, keepable=True, making=(), deleted=1, mine=0, held=0,
+                 spent=(0.0, 0.0)):
         self.protein = protein
         self.index = index
         self.latest = latest
+        # The ledger's last day of asks and resumes, every install's and the
+        # asking one's; the proteins built on demand and queued; and Modal's
+        # spending, the last day's and this month's.
         self.today = today
+        self.mine = mine
+        self.held = held
+        self.spent = spent
+        self.counted = []
+        self.counted_for = []
+        self.spent_read = []
+        self.locked = 0
         self.queued = queued
         self.failing = failing
         # `_REQUEST_BUILD`'s row and `_BAKE_BUILD`'s, where there is one.
@@ -94,8 +105,21 @@ class FakePool:
             return FakeCursor([self.index] if self.index else [])
         if flat.startswith("select state, reason from resolve_request"):
             return FakeCursor([self.latest] if self.latest else [])
-        if flat.startswith("select count(*) from resolve_request"):
-            return FakeCursor([(self.today,)])
+        if flat.startswith("select pg_advisory_xact_lock("):
+            self.locked += 1
+            return FakeCursor([(None,)])
+        if flat.startswith("select count(*), count(*) filter (where asker is not distinct from"):
+            assert "from spend_ledger" in flat
+            self.counted_for.append(params)
+            return FakeCursor([(self.today, self.mine)])
+        if flat.startswith("select (select count(*) from protein where catalog_order is null)"):
+            return FakeCursor([(self.held,)])
+        if flat.startswith("select coalesce(sum(usd)"):
+            self.spent_read.append(params)
+            return FakeCursor([self.spent])
+        if flat.startswith("insert into spend_ledger"):
+            self.counted.append(params)
+            return FakeCursor([])
         if flat.startswith("insert into resolve_request"):
             self.inserted.append(params)
             return FakeCursor([(1,)] if self.queued else [])
@@ -187,6 +211,10 @@ def test_a_new_ask_is_queued_and_wakes_the_resolver(client, pool, woken):
     assert response.json() == {"slug": "brca1", "state": "pending", "reason": None, "build": None}
     assert fake.inserted == [("BRCA1", "P38398", "brca1", None)]
     assert woken == [True]
+    # Counted where no discard can take it back, under the lock that keeps a
+    # second ask from reading the same counts.
+    assert fake.counted == [("ask", "BRCA1", None)]
+    assert fake.locked == 1
 
 
 def test_an_ask_already_in_flight_is_pending_and_writes_nothing(client, pool, woken):
@@ -195,6 +223,7 @@ def test_an_ask_already_in_flight_is_pending_and_writes_nothing(client, pool, wo
     assert response.status_code == 202
     assert response.json()["state"] == "pending"
     assert fake.inserted == [] and woken == []
+    assert fake.counted == [] and fake.locked == 0
 
 
 def test_a_race_lost_to_another_reader_is_pending_without_a_second_wake(client, pool, woken):
@@ -203,6 +232,8 @@ def test_a_race_lost_to_another_reader_is_pending_without_a_second_wake(client, 
     assert response.status_code == 202
     assert fake.inserted == [("BRCA1", "P38398", "brca1", None)]
     assert woken == []
+    # The other reader's ask is the one counted.
+    assert fake.counted == []
 
 
 def test_a_refusal_stands(client, pool, woken):
@@ -259,6 +290,78 @@ def test_a_days_requests_are_capped(client, pool, woken, monkeypatch):
     assert response.json()["detail"] == \
         "The service builds 50 proteins a day, and today's are taken. Ask again tomorrow."
     assert fake.inserted == [] and woken == []
+
+
+def test_one_installs_requests_are_capped(client, pool, woken, monkeypatch):
+    monkeypatch.setattr(settings, "resolves_per_install_per_day", 5)
+    fake = pool(index=BRCA1, today=3, mine=5)
+    response = _ask(client, asker="install-a")
+    assert response.status_code == 429
+    assert response.json()["detail"] == (
+        "This phone has asked for 5 builds today, as many as one phone may. "
+        "Ask again tomorrow.")
+    assert fake.counted_for == [("install-a",)]
+    assert fake.inserted == [] and fake.counted == [] and woken == []
+
+
+def test_asks_that_name_no_install_share_one_installs_cap(client, pool, monkeypatch):
+    monkeypatch.setattr(settings, "resolves_per_install_per_day", 2)
+    fake = pool(index=BRCA1, today=2, mine=2)
+    assert _ask(client).status_code == 429
+    assert fake.counted_for == [(None,)]
+
+
+def test_a_new_protein_needs_room_among_those_the_project_holds(client, pool, woken, monkeypatch):
+    monkeypatch.setattr(settings, "max_built_proteins", 200)
+    fake = pool(index=BRCA1, held=200)
+    response = _ask(client)
+    assert response.status_code == 429
+    assert response.json()["detail"] == (
+        "The service holds as many proteins built on demand as it has room for. "
+        "Open one of them, or ask again later.")
+    assert fake.inserted == [] and fake.counted == [] and woken == []
+
+
+@pytest.mark.parametrize("spent, said", [
+    ((1.20, 1.20), "Builds on demand have used $1.20 of their $2.00 for the last day. "
+                   "Ask again later."),
+    ((0.0, 9.50), "Builds on demand have used $9.50 of their $10.00 for this month. "
+                  "Ask again later."),
+])
+def test_an_ask_waits_while_modals_budget_would_not_cover_a_build(client, pool, woken, spent,
+                                                                    said):
+    fake = pool(index=BRCA1, spent=spent)
+    response = _ask(client)
+    assert response.status_code == 429
+    assert response.json()["detail"] == said
+    # What is spent is read settled: a call still running is not waited on.
+    assert fake.spent_read == [(["score", "fold", "evidence"], True)]
+    assert fake.inserted == [] and fake.counted == [] and woken == []
+
+
+def test_a_budget_with_a_build_left_takes_the_ask(client, pool, woken):
+    fake = pool(index=BRCA1, spent=(1.15, 9.15))
+    assert _ask(client).status_code == 202
+    assert fake.counted == [("ask", "BRCA1", None)] and woken == [True]
+
+
+def test_a_stopped_proteins_scoring_is_capped_as_a_request_is(client, pool, woken, monkeypatch):
+    monkeypatch.setattr(settings, "resolves_per_day", 20)
+    fake = pool(protein="brca1", index=BRCA1, resumable=True, today=20)
+    response = _ask(client, asker="install-a")
+    assert response.status_code == 429
+    # The bake the resume queued goes with the ask's transaction; nothing
+    # after it was written, and nobody was woken.
+    assert fake.written == [("resumed", {"slug": "brca1", "asker": "install-a"})]
+    assert fake.counted == [] and woken == []
+
+
+def test_a_resume_needs_no_room_for_a_new_protein(client, pool, woken, monkeypatch):
+    monkeypatch.setattr(settings, "max_built_proteins", 1)
+    fake = pool(protein="brca1", index=BRCA1, resumable=True, held=50,
+                bake_build=_bake(job="queued", ahead=0, elapsed=0.1))
+    assert _ask(client, asker="install-a").status_code == 200
+    assert fake.counted == [("resume", "BRCA1", "install-a")]
 
 
 def test_the_cap_never_stops_an_answer_that_costs_nothing(client, pool, monkeypatch):
@@ -578,6 +681,9 @@ def test_asked_again_a_stopped_protein_is_scored_afresh(client, pool, woken):
     assert fake.written == [("resumed", {"slug": "brca1", "asker": "install-a"}),
                             ("track pending", ("brca1",))]
     assert fake.inserted == [] and woken == [True]
+    # A scoring again costs what a new request does, so it counts as one.
+    assert fake.counted == [("resume", "BRCA1", "install-a")]
+    assert fake.counted_for == [("install-a",)]
 
 
 def test_asked_again_a_protein_with_nothing_stopped_writes_nothing(client, pool, woken):

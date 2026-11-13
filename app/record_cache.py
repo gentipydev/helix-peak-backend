@@ -13,9 +13,19 @@ what clients see on the next request without invalidating anything.
 Every cache operation is best-effort. A database that is missing, asleep or
 broken must cost latency and nothing else, so failures here are logged and the
 request continues to NCBI.
+
+The route is open to anyone, and the app no longer reads it (it reads stored
+records), so what it may cost is bounded: NCBI is read at most
+`GENE_FETCHES_PER_HOUR` times an hour by this process (`NcbiBusy` past it), a
+record longer than `MAX_RECORD_BYTES` is refused after that much is read
+(`entrez_client.RecordTooLarge`), and the cache stops growing at
+`RECORD_CACHE_MAX_CHARS`, past which records are served and not kept.
 """
 
+import collections
 import logging
+import threading
+import time
 
 from Bio.SeqRecord import SeqRecord
 
@@ -24,6 +34,36 @@ from .config import settings
 from .entrez_client import fetch_genbank_text, parse_genbank_text
 
 logger = logging.getLogger(__name__)
+
+
+class NcbiBusy(Exception):
+    """This hour's reads of NCBI are used up."""
+
+
+class _Hourly:
+    """The times of the last hour's NCBI reads, shared by every request thread."""
+
+    def __init__(self):
+        self._at = collections.deque()
+        self._lock = threading.Lock()
+
+    def take(self, per_hour: int) -> bool:
+        """Count one read, where the hour has room for it. 0 is no limit."""
+        now = time.monotonic()
+        with self._lock:
+            while self._at and now - self._at[0] >= 3600:
+                self._at.popleft()
+            if per_hour and len(self._at) >= per_hour:
+                return False
+            self._at.append(now)
+            return True
+
+    def clear(self) -> None:
+        with self._lock:
+            self._at.clear()
+
+
+reads = _Hourly()
 
 SCHEMA = """
 create table if not exists genbank_record (
@@ -58,6 +98,9 @@ def create_schema() -> None:
     try:
         with db.pool.connection() as conn:
             conn.execute(SCHEMA)
+            # With no policy, as every table here (0016): the service reads it
+            # as its owner, and Supabase's public roles get nothing of it.
+            conn.execute("alter table genbank_record enable row level security")
     except Exception:
         logger.exception("Could not create the cache table; running without a cache")
 
@@ -75,11 +118,20 @@ def _get(accession: str):
     return row[0] if row else None
 
 
+_HELD = "select coalesce(sum(length(record)), 0) from genbank_record"
+
+
 def _put(accession: str, text: str) -> None:
     if db.pool is None:
         return
     try:
         with db.pool.connection() as conn:
+            row = conn.execute(_HELD).fetchone()
+            held = row[0] if row else 0
+            if held + len(text) > settings.record_cache_max_chars:
+                logger.warning("The record cache holds %s characters, its most; %s is served "
+                               "and not kept", held, accession)
+                return
             conn.execute(_UPSERT, (accession, text))
     except Exception:
         logger.exception("Cache write failed for %s", accession)
@@ -113,7 +165,9 @@ def fetch(accession: str) -> SeqRecord:
             logger.warning("Evicting unparseable cached record %s", accession)
             _forget(accession)
 
-    text = fetch_genbank_text(accession)
+    if not reads.take(settings.gene_fetches_per_hour):
+        raise NcbiBusy()
+    text = fetch_genbank_text(accession, limit=settings.max_record_bytes)
     record = parse_genbank_text(text)
     _put(accession, text)
     return record

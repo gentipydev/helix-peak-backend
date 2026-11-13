@@ -1,16 +1,19 @@
 """The read endpoints: the gene record, and the catalog that names it."""
 
 import contextlib
+import re
 from typing import Optional
 from urllib.error import HTTPError, URLError
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Response
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Path, Query, Response
 from fastapi.responses import RedirectResponse
 
 from . import catalog, lm_runs, resolves, suggest, tracks
 from .catalog import CatalogUnavailable
 from .config import settings
+from .entrez_client import RecordTooLarge
 from .genbank_parser import GeneNotFound, extract_gene
+from .record_cache import NcbiBusy
 from .record_cache import fetch as fetch_genbank_record
 from .schemas import (
     BuiltResponse,
@@ -47,7 +50,7 @@ def _catalog_errors():
 
 
 @router.get("/gene/{id}/{gene}/impact-explanations", response_model=None)
-def impact_explanations(id: str, gene: str):
+def impact_explanations(id: str = Path(max_length=64), gene: str = Path(max_length=64)):
     """A saved attribution payload; no Atlas credentials or inference at runtime.
 
     Where storage holds it, the client is redirected there and fetches the
@@ -117,8 +120,19 @@ def _upstream_errors(id: str):
         )
 
 
+# One nucleotide record as NCBI names it, optionally versioned: a RefSeq gene
+# region or transcript (NG_, NM_, NR_, XM_, XR_), or a GenBank accession. Never
+# a list (efetch reads commas as several ids), a range, or a RefSeq genome
+# record (NC_, NT_, NW_, AC_: a chromosome, contig or scaffold whole).
+_ACCESSION = re.compile(
+    r"(?:(?:NG|NM|NR|XM|XR)_[0-9]{6,9}|[A-Z]{1,2}[0-9]{5,8})(?:\.[0-9]{1,3})?")
+
+
 @router.get("/gene/{id}/{gene}", response_model=GeneResponse)
-def read_gene(id: str, gene: str) -> dict:
+def read_gene(
+    id: str = Path(max_length=32),
+    gene: str = Path(max_length=64),
+) -> dict:
     """Fetch one GenBank record and return just ``gene`` from it, structured.
 
     Deliberately a sync ``def``: ``Entrez.efetch`` is blocking urllib, so
@@ -126,11 +140,16 @@ def read_gene(id: str, gene: str) -> dict:
     event loop for the whole round trip to NCBI.
 
     ``id`` and ``gene`` are both free parameters: the record to read and the
-    gene to keep are the client's choice, not this service's.
+    gene to keep are the client's choice, not this service's, within bounds:
+    ``id`` must name one record of a gene's size (`_ACCESSION`), anything else
+    is a 404 that never reaches NCBI, a record over ``MAX_RECORD_BYTES`` is a
+    422, and past this hour's NCBI reads a miss is a 429.
 
     The fetch is cache-aware. A cache miss, or no database at all, reads
     through to NCBI exactly as before.
     """
+    if not _ACCESSION.fullmatch(id):
+        raise HTTPException(status_code=404, detail=_no_record(id))
     with _upstream_errors(id):
         try:
             record = fetch_genbank_record(id)
@@ -138,6 +157,18 @@ def read_gene(id: str, gene: str) -> dict:
             # Not a GenBank record at all -- NCBI answers an unusable id with
             # plain text and an HTTP 200.
             raise HTTPException(status_code=404, detail=_no_record(id))
+        except RecordTooLarge as exc:
+            raise HTTPException(
+                status_code=422,
+                detail="Record {!r} is longer than this service reads ({:,} characters)."
+                       .format(id, exc.limit),
+            )
+        except NcbiBusy:
+            raise HTTPException(
+                status_code=429,
+                detail="This service reads NCBI {:,} times an hour at most, and this hour's "
+                       "are taken. Ask again later.".format(settings.gene_fetches_per_hour),
+            )
 
     try:
         return extract_gene(record, gene)
@@ -151,7 +182,7 @@ def read_gene(id: str, gene: str) -> dict:
 @router.get("/catalog", response_model=CatalogPage)
 def read_catalog(
     limit: int = Query(200, ge=1, le=500),
-    cursor: Optional[str] = None,
+    cursor: Optional[str] = Query(None, max_length=200),
 ) -> dict:
     """The whole catalog, a page at a time.
 
@@ -165,7 +196,7 @@ def read_catalog(
 
 @router.get("/catalog/search", response_model=SearchResponse)
 def search_catalog(
-    q: str = "",
+    q: str = Query("", max_length=200),
     limit: int = Query(20, ge=1, le=100),
 ) -> dict:
     """Catalog rows matching ``q``, ranked the way the app ranks them.
@@ -182,7 +213,7 @@ def search_catalog(
 
 @router.get("/proteins/suggest", response_model=SuggestResponse)
 def suggest_proteins(
-    q: str = "",
+    q: str = Query("", max_length=200),
     limit: int = Query(12, ge=1, le=25),
 ) -> dict:
     """Every reviewed human protein ``q`` might mean, best first.
@@ -199,7 +230,7 @@ def suggest_proteins(
 @router.get("/proteins/built", response_model=BuiltResponse)
 def built_proteins(
     limit: int = Query(50, ge=1, le=200),
-    before: Optional[str] = None,
+    before: Optional[str] = Query(None, max_length=200),
 ) -> dict:
     """Every protein built on demand, newest first, a page at a time.
 
@@ -226,6 +257,20 @@ def stopped_proteins(asked: StopRequest) -> dict:
     return {"proteins": proteins, "next": None}
 
 
+def _capped(exc: Exception) -> str:
+    """What a reader is told when an ask passes a cap (`resolves.CAPPED`)."""
+    if isinstance(exc, resolves.DailyCapReached):
+        return ("The service builds {:,} proteins a day, and today's are taken. "
+                "Ask again tomorrow.".format(settings.resolves_per_day))
+    if isinstance(exc, resolves.InstallCapReached):
+        return ("This phone has asked for {:,} builds today, as many as one phone may. "
+                "Ask again tomorrow.".format(settings.resolves_per_install_per_day))
+    if isinstance(exc, resolves.BuildsFull):
+        return ("The service holds as many proteins built on demand as it has room for. "
+                "Open one of them, or ask again later.")
+    return "{} Ask again later.".format(exc)
+
+
 def _not_indexed(gene: str) -> HTTPException:
     return HTTPException(
         status_code=404,
@@ -246,12 +291,10 @@ def request_resolve(
     try:
         with _catalog_errors():
             said, queued = resolves.request(asked.gene.strip(), asked.taxon, asked.asker)
-    except resolves.DailyCapReached:
-        raise HTTPException(
-            status_code=429,
-            detail="The service builds {:,} proteins a day, and today's are taken. "
-                   "Ask again tomorrow.".format(settings.resolves_per_day),
-        )
+    except resolves.CAPPED as exc:
+        # 429 for each: the app reads it as a build that is capped and shows
+        # this sentence as it is.
+        raise HTTPException(status_code=429, detail=_capped(exc))
     if said is None:
         raise _not_indexed(asked.gene)
     if queued:
@@ -262,7 +305,7 @@ def request_resolve(
 
 
 @router.post("/proteins/resolve/{gene}/stop", response_model=ResolveResponse)
-def stop_resolve(gene: str, asked: StopRequest) -> dict:
+def stop_resolve(asked: StopRequest, gene: str = Path(max_length=64)) -> dict:
     """Stop a build, for the install that asked for it (`asker`).
 
     200 with ``stopped`` and the build as it ended; 403 where another install
@@ -284,7 +327,7 @@ def stop_resolve(gene: str, asked: StopRequest) -> dict:
 
 
 @router.post("/proteins/resolve/{gene}/keep", response_model=ResolveResponse)
-def keep_resolve(gene: str, asked: StopRequest) -> dict:
+def keep_resolve(asked: StopRequest, gene: str = Path(max_length=64)) -> dict:
     """Keep a stopped build as it is, without its ESM-2 track, for the install
     that stopped it (`asker`).
 
@@ -305,7 +348,7 @@ def keep_resolve(gene: str, asked: StopRequest) -> dict:
 
 
 @router.post("/proteins/resolve/{gene}/discard", response_model=ResolveResponse)
-def discard_resolve(gene: str, asked: StopRequest) -> dict:
+def discard_resolve(asked: StopRequest, gene: str = Path(max_length=64)) -> dict:
     """Delete everything built for a stopped build, for the install that
     stopped it (`asker`): the gene then reads ``buildable``.
 
@@ -327,7 +370,7 @@ def discard_resolve(gene: str, asked: StopRequest) -> dict:
 
 
 @router.get("/proteins/resolve/{gene}", response_model=ResolveResponse)
-def read_resolve(gene: str) -> dict:
+def read_resolve(gene: str = Path(max_length=64)) -> dict:
     """What a gene's protein is now, without asking for it: polled while it builds."""
     with _catalog_errors():
         said = resolves.current(gene)
@@ -337,7 +380,7 @@ def read_resolve(gene: str) -> dict:
 
 
 @router.get("/peptide-lm/runs/{name}", response_model=LmRun)
-def read_lm_run(name: str) -> dict:
+def read_lm_run(name: str = Path(max_length=64)) -> dict:
     """Where a recorded training run of the peptide model is, which the app plays.
 
     Named, never carried: the client fetches the bytes from storage. 404 where
@@ -354,7 +397,7 @@ def read_lm_run(name: str) -> dict:
 
 
 @router.get("/protein/{slug}", response_model=ProteinDetail)
-def read_protein(slug: str) -> dict:
+def read_protein(slug: str = Path(max_length=100)) -> dict:
     """One protein, whole: what `targets.py` and `protein_catalog.dart` both held."""
     with _catalog_errors():
         found = catalog.detail(slug)
@@ -367,7 +410,7 @@ def read_protein(slug: str) -> dict:
 
 
 @router.get("/protein/{slug}/tracks", response_model=dict)
-def read_protein_tracks(slug: str) -> dict:
+def read_protein_tracks(slug: str = Path(max_length=100)) -> dict:
     """Where each of this protein's tracks is, and what state it is in.
 
     Separate from `/protein/{slug}` because the two change on different clocks:

@@ -138,3 +138,35 @@ def test_the_cache_is_keyed_by_record_not_by_gene(
 
     assert client.get("/gene/NG_007114/INS").status_code == 200
     assert client.get("/gene/NG_007114/TH").status_code == 200
+
+
+def test_a_full_cache_serves_the_record_and_keeps_it_not(
+        genbank_text, efetch_returning, monkeypatch):
+    """Past its size the cache stops growing: anyone can ask for any record."""
+    from app.config import settings
+
+    class Full(FakePool):
+        def execute(self, sql, params=()):
+            if sql.lstrip().startswith("select coalesce(sum(length(record))"):
+                self.statements.append((sql, params))
+                return FakeCursor((settings.record_cache_max_chars - 10,))
+            return super().execute(sql, params)
+
+    pool = Full()
+    monkeypatch.setattr(db, "pool", pool)
+    efetch_returning(genbank_text)
+
+    assert record_cache.fetch("NG_007114").id.startswith("NG_007114")
+    assert [p for sql, p in pool.statements if sql.lstrip().startswith("insert")] == []
+
+
+def test_a_cache_with_room_keeps_the_record(genbank_text, efetch_returning, monkeypatch):
+    pool = FakePool()
+    monkeypatch.setattr(db, "pool", pool)
+    efetch_returning(genbank_text)
+
+    record_cache.fetch("NG_007114")
+
+    held = [sql for sql, _ in pool.statements if "sum(length(record))" in sql]
+    writes = [p for sql, p in pool.statements if sql.lstrip().startswith("insert")]
+    assert len(held) == 1 and writes == [("NG_007114", genbank_text)]

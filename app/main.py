@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import db, record_cache
 from .config import settings
+from .guard import Guard
 from .router import router
 
 Entrez.email = settings.ncbi_email
@@ -43,6 +44,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Each request's body and rate (`guard.py`). Added before CORS, so it runs
+# inside it: a refusal still carries CORS's headers to a browser.
+app.add_middleware(Guard)
+
+# Any origin, and never credentials: the service has no cookies or accounts,
+# so a page elsewhere can read only what anyone can.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

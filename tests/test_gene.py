@@ -119,3 +119,73 @@ def test_timeout_is_502(client, efetch_raising):
 
     assert response.status_code == 502
     assert "Could not reach NCBI" in response.json()["detail"]
+
+
+# -------------------------------------------- what the route may cost (2026-11-13)
+#
+# The route reads NCBI for whoever asks, and the app no longer reads it, so it
+# is bounded: one record of a gene's size, a size limit on what is read, and
+# so many NCBI reads an hour.
+
+import pytest  # noqa: E402
+
+from app import record_cache  # noqa: E402
+from app.config import settings  # noqa: E402
+
+
+@pytest.mark.parametrize("id", [
+    "NG_007114,NG_012232",       # efetch would read several records
+    "NC_000001.11",              # a chromosome whole
+    "NT_187361.1",               # a contig
+    "NW_025791820.1",            # a scaffold
+    "AC_000133.1",               # an alternate assembly's chromosome
+    "NG_007114.1:1-500",         # a range
+    "ng_007114",                 # not as NCBI spells one
+    "NG_007114.1234",
+    "%2e%2e",
+])
+def test_an_id_that_is_not_one_genes_record_never_reaches_ncbi(client, efetch_raising, id):
+    efetch_raising(AssertionError("NCBI was asked for " + id))
+    response = client.get("/gene/{}/INS".format(id))
+    assert response.status_code == 404
+    assert response.json()["detail"].startswith("No GenBank record found for id")
+
+
+@pytest.mark.parametrize("id", ["NG_007114", "NG_007114.1", "NM_000207.3", "M10051", "AF123456.2"])
+def test_one_record_of_a_genes_size_is_read(client, genbank_text, efetch_returning, id):
+    calls = efetch_returning(genbank_text)
+    client.get("/gene/{}/INS".format(id))
+    assert calls["id"] == id
+
+
+def test_a_record_longer_than_the_service_reads_is_refused_unread(
+        client, genbank_text, efetch_returning, monkeypatch):
+    monkeypatch.setattr(settings, "max_record_bytes", 1000)
+    efetch_returning(genbank_text)
+
+    response = client.get("/gene/NG_007114/INS")
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == \
+        "Record 'NG_007114' is longer than this service reads (1,000 characters)."
+
+
+def test_ncbi_is_read_so_many_times_an_hour(client, genbank_text, efetch_returning, monkeypatch):
+    monkeypatch.setattr(settings, "gene_fetches_per_hour", 2)
+    record_cache.reads.clear()
+    efetch_returning(genbank_text)
+    try:
+        said = [client.get("/gene/NG_007114/INS").status_code for _ in range(3)]
+        refused = client.get("/gene/NG_007114/INS")
+    finally:
+        record_cache.reads.clear()
+
+    assert said == [200, 200, 429]
+    assert refused.json()["detail"] == (
+        "This service reads NCBI 2 times an hour at most, and this hour's are taken. "
+        "Ask again later.")
+
+
+def test_a_genes_name_is_bounded(client, efetch_raising):
+    efetch_raising(AssertionError("NCBI was asked"))
+    assert client.get("/gene/NG_007114/" + "A" * 65).status_code == 422

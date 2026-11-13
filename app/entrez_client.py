@@ -6,15 +6,34 @@ both paths.
 """
 
 import io
+from typing import Optional
 
 from Bio import Entrez, SeqIO
 from Bio.SeqRecord import SeqRecord
 
 
-def fetch_genbank_text(id: str) -> str:
+class RecordTooLarge(Exception):
+    """NCBI's record is longer than the service reads. Not a ValueError: that
+    is how a record that is not one is told (`parse_genbank_text`)."""
+
+    def __init__(self, id: str, limit: int):
+        super().__init__("Record {!r} is longer than {:,} characters.".format(id, limit))
+        self.id = id
+        self.limit = limit
+
+
+def fetch_genbank_text(id: str, limit: Optional[int] = None) -> str:
+    """The record as NCBI sends it. With `limit`, never more than that is read:
+    one character past it raises RecordTooLarge, and the rest stays unread, so
+    a whole chromosome (hundreds of MB) never reaches this process's memory."""
     handle = Entrez.efetch(db="nucleotide", id=id, rettype="gb", retmode="text")
     try:
-        return handle.read()
+        if limit is None:
+            return handle.read()
+        text = handle.read(limit + 1)
+        if len(text) > limit:
+            raise RecordTooLarge(id, limit)
+        return text
     finally:
         handle.close()
 

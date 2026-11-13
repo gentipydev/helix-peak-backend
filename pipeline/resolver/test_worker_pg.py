@@ -74,8 +74,8 @@ def conn(database_url):
     with store.connect(database_url) as connection:
         connection.execute(
             "truncate resolve_request, bake_job, protein_track, protein_alias, protein, "
-            "protein_index_term, protein_index, protein_index_release, discard_request "
-            "restart identity cascade")
+            "protein_index_term, protein_index, protein_index_release, discard_request, "
+            "spend_ledger restart identity cascade")
         connection.execute(
             """
             insert into protein_index (uniprot, gene, name, length, annotation_score, existence,
@@ -457,6 +457,12 @@ def test_a_build_is_stopped_by_the_phone_that_asked_and_scored_again_when_asked(
         assert resolves.current("INS")["build"]["step"] == "done"
         assert _builds(conn) == set()
 
+        # Every ask that queued work is in the ledger, the resume with them;
+        # the one that queued nothing is not.
+        assert conn.execute("select kind, gene, asker from spend_ledger order by id").fetchall() \
+            == [("ask", "INS", "install-a"), ("ask", "INS", "install-a"),
+                ("resume", "INS", "install-b")]
+
 
 class ListingStorage(Storage):
     """Storage that lists and deletes as `forget.Storage` does, each object made a
@@ -769,15 +775,116 @@ def test_a_refusal_stands_and_a_failure_is_asked_again(conn, api, offline):
     assert _one(conn, "select count(*) from resolve_request where state = 'queued'") == (1,)
 
 
-def test_the_daily_cap_counts_the_days_requests(conn, api, monkeypatch):
+def test_the_daily_cap_counts_the_days_asks_in_the_ledger(conn, api, monkeypatch):
     from app.config import settings
 
     monkeypatch.setattr(settings, "resolves_per_day", 1)
-    conn.execute("insert into resolve_request (gene, uniprot, slug, state, reason) "
-                 "values ('TP53', 'P04637', 'tp53', 'refused', 'Not today.')")
+    conn.execute("insert into spend_ledger (kind, gene, asker) values ('ask', 'TP53', 'x')")
     assert api.post("/proteins/resolve", json={"gene": "INS"}).status_code == 429
-    conn.execute("update resolve_request set requested_at = now() - interval '2 days'")
+    conn.execute("update spend_ledger set at = now() - interval '2 days'")
     assert api.post("/proteins/resolve", json={"gene": "INS"}).status_code == 202
+    assert _one(conn, "select kind, gene, asker from spend_ledger "
+                      "where at > now() - interval '1 day'") == ("ask", "INS", None)
+
+
+def test_a_discard_takes_no_ask_back_from_the_cap(conn, api, monkeypatch):
+    """Ask, stop, discard, ask again: the loop that never reached the cap while
+    the cap counted `resolve_request`, whose rows a discard deletes."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "resolves_per_day", 1)
+    ask = {"gene": "INS", "asker": "install-a"}
+    assert api.post("/proteins/resolve", json=ask).status_code == 202
+    assert api.post("/proteins/resolve/INS/stop", json={"asker": "install-a"}).status_code == 200
+    assert api.post("/proteins/resolve/INS/discard",
+                    json={"asker": "install-a"}).status_code == 200
+    assert _one(conn, "select count(*) from resolve_request") == (0,)
+    assert api.post("/proteins/resolve", json=ask).status_code == 429
+    assert _one(conn, "select count(*) from spend_ledger") == (1,)
+
+
+def test_one_installs_asks_are_capped_and_anothers_are_not(conn, api, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "resolves_per_install_per_day", 1)
+    conn.execute("insert into spend_ledger (kind, gene, asker) values ('ask', 'TP53', 'install-a')")
+    refused = api.post("/proteins/resolve", json={"gene": "INS", "asker": "install-a"})
+    assert refused.status_code == 429 and "This phone has asked for 1 builds today" in \
+        refused.json()["detail"]
+    assert api.post("/proteins/resolve",
+                    json={"gene": "INS", "asker": "install-b"}).status_code == 202
+
+
+def test_a_new_protein_needs_room_and_a_build_must_fit_the_budget(conn, api, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "max_built_proteins", 1)
+    conn.execute("insert into resolve_request (gene, uniprot, slug) values ('TP53', 'P04637', 'tp53')")
+    assert api.post("/proteins/resolve", json={"gene": "INS"}).status_code == 429
+    conn.execute("delete from resolve_request")
+    # A scoring that ran to its timeout today, settled, leaves no room for a
+    # whole build's worst case.
+    conn.execute("insert into spend_ledger (kind, usd, finished_at) values ('score', 1.40, now())")
+    refused = api.post("/proteins/resolve", json={"gene": "INS"})
+    assert refused.status_code == 429
+    assert refused.json()["detail"] == ("Builds on demand have used $1.40 of their $2.00 for "
+                                        "the last day. Ask again later.")
+    assert _one(conn, "select count(*) from resolve_request") == (0,)
+
+
+# ----------------------------------------------------- the budget's SQL
+
+
+def test_a_running_call_counts_at_its_worst_until_it_is_settled(conn):
+    from app import budget
+
+    run, short = budget.reserve(conn, "score", 0.65)
+    assert short is None
+    assert budget.spent(conn) == pytest.approx((0.65, 0.65))
+    assert budget.spent(conn, settled=True) == (0.0, 0.0)
+    budget.settle(conn, run, 0.012, 31.5)
+    assert budget.spent(conn) == pytest.approx((0.012, 0.012))
+    assert budget.spent(conn, settled=True) == pytest.approx((0.012, 0.012))
+    assert _one(conn, "select seconds, finished_at is not null from spend_ledger") == (31.5, True)
+    # Settled once: a second settlement changes nothing.
+    budget.settle(conn, run, 9.0, 1.0)
+    assert budget.spent(conn) == pytest.approx((0.012, 0.012))
+
+
+def test_a_reservation_that_would_pass_the_day_is_refused(conn):
+    from app import budget
+
+    conn.execute("insert into spend_ledger (kind, usd, finished_at) values ('score', 1.90, now())")
+    run, short = budget.reserve(conn, "score", 0.65)
+    assert run is None
+    assert short == "Builds on demand have used $1.90 of their $2.00 for the last day."
+    run, short = budget.reserve(conn, "fold", 0.04)
+    assert run is not None and short is None
+
+
+def test_a_call_that_never_ended_counts_at_its_worst_after_an_hour(conn):
+    from app import budget
+
+    conn.execute("insert into spend_ledger (kind, usd, at) values "
+                 "('score', 0.65, now() - interval '2 hours'), ('fold', 0.04, now())")
+    assert budget.spent(conn, settled=True) == pytest.approx((0.65, 0.65))
+    assert budget.spent(conn) == pytest.approx((0.69, 0.69))
+
+
+def test_asks_cost_nothing_and_last_month_is_not_this_months(conn):
+    from app import budget
+
+    conn.execute("insert into spend_ledger (kind, gene) values ('ask', 'INS'), ('resume', 'INS')")
+    conn.execute("insert into spend_ledger (kind, usd, finished_at, at) values "
+                 "('score', 5.0, now(), date_trunc('month', now(), 'UTC') - interval '1 second')")
+    day, month = budget.spent(conn)
+    assert month == 0.0
+    # Only a paid call carries dollars, and every paid call does.
+    import psycopg
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute("insert into spend_ledger (kind, gene, usd) values ('ask', 'INS', 1)")
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute("insert into spend_ledger (kind) values ('score')")
 
 
 # ------------------------------------------------- the worker on a Mac

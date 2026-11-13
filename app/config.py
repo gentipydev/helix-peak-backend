@@ -79,8 +79,44 @@ class Settings(BaseSettings):
     modal_secret: Optional[str] = None
 
     # The service has no auth, and a request is the one thing it does that
-    # costs money (a GPU scores each protein), so a day's are capped.
-    resolves_per_day: int = 50
+    # costs money (a GPU scores each protein), so a day's are capped: asks and
+    # resumes alike, counted in `spend_ledger` (0015), where no discard can
+    # take one back. 20 is the user's number of 2026-11-13; the default is it,
+    # so the cap holds on a service whose environment does not say it.
+    resolves_per_day: int = 20
+
+    # The same, for one install (the app's own random id, `asker`): so one
+    # phone, or a script, cannot take a whole day's builds. An ask with no id
+    # counts against every other ask with none.
+    resolves_per_install_per_day: int = 5
+
+    # Proteins built on demand the project may hold, queued ones included.
+    # Each is 1.3-2.8 MB in storage (measured 2026-11-13), and Supabase's free
+    # project holds 1 GB, 147 MB of it the curated proteins'. A discard frees
+    # its place.
+    max_built_proteins: int = 200
+
+    # `/gene/{id}/{gene}` reads NCBI for whoever asks, and the app no longer
+    # does (it reads stored records). Bounded so that it can neither fill the
+    # database nor spend NCBI's patience with this service's address: records
+    # past this size are refused unread (a whole chromosome is hundreds of MB;
+    # the largest gene the app ever drew, dystrophin's NG_012232, is 2.9 MB),
+    # this many NCBI reads an hour at most, and the cache stops growing at this
+    # many characters (the eight records it holds are 3.9 MB).
+    max_record_bytes: int = 8_000_000
+    gene_fetches_per_hour: int = 60
+    record_cache_max_chars: int = 64_000_000
+
+    # Each client's requests a minute, and the whole service's (`guard.py`).
+    # Generous for the app, which polls a build every few seconds and asks for
+    # suggestions as its reader types; 0 turns a limit off.
+    requests_per_minute: int = 240
+    posts_per_minute: int = 30
+    service_requests_per_minute: int = 3000
+
+    # The largest request body the service reads. Every body it takes is a
+    # small JSON object (a gene and an install's id).
+    max_body_bytes: int = 16_384
 
 
 settings = Settings()

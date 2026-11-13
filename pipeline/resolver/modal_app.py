@@ -71,6 +71,7 @@ import os
 import socket
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Mapping
 
@@ -134,6 +135,46 @@ SWEEP_LIMIT = 10
 # 318 MB table, at up to about 4.4 GB, for each gene it looks up.
 FOLD_CPU, FOLD_MEMORY = 2.0, 4096
 EVIDENCE_CPU, EVIDENCE_MEMORY = 1.0, 6144
+
+# What each paid call may cost, held to the budget in `app/budget.py` (the
+# security review of 2026-11-13). Modal's rates in dollars an hour, as
+# `modal billing rates` gave them that day.
+CPU_CORE_HOUR = 0.0473
+MEMORY_GIB_HOUR = 0.008
+GPU_HOUR = {"T4": 0.59, "L4": 0.80, "A10": 1.10}
+# What a scorer's container is billed for beside its GPU, at most: Modal bills
+# the CPU and memory a container uses where they are more than it asked for,
+# and the scorer asks for none. Set high: ESM-2 650M is 2.6 GB of weights.
+SCORE_CPU, SCORE_MEMORY_GIB = 2.0, 8.0
+# Seconds a container may be billed for before a call's first line runs, and
+# after its last: its start (the scorer's image carries the weights), and the
+# two seconds it waits idle.
+BOOT = 60
+_TIMEOUTS = {"score": SCORE_TIMEOUT, "fold": FOLD_TIMEOUT, "evidence": EVIDENCE_TIMEOUT}
+
+
+def hourly(name: str, gpu: str | None = None) -> float:
+    """Dollars an hour a call of `name` costs; a scoring on `gpu`, or on the
+    dearest it may be given where that is not known."""
+    if name == "score":
+        rate = GPU_HOUR.get(gpu or "", max(GPU_HOUR[kind] for kind in SCORER_GPU))
+        return rate + CPU_CORE_HOUR * SCORE_CPU + MEMORY_GIB_HOUR * SCORE_MEMORY_GIB
+    if name == "fold":
+        return CPU_CORE_HOUR * FOLD_CPU + MEMORY_GIB_HOUR * FOLD_MEMORY / 1024
+    if name == "evidence":
+        return CPU_CORE_HOUR * EVIDENCE_CPU + MEMORY_GIB_HOUR * EVIDENCE_MEMORY / 1024
+    raise ValueError(f"{name} is not a paid call")
+
+
+def cost(name: str, seconds: float, gpu: str | None = None) -> float:
+    """Dollars a call of `name` that ran `seconds` cost, its start included."""
+    return hourly(name, gpu) * (seconds + BOOT) / 3600
+
+
+# What each call may cost at most: run to its timeout on the dearest GPU it
+# may get. Reserved before it claims anything (`budget.reserve`), and settled
+# at what it cost once it ends; a call killed at its timeout keeps it.
+WORST_USD = {name: cost(name, seconds) for name, seconds in _TIMEOUTS.items()}
 # The sweep makes each protein's locus from the snapshot below, which takes
 # the worker's process from 39 MB to 164 MB at its peak (on the Mac,
 # 2026-11-13): over Modal's default request of 128 MiB, which a container
@@ -493,6 +534,46 @@ def starts(claimable: Mapping[str, int], structures: bool, evidence: bool) -> li
     return started
 
 
+def _affords(conn, name: str) -> str | None:
+    """Why a call of `name` would not fit what is left of the budget now, or
+    None: asked before one is started, so that no container (above all no GPU)
+    starts only to find it may not claim anything."""
+    from app import budget
+
+    day, month = budget.spent(conn)
+    return budget.short_of(day, month, WORST_USD[name])
+
+
+def _gpu() -> str | None:
+    """The GPU this container was given, where the scorer has loaded torch."""
+    torch = sys.modules.get("torch")
+    if torch is None:
+        return None
+    try:
+        said = torch.cuda.get_device_name(0).upper()
+    except Exception:  # noqa: BLE001 -- not known: the dearest is assumed
+        return None
+    return next((kind for kind in ("A10", "L4", "T4") if kind in said), None)
+
+
+def _settle(conn, run: int, name: str, started: float) -> None:
+    """What a call cost, in place of its worst case. A write that fails leaves
+    the worst case, which is never less than the truth."""
+    from app import budget
+
+    seconds = time.monotonic() - started
+    try:
+        budget.settle(conn, run, cost(name, seconds, _gpu() if name == "score" else None),
+                      seconds)
+    except Exception:  # noqa: BLE001
+        print(f"{name}: what it cost was not written; its worst case stands")
+
+
+def _held(name: str, why: str | None) -> None:
+    if why:
+        print(f"{name}: held, claimed nothing: {why}")
+
+
 @app.function(image=resolver_image, secrets=[secret], schedule=modal.Period(minutes=5),
               memory=SWEEP_MEMORY, timeout=SWEEP_TIMEOUT, max_containers=1,
               scaledown_window=IDLE)
@@ -506,12 +587,18 @@ def sweep() -> dict:
     with conn:
         summary = resolve_queued(conn, storage, structures=STRUCTURES, evidence=EVIDENCE)
         claimable = {kind: store.claimable_bakes(conn, kind) for kind in _KINDS}
-    started = starts(claimable, STRUCTURES, EVIDENCE)
+        # A baker whose worst case would not fit the budget is not started:
+        # its bake waits, queued, until the day or the month has room again.
+        held = {name: why for name in starts(claimable, STRUCTURES, EVIDENCE)
+                if (why := _affords(conn, name)) is not None}
+    started = [name for name in starts(claimable, STRUCTURES, EVIDENCE) if name not in held]
     bakers = {"score": score, "fold": fold, "evidence": evidence}
     for name in started:
         bakers[name].spawn()
     summary.update(constraint_claimable=claimable["constraint"], claimable=claimable,
                    structures=STRUCTURES, evidence=EVIDENCE, started=started)
+    if held:
+        summary["held"] = held
     print(json.dumps(summary))
     return summary
 
@@ -521,13 +608,26 @@ def sweep() -> dict:
 def score() -> list:
     """Bake the oldest constraint track it can take, and start again while
     another waits."""
+    from app import budget
     from pipeline.resolver import store, worker
 
     socket.setdefaulttimeout(NETWORK_TIMEOUT)
     conn, storage = _connect()
+    done: list = []
+    again = False
     with conn:
-        done = worker.score_all(conn, storage, limit=1)
-        again = goes_on(done) and store.claimable_bakes(conn, "constraint") > 0
+        # Its worst case is set against the budget before a bake is claimed;
+        # where it does not fit, nothing is, and the bake waits, queued.
+        run, held = budget.reserve(conn, "score", WORST_USD["score"])
+        if run is not None:
+            started = time.monotonic()
+            try:
+                done = worker.score_all(conn, storage, limit=1)
+            finally:
+                _settle(conn, run, "score", started)
+            again = (goes_on(done) and store.claimable_bakes(conn, "constraint") > 0
+                     and _affords(conn, "score") is None)
+    _held("score", held)
     if again:
         score.spawn()
     print(json.dumps(done))
@@ -544,6 +644,7 @@ def fold() -> dict:
     """Make the oldest fold it can take, as the Mac's worker makes one, and
     start again while another waits. Claims nothing while no fold could be
     made here."""
+    from app import budget
     from pipeline.resolver import local_worker, store, worker
 
     socket.setdefaulttimeout(NETWORK_TIMEOUT)
@@ -552,6 +653,7 @@ def fold() -> dict:
     modeller = local_worker.Modeller(settings, threading.Event())
     done: list = []
     again = False
+    held = None
     try:
         # Asked before anything is claimed, as the Mac asks (`local_worker.cycle`).
         unready = modeller.unready()
@@ -561,16 +663,26 @@ def fold() -> dict:
                 if not store.folds_ready(conn):
                     unready = NO_FOLDS
                 else:
-                    done = worker.structure_all(conn, storage, limit=1, model=modeller)
-                    again = goes_on(done) and store.claimable_bakes(conn, "structure") > 0
+                    run, held = budget.reserve(conn, "fold", WORST_USD["fold"])
+                    if run is not None:
+                        started = time.monotonic()
+                        try:
+                            done = worker.structure_all(conn, storage, limit=1, model=modeller)
+                        finally:
+                            _settle(conn, run, "fold", started)
+                        again = (goes_on(done) and store.claimable_bakes(conn, "structure") > 0
+                                 and _affords(conn, "fold") is None)
     finally:
         local_worker.clear_workspace(settings)
     if unready:
         local_worker.log.error("no model can be made here now, and none was claimed. %s",
                                unready)
+    _held("fold", held)
     if again:
         fold.spawn()
     outcome = {"unready": unready, "modelled": done}
+    if held:
+        outcome["held"] = held
     print(json.dumps(outcome))
     return outcome
 
@@ -582,6 +694,7 @@ def evidence() -> dict:
     the Mac's worker makes them; start again while either waits, and start the
     GPU once a scoring no longer waits for them. Claims no AVI bake while the
     Atlas could not be asked."""
+    from app import budget
     from pipeline.resolver import local_worker, store, worker
 
     socket.setdefaulttimeout(NETWORK_TIMEOUT)
@@ -593,6 +706,7 @@ def evidence() -> dict:
     placed: list = []
     fetched: list = []
     again = scoring = False
+    held = None
     try:
         # The Atlas is asked (one request) before an AVI bake is claimed.
         # ClinVar needs NCBI alone and is claimed only once its protein's AVI
@@ -601,31 +715,44 @@ def evidence() -> dict:
         unready = evidencer.unready()
         conn, storage = _connect()
         with conn:
-            if unready is None:
-                placed = worker.impact_all(conn, storage, limit=1, avi=evidencer)
-            fetched = worker.clinvar_all(conn, storage, limit=1, clinvar=clinvar)
-            # What a call of its own could take next: no AVI bake while the
-            # Atlas could not be asked.
-            waiting = store.claimable_bakes(conn, "clinvar")
-            if unready is None:
-                waiting += store.claimable_bakes(conn, "impact")
-            again = goes_on(placed + fetched) and waiting > 0
-            scoring = bool(fetched) and store.claimable_bakes(conn, "constraint") > 0
+            run, held = budget.reserve(conn, "evidence", WORST_USD["evidence"])
+            if run is not None:
+                started = time.monotonic()
+                try:
+                    if unready is None:
+                        placed = worker.impact_all(conn, storage, limit=1, avi=evidencer)
+                    fetched = worker.clinvar_all(conn, storage, limit=1, clinvar=clinvar)
+                finally:
+                    _settle(conn, run, "evidence", started)
+                # What a call of its own could take next: no AVI bake while the
+                # Atlas could not be asked.
+                waiting = store.claimable_bakes(conn, "clinvar")
+                if unready is None:
+                    waiting += store.claimable_bakes(conn, "impact")
+                again = (goes_on(placed + fetched) and waiting > 0
+                         and _affords(conn, "evidence") is None)
+                scoring = (bool(fetched) and store.claimable_bakes(conn, "constraint") > 0
+                           and _affords(conn, "score") is None)
     finally:
         local_worker.clear_workspace(settings)
     if unready:
         local_worker.log.error("no AVI track can be made here now, and no AVI bake was "
                                "claimed. %s", unready)
+    _held("evidence", held)
     if again:
         evidence.spawn()
     if scoring:
         score.spawn()
     outcome = {"unready": unready, "impact": placed, "clinvar": fetched, "scoring": scoring}
+    if held:
+        outcome["held"] = held
     print(json.dumps(outcome))
     return outcome
 
 
-@app.function(image=resolver_image, scaledown_window=IDLE)
+# One container at most: even with a proxy token, a flood of calls cannot fan
+# out into many. Each only starts a sweep, which runs one at a time itself.
+@app.function(image=resolver_image, scaledown_window=IDLE, max_containers=1)
 @modal.fastapi_endpoint(method="POST", label=WAKE_LABEL, requires_proxy_auth=True)
 def wake() -> dict:
     """Start a sweep now rather than at the next five minutes."""
