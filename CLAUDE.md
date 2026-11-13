@@ -83,7 +83,9 @@ differs from storage. A mismatch means the refactor changed data. Stop; never up
 - `suggest.py`: `/proteins/suggest`. Ranked prefix tiers over `protein_index_term`, near misses last;
   `building` marks a protein whose build is under way, which the app watches rather than opens.
   And `/proteins/built`: every install's builds as the same suggestions, newest first, paged by
-  (`resolved_at`, slug); one under way is left out, one stopped is kept.
+  (`resolved_at`, slug); one under way is left out, one stopped is kept. The app has listed no
+  builds since 2026-11-13 (its Build on demand tab is a search alone); this stays for installs
+  older than that.
 - `resolves.py`: `/proteins/resolve`. What an ask means (ready, pending, refused, failed, unavailable,
   buildable), the `resolve_request` row, the daily cap and the best-effort wake, and how far a
   build has got (`build`: step, residues scored, seconds left), read from the request and the
@@ -163,7 +165,9 @@ runs, these things follow for anyone working in this checkout:
   off. A fold is published whole or not at all (`store.publish_fold`): the row's `structure`
   column, the one column a bake writes on `protein`, and only where `catalog_order is null`, its
   `structure` and `folding` tracks, and a `fold_generation` row. `scripts/queue_structures.py`
-  queues it again for proteins built before (a backfill) and `scripts/fold_rollback.py` puts back
+  queues it again for proteins built before (a backfill), `scripts/forget_built.py` deletes
+  proteins built on demand whole (rows, requests, objects; never a curated one; all eleven on
+  2026-11-13, at the user's word), and `scripts/fold_rollback.py` puts back
   an earlier generation.
 - And each protein's AVI and ClinVar tracks, after the model and before the scoring, which
   waits for them (`store.WAITS_FOR`): the twenty's bakers, unchanged, AVI in

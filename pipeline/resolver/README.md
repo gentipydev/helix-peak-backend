@@ -627,6 +627,22 @@ error.
 build for a gene, and whether the upload gate takes its record, writing
 nothing. It does not run ESM-2.
 
+Delete proteins built on demand, whole: their rows (the `protein` row, and by
+cascade its aliases, tracks, bakes, fold selections and generations), every
+request for their genes, and every object of theirs in storage, those their
+rows name and any other a re-bake left under their names:
+
+```sh
+.venv/bin/python scripts/forget_built.py --all --dry-run    # what would go; reads only
+.venv/bin/python scripts/forget_built.py TTR PRL            # or --all
+```
+
+A curated protein is never deleted: naming one refuses the lot. Refused while a
+request or a bake for one of them is queued or running. The rows go in one
+transaction, then the objects. A gene deleted can be asked for again, if the
+index offers it. On 2026-11-13 it deleted all eleven built so far, at the
+user's word.
+
 A worker that dies holding a request (or a bake) is noticed by the next sweep
 after 30 minutes (90 for a bake) and put back, or failed once it has been tried
 three times.
