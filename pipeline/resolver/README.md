@@ -21,7 +21,7 @@ app (search field) ──POST /proteins/resolve──▶ service ──row──
                                                                ├──spawn──▶ Modal: evidence (CPU)
                                                                │             AlphaGenome → impact, NCBI → clinvar
                                                                │             └──spawn──▶ score, once both are over
-                                                               └──spawn──▶ Modal: score (one L4)
+                                                               └──spawn──▶ Modal: score (one GPU: T4, else L4, else A10)
                                                                              ESM-2 650M → constraint track (ready)
 app ──GET /proteins/resolve/{gene}──▶ state + build ──▶ /gene/<slug>, the walk, as for the twenty
 ```
@@ -522,8 +522,10 @@ the Mac's worker makes, so a protein is built with the Mac off.
   and the app's check holds each model to its own scene.
 
 1. In the Modal workspace (Usage & Billing), a payment method and a spend
-   limit, a monthly cap past which Modal stops workloads. An L4 is $0.80 an
-   hour; the fold and the evidence run on CPUs, cents a month.
+   limit, a monthly cap past which Modal stops workloads. `score` takes a T4
+   ($0.59 an hour), and when Modal has none to give an L4 ($0.80), then an
+   A10 ($1.10) (`modal_app.SCORER_GPU`, in that order). The fold and the
+   evidence run on CPUs, cents a month.
 2. The secret's five keys, step 2 of "Deploying, once".
 3. `.modal-venv/bin/modal deploy pipeline/resolver/modal_app.py`
 4. Optionally the wake, step 4 of "Deploying, once", and `RESOLVES_PER_DAY`.

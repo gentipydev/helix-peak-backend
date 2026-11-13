@@ -55,6 +55,10 @@ def test_the_secret_holds_the_macs_four_keys_and_the_atlases():
     assert modal_app.KEYS == (*local_worker.KEYS, "ALPHAGENOME_API_KEY")
 
 
+def test_the_scorer_asks_for_a_t4_first_then_an_l4_then_an_a10():
+    assert modal_app.SCORER_GPU == ["T4", "L4", "A10"]
+
+
 def test_the_scorer_image_is_built_from_the_scorers_own_lock():
     assert modal_app.LOCK == PIPELINE / "constraint" / "requirements-lock.txt"
     assert modal_app.LOCK.exists()

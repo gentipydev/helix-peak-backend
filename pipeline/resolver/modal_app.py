@@ -36,7 +36,8 @@ Five functions, and what starts each:
   waits for them (`store.WAITS_FOR`).
 - `score` bakes one queued constraint track with the scorer the twenty were
   baked with, `facebook/esm2_t33_650M_UR50D` at its pinned revision, on one
-  L4. One container at a time, so a busy day costs the hours one GPU is busy.
+  GPU: a T4, else an L4, else an A10 (`SCORER_GPU`). One container at a
+  time, so a busy day costs the hours one GPU is busy.
 
 Each works one protein a call and starts itself again while another waits,
 as the Mac's worker does (`local_worker.py`). A request or a bake that goes
@@ -84,7 +85,16 @@ from pipeline.constraint.score_protein import MODEL, REVISION  # noqa: E402
 APP_NAME = "helix-peak-resolver"
 SECRET_NAME = "helix-peak-resolver"
 WAKE_LABEL = "helix-peak-resolver-wake"
-SCORER_GPU = "L4"
+# The scorer's GPUs, in the order Modal tries them: the T4, the cheapest
+# ($0.59 an hour), then the L4 ($0.80), then the A10 ($1.10). On 2026-11-13
+# Modal gave no L4 for half an hour while a T4 came in seconds, and the first
+# protein built whole on Modal (B2M) was scored on a T4. ESM-2 650M in float32
+# needs about 3 GB, which each holds; the model, its revision and the alignment
+# gate are the same on each. On B2M (nothing written) the A10 took 10.6 s and
+# the T4 15.0 s with the model's load, each within 0.001 of the L4 and of the
+# Mac's mps at every number, and the track's `generation.device` says `cuda`
+# on all.
+SCORER_GPU = ["T4", "L4", "A10"]
 # The secret's keys: the Mac's worker's four (`local_worker.KEYS`) and the
 # Atlas's, which only the AVI bake is handed (`local_worker.Evidencer`).
 KEYS = ("DATABASE_URL", "SUPABASE_URL", "SUPABASE_SERVICE_KEY", "NCBI_EMAIL",
@@ -95,7 +105,8 @@ KEYS = ("DATABASE_URL", "SUPABASE_URL", "SUPABASE_SERVICE_KEY", "NCBI_EMAIL",
 IDLE = 2
 # One protein's scoring, at most. The longest protein a record can be built
 # for (24 kb of exons, about 8,000 residues) is estimated at 12-23 minutes on
-# an L4. Each call stays well inside the reaper's patience (`store.STALE_BAKE`,
+# an L4; on a T4, tried first, a long protein's time is not yet measured. Each
+# call stays well inside the reaper's patience (`store.STALE_BAKE`,
 # `STALE_RESOLVE`): a claim held past it would be taken again.
 SCORE_TIMEOUT = 30 * 60
 SWEEP_TIMEOUT = 15 * 60
