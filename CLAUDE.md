@@ -74,6 +74,12 @@ differs from storage. A mismatch means the refactor changed data. Stop; never up
   (`lm_run`, `0013`), named as a ready track is: URL, sha256, provenance. No pool or a failed read
   is a 503, never a 404.
 - `protein_index.py`: pure. `normalize()`, UniProt/MANE parsing, index rows and terms. Shared with `scripts/load_protein_index.py`.
+  Also which buildable proteins are offered (`withhold`, since 2026-11-13): only those expected to
+  build whole, their fold from the PDB (a PDB entry placing 30+ residues within the PDB rule's
+  method limits, UniProt evidence at protein level and annotation 5 of 5, 50 to 7,900 residues).
+  Every other is loaded unbuildable with the sentence search shows; a listed protein's gene never
+  is, and a protein built already opens whatever its row says. The loader's `--every-buildable`
+  writes the index as before.
 - `suggest.py`: `/proteins/suggest`. Ranked prefix tiers over `protein_index_term`, near misses last;
   `building` marks a protein whose build is under way, which the app watches rather than opens.
   And `/proteins/built`: every install's builds as the same suggestions, newest first, paged by

@@ -5,8 +5,10 @@ type instead. A suggestion says what the app can do with the protein today:
 
 - ``listed``: one of the twenty, opened from the list;
 - ``ready``: built on demand earlier, and opened at once;
-- ``buildable``: not built yet, and the pipeline can start from its row;
-- ``unavailable``: not buildable, and ``reason`` says why.
+- ``buildable``: not built yet, and offered: the pipeline can start from its
+  row and it is expected to build whole, its fold from the PDB
+  (`protein_index.offer_refusal`, applied when the index is loaded);
+- ``unavailable``: not buildable, or not offered, and ``reason`` says why.
 
 ``building`` is true while a build is under way: a request queued or running,
 a constraint bake not yet over, or its first fold still being made, as long as

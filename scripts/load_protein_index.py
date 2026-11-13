@@ -9,7 +9,8 @@ whenever UniProt (every eight weeks) or MANE publishes a release.
 It downloads three things, none of them large:
 
 - every reviewed human UniProt entry, as JSON, so names arrive structured and
-  nothing here parses a name out of a string of parentheses;
+  nothing here parses a name out of a string of parentheses, with the PDB
+  entries UniProt maps to it;
 - MANE's summary for the current release: the transcript, protein, gene and
   GRCh38 span for each MANE Select gene;
 - NCBI's LRG_RefSeqGene table: which RefSeqGene record each RefSeq protein is
@@ -18,6 +19,16 @@ It downloads three things, none of them large:
 The listed proteins -- the `protein` rows with a `catalog_order` -- are checked
 against the rows built for their genes, and lend them the app's own names:
 "hemoglobin" is HBB's slug and has to find HBB exactly.
+
+Since 2026-11-13 a buildable protein is offered to be built only where it is
+expected to build whole, with its fold from the PDB (`protein_index.withhold`,
+`offer_refusal`): a PDB entry placing 30 or more of its residues by a method
+and resolution the PDB rule accepts, UniProt's evidence at protein level and
+an annotation score of 5, and 50 to 7,900 residues. Every other is written
+unbuildable, with the sentence the search shows. A listed protein's gene is
+never withheld, and a protein built already opens whatever its row says.
+`--every-buildable` writes the index as before, offering every buildable
+protein: the way back.
 
 Every row of `protein_index` and `protein_index_term` is replaced in one
 transaction, with plain deletes rather than a truncate, so a search running
@@ -46,9 +57,11 @@ from app.protein_index import (  # noqa: E402
     curated_terms,
     genes_of,
     parse_refseqgene,
+    pdb_reach,
     rows_for_entry,
     terms_for_row,
     versionless,
+    withhold,
 )
 from pipeline.mane import current_summary  # noqa: E402
 
@@ -56,7 +69,7 @@ UNIPROT = (
     "https://rest.uniprot.org/uniprotkb/stream?compressed=true&format=json"
     "&query=%28organism_id%3A9606%29%20AND%20%28reviewed%3Atrue%29"
     "&fields=accession,gene_names,protein_name,length,annotation_score,"
-    "protein_existence,xref_mane-select,xref_hgnc,xref_geneid"
+    "protein_existence,xref_mane-select,xref_hgnc,xref_geneid,xref_pdb"
 )
 REFSEQGENE = "https://ftp.ncbi.nlm.nih.gov/refseq/H_sapiens/RefSeqGene/LRG_RefSeqGene"
 
@@ -261,6 +274,9 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true",
                         help="build and check everything, write nothing")
     parser.add_argument("--report", help="also write the report to this file")
+    parser.add_argument("--every-buildable", action="store_true",
+                        help="offer every buildable protein, as before 2026-11-13, not only "
+                             "those expected to build whole (app.protein_index.offer_refusal)")
     arguments = parser.parse_args()
 
     if not settings.database_url:
@@ -272,6 +288,14 @@ def main() -> int:
     with psycopg.connect(settings.database_url, prepare_threshold=None) as conn:
         catalog = conn.execute(_CATALOG).fetchall()
         failures, notes = overlay_catalog(catalog, rows, terms)
+        if not arguments.every_buildable:
+            # After the listed proteins are checked, which need their rows
+            # buildable, and never on their genes.
+            withheld = withhold(rows, {entry["primaryAccession"]: pdb_reach(entry)
+                                       for entry in entries},
+                                {gene for (_slug, gene, *_rest) in catalog})
+            print("{:,} buildable proteins withheld: not expected to build whole "
+                  "(--every-buildable offers them).".format(withheld))
         text = report(rows, terms, duplicates, failures, notes,
                       (uniprot_release, mane_release))
         print("\n" + text)

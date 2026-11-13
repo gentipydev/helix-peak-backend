@@ -254,3 +254,94 @@ def test_a_listed_protein_lends_its_own_names():
     assert ("hemoglobin beta chain", NAME) in terms
     assert ("ng 059281", ACCESSION) in terms
     assert ("beta", WORD) in terms
+
+
+# --- what is offered to be built --------------------------------------------
+
+
+def _pdb(entry_id, method, resolution, chains):
+    return {"database": "PDB", "id": entry_id, "properties": [
+        {"key": "Method", "value": method}, {"key": "Resolution", "value": resolution},
+        {"key": "Chains", "value": chains}]}
+
+
+def _with_pdb(*xrefs):
+    entry = dict(INSULIN)
+    entry["uniProtKBCrossReferences"] = list(INSULIN["uniProtKBCrossReferences"]) + list(xrefs)
+    return entry
+
+
+def test_the_reach_is_the_most_residues_one_accepted_entry_places():
+    from app.protein_index import pdb_reach
+
+    crystal = _pdb("1K5N", "X-ray", "2.10 A", "A/B=21-119")
+    blurred = _pdb("9ZZZ", "X-ray", "3.50 A", "A=1-119")
+    em = _pdb("8ABC", "EM", "3.80 A", "A=1-60, B=50-80")
+    loose_em = _pdb("8ABD", "EM", "4.20 A", "A=1-119")
+    nmr = _pdb("2NMR", "NMR", "-", "A=1-40")
+    model = _pdb("0MOD", "Model", "-", "A=1-119")
+    assert pdb_reach(_with_pdb(crystal, blurred, em, nmr, model)) == 99
+    assert pdb_reach(_with_pdb(blurred, em, nmr)) == 80       # chains' union, each residue once
+    assert pdb_reach(_with_pdb(blurred, loose_em, nmr)) == 40
+    assert pdb_reach(_with_pdb(blurred, loose_em, model)) == 0
+    assert pdb_reach(INSULIN) == 0
+
+
+def _offered_row(**changed):
+    return {"gene": "TTR", "uniprot": "P02766", "buildable": True, "unavailable_reason": None,
+            "existence": 1, "annotation_score": 5, "length": 147, **changed}
+
+
+def test_a_well_studied_protein_with_a_structure_is_offered():
+    from app.protein_index import offer_refusal
+
+    assert offer_refusal(_offered_row(), 127) is None
+    assert offer_refusal(_offered_row(length=50), 30) is None
+    assert offer_refusal(_offered_row(length=7_900), 30) is None
+
+
+@pytest.mark.parametrize("changed, reach, said", [
+    ({}, 29, "No PDB entry places 30 or more of its residues (X-ray ≤ 3.0 Å, EM ≤ 4.0 Å, "
+             "or NMR)."),
+    ({"existence": 3}, 127, "UniProt has no evidence of it at protein level (inferred from "
+                            "homology)."),
+    ({"annotation_score": 4}, 127, "UniProt's annotation score for it is 4 of 5; a build "
+                                   "needs 5."),
+    ({"length": 49}, 49, "49 residues; a build needs 50 or more."),
+    ({"length": 8_797}, 127, "8,797 residues; a build needs 7,900 or fewer."),
+    # Where several fail, the fold's own source is said first.
+    ({"existence": 3, "annotation_score": 2, "length": 31}, 0,
+     "No PDB entry places 30 or more of its residues (X-ray ≤ 3.0 Å, EM ≤ 4.0 Å, or NMR)."),
+])
+def test_a_protein_not_expected_to_build_whole_says_why(changed, reach, said):
+    from app.protein_index import offer_refusal
+
+    assert offer_refusal(_offered_row(**changed), reach) == said
+
+
+def test_only_buildable_rows_off_the_list_are_withheld():
+    from app.protein_index import withhold
+
+    offered = _offered_row()
+    bare = _offered_row(gene="CHRDL2", uniprot="Q6WN34", length=429)
+    listed = _offered_row(gene="INS", uniprot="P01308", length=110)
+    isoform = _offered_row(gene="TP53BP2", uniprot="Q13625", buildable=False,
+                           unavailable_reason="MANE Select encodes isoform Q13625-3.")
+    rows = [offered, bare, listed, isoform]
+    assert withhold(rows, {"P02766": 127}, {"INS"}) == 1
+    assert [row["buildable"] for row in rows] == [True, False, True, False]
+    assert bare["unavailable_reason"].startswith("No PDB entry places 30")
+    assert isoform["unavailable_reason"] == "MANE Select encodes isoform Q13625-3."
+
+
+def test_the_rule_uses_the_pdb_rules_and_the_gene_pages_own_numbers():
+    from app.protein_index import OFFER_PLACED, OFFER_RESIDUES, OFFER_RESOLUTION
+    from pipeline.structure import pdb_policy
+    from pipeline.targets import GENE_PAGE_BUDGET_BP
+
+    assert OFFER_RESOLUTION["X-ray"] == OFFER_RESOLUTION["Neutron"] == pdb_policy.CRYSTAL_RESOLUTION
+    assert OFFER_RESOLUTION["EM"] == pdb_policy.EM_RESOLUTION
+    assert OFFER_RESOLUTION["NMR"] is None and "SOLUTION NMR" in pdb_policy.NMR
+    assert OFFER_PLACED == pdb_policy.DOMAIN_MIN
+    # The coding sequence alone of the longest protein offered fits the page.
+    assert OFFER_RESIDUES[1] * 3 < GENE_PAGE_BUDGET_BP

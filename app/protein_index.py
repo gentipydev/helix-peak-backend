@@ -2,7 +2,9 @@
 MANE, and how a query is normalised to meet them.
 
 Pure functions only. `scripts/load_protein_index.py` downloads the sources and
-writes the tables; `app/suggest.py` reads them. Both normalise through
+writes the tables; `app/suggest.py` reads them. Which buildable proteins are
+offered to be built is decided here too (`withhold`, `offer_refusal`): since
+2026-11-13 only those expected to build whole, with their fold from the PDB. Both normalise through
 ``normalize`` here, which is the whole contract between a stored term and a
 typed query: if the two ever normalised differently, a prefix that should match
 would fall between them without an error anywhere.
@@ -257,6 +259,85 @@ def rows_for_entry(
         if len(hgnc_ids) == 1:
             rows[own_gene]["hgnc_id"] = hgnc_ids[0]
     return list(rows.values())
+
+
+# Which buildable proteins are offered to be built: those expected to build
+# whole, the PDB the source of their fold (the user's rule of 2026-11-13). Each
+# number is a step's own: the PDB rule's method limits and its smallest domain
+# (`pipeline/structure/pdb_policy.py`: CRYSTAL_RESOLUTION, EM_RESOLUTION,
+# DOMAIN_MIN), the gene page's 24,000 bases (`GENE_PAGE_BUDGET_BP`, a little
+# over 7,900 residues of coding sequence alone), and a floor under which ESM-2's
+# alignment gate turned down most proteins tried. A well-studied protein
+# (annotated 5 of 5, evidence at protein level) is one the model knows.
+OFFER_RESOLUTION = {"X-ray": 3.0, "Neutron": 3.0, "EM": 4.0, "NMR": None}
+OFFER_PLACED = 30
+OFFER_RESIDUES = (50, 7_900)
+OFFER_ANNOTATION = 5
+OFFER_EXISTENCE = 1
+_EXISTENCE = {2: "evidence at transcript level", 3: "inferred from homology",
+              4: "predicted", 5: "uncertain"}
+
+
+def pdb_reach(entry: dict) -> int:
+    """The most residues one experimental structure of this protein places,
+    among the PDB entries UniProt maps to it by a method and resolution the PDB
+    rule accepts (`OFFER_RESOLUTION`); 0 where there is none.
+
+    UniProt names each entry's chains and the residues they cover
+    (``A/B=21-119``), mapped by SIFTS to the canonical sequence; a residue two
+    chains cover counts once."""
+    best = 0
+    for xref in _xrefs(entry, "PDB"):
+        method = _property(xref, "Method")
+        if method not in OFFER_RESOLUTION:
+            continue
+        limit = OFFER_RESOLUTION[method]
+        if limit is not None:
+            found = re.match(r"\s*([0-9.]+)", _property(xref, "Resolution") or "")
+            if found is None or float(found.group(1)) > limit:
+                continue
+        placed = set()  # type: Set[int]
+        for first, last in re.findall(r"=([0-9]+)-([0-9]+)", _property(xref, "Chains") or ""):
+            placed.update(range(int(first), int(last) + 1))
+        best = max(best, len(placed))
+    return best
+
+
+def offer_refusal(row: dict, reach: int) -> Optional[str]:
+    """Why a buildable row is not offered to be built, as the search says it;
+    None where it is. `reach` is its `pdb_reach`."""
+    if reach < OFFER_PLACED:
+        return ("No PDB entry places {} or more of its residues (X-ray ≤ {:.1f} Å, "
+                "EM ≤ {:.1f} Å, or NMR).").format(
+            OFFER_PLACED, OFFER_RESOLUTION["X-ray"], OFFER_RESOLUTION["EM"])
+    if row["existence"] != OFFER_EXISTENCE:
+        return "UniProt has no evidence of it at protein level ({}).".format(
+            _EXISTENCE.get(row["existence"], "level {}".format(row["existence"])))
+    if row["annotation_score"] < OFFER_ANNOTATION:
+        return "UniProt's annotation score for it is {} of 5; a build needs {}.".format(
+            row["annotation_score"], OFFER_ANNOTATION)
+    low, high = OFFER_RESIDUES
+    if row["length"] < low:
+        return "{:,} residues; a build needs {:,} or more.".format(row["length"], low)
+    if row["length"] > high:
+        return "{:,} residues; a build needs {:,} or fewer.".format(row["length"], high)
+    return None
+
+
+def withhold(rows: List[dict], reach: Dict[str, int], listed: Set[str]) -> int:
+    """Leave buildable only the rows offered (`offer_refusal`), each other one
+    saying why; never a listed protein's gene, which the catalog draws and its
+    search must find buildable. `reach` is `pdb_reach` by accession. Returns
+    how many were withheld."""
+    withheld = 0
+    for row in rows:
+        if not row["buildable"] or row["gene"] in listed:
+            continue
+        reason = offer_refusal(row, reach.get(row["uniprot"], 0))
+        if reason is not None:
+            row["buildable"], row["unavailable_reason"] = False, reason
+            withheld += 1
+    return withheld
 
 
 def terms_for_row(entry: dict, row: dict, mane_name: Optional[str] = None) -> Set[Tuple[str, int]]:

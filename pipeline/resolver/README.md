@@ -3,7 +3,9 @@
 A reader searches for a protein the catalog does not list. `/proteins/suggest`
 already says whether it is `buildable`; asking for it (`POST /proteins/resolve`)
 queues a request, and this directory turns the request into a protein the walk
-can open:
+can open. Since 2026-11-13 the index offers only proteins expected to build
+whole, their fold from the PDB (`app/protein_index.py`, `withhold`); every
+other is `unavailable`, with the sentence why:
 
 ```
 app (search field) ──POST /proteins/resolve──▶ service ──row──▶ resolve_request
